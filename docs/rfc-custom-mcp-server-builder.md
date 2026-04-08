@@ -127,9 +127,13 @@ The skill file guides the AI through the following steps. Each step produces int
    - Cluster all endpoints into meaningful semantic groups based on the API's domain (e.g., "File Operations", "Permissions", "Comments", "Revisions"). This is similar to how [GitHub's remote MCP server](https://api.githubcopilot.com/mcp/) organizes endpoints into toolsets — users can include or exclude entire groups rather than picking endpoints one by one.
    - Workflow descriptions inform which groups are likely relevant, but the grouping itself is by API domain, not by workflow. An endpoint doesn't need to match a workflow to be included in a group.
    - Each endpoint belongs to at most one group.
-   - Present the groups to the user for approval before proceeding.
+   - Present all groups to the user and recommend which groups to include based on the workflows. The user selects which groups to keep.
 
-3. **Tool Naming**
+3. **Fine-Grained Tool Filtering**
+   - Within the selected groups, review individual endpoints. Drop endpoints that are clearly unnecessary for the described workflows (e.g., admin-only endpoints, deprecated endpoints, or endpoints that duplicate functionality).
+   - Present the filtered tool list to the user for approval. The user can add back any dropped endpoints or remove additional ones.
+
+4. **Tool Naming**
    - Evaluate each endpoint's existing `operationId` and summary. If the name is already clean and LLM-friendly, keep it. Only rename when the existing name is unclear, too long, or follows a convention that doesn't help tool selection (e.g., `drives_files_list_v2` → `list_files`).
    - Names follow the pattern `verb_noun` (e.g., `list_files`, `create_document`, `search_contacts`).
    - 1:1 mapping: each endpoint gets exactly one tool name. No merging in v1.
@@ -143,20 +147,22 @@ The skill file guides the AI through the following steps. Each step produces int
    - Add `hints` to tools where the AI notices issues the deterministic generator won't handle: pagination patterns, large response payloads, known API quirks, rate limit concerns, or opportunities for response shaping. These hints flow through to Phase 4.
 
 5. **Auth Detection**
-   - Read the spec's `securitySchemes` and map them to ToolHive auth patterns:
+   - Read the spec's `securitySchemes` and determine how ToolHive should be configured. The MCP server itself always just receives a token via the Authorization header and forwards it — ToolHive handles all OAuth flows, code exchanges, and token acquisition upstream.
 
-     | OpenAPI Security Scheme | ToolHive Pattern | Config Type |
-     |------------------------|------------------|-------------|
-     | `oauth2` (authorization code) | `embeddedAuthServer` | `MCPExternalAuthConfig` with OIDC upstream |
-     | `http` (bearer) | `bearerToken` | K8s Secret reference |
-     | `apiKey` (header) | `headerInjection` | K8s Secret reference |
-     | `apiKey` (query) | **Not supported** | Flagged for human attention |
-     | `http` (basic) | **Not supported** | Flagged for human attention |
+     | OpenAPI Security Scheme | ToolHive Config |
+     |------------------------|-----------------|
+     | `oauth2` (authorization code flow) | `embeddedAuthServer` — ToolHive runs the OAuth flow and passes the access token through |
+     | `http` (bearer) | `bearerToken` — static token from K8s Secret |
+     | `apiKey` (header) | `headerInjection` — key injected from K8s Secret |
+     | `apiKey` (query) | **Not supported** — flagged for human attention |
+     | `http` (basic) | **Not supported** — flagged for human attention |
 
    - If the spec declares multiple security schemes, the AI selects the one most compatible with ToolHive and notes alternatives.
+   - OAuth scopes are sometimes declared in the spec but often incomplete or missing. The AI pulls them from the spec when available and adds a hint when scopes look incomplete. This surfaces in Phase 2 (human review) and again in Phase 4 (AI validation) — both checkpoints should verify scopes are correct before deployment. Scopes only affect the ToolHive `MCPExternalAuthConfig`, not the MCP server itself.
 
 6. **Output Generation**
    - Produce the final `mcp-scope.yaml` file. See the Intermediate Artifact section below for the full schema.
+   - Produce a `scoping-summary.md` alongside the YAML. This documents the AI's reasoning: why each group was included or excluded, which tool names and descriptions were rewritten (and why), which scopes were inferred vs. found in the spec, and any flagged issues. This gives the human reviewer in Phase 2 context for the choices rather than just the final output.
 
 **Failure Modes**:
 
@@ -184,6 +190,7 @@ server:
 spec:
   source: "https://www.googleapis.com/discovery/v1/apis/drive/v3/rest"
   format: openapi3  # openapi3 | openapi3.1
+  base_url: "https://www.googleapis.com"
   total_endpoints: 38
   scoped_endpoints: 6
 
@@ -252,18 +259,18 @@ groups:
       # ... additional tools ...
 
 auth:
-  pattern: embeddedAuthServer
-  upstream:
-    type: oidc
+  type: oauth_bearer  # oauth_bearer | api_key | none
+  oauth:
     issuer: "https://accounts.google.com"
     scopes:
       - openid
       - email
       - https://www.googleapis.com/auth/drive.readonly
   notes: >
-    Google Drive uses OAuth2 with OIDC. Toolhive's embedded auth server
-    handles the flow. The MCP server enables allow_token_passthrough and
-    forwards the Bearer token to Drive API endpoints.
+    Google Drive uses OAuth2 with OIDC. The MCP server receives an access
+    token via the Authorization header and forwards it to Drive API endpoints.
+    The generator maps this to the appropriate ToolHive auth config
+    (embeddedAuthServer) when producing deployment manifests.
 ```
 
 **Schema Rules**:
@@ -271,12 +278,13 @@ auth:
 - `version`: Always `"1"`. Reserved for future schema evolution.
 - `server.name`: Used as the Docker image name, ToolHive registry entry key, and Python package name. Must be a valid DNS label (`[a-z0-9-]+`).
 - `spec.source`: URL or relative file path to the OpenAPI spec.
+- `spec.base_url`: Required. The base URL for API requests. Derived from the spec's `servers[0].url` during Phase 1, but explicit here so it's visible and editable (e.g., to point at a staging environment).
 - `spec.total_endpoints` / `spec.scoped_endpoints`: Informational counts for human context. The generator ignores them.
 - `groups`: At least one required. If grouping doesn't matter, put everything in one group.
 - `groups[].tools[].endpoint`: Must match an endpoint in the spec exactly (`METHOD /path`).
 - `groups[].tools[].tool_name`: Unique within the server. Snake_case, ≤40 chars.
 - `workflows`: Optional list of plain-English workflow descriptions. Used by Phase 1 AI to drive endpoint clustering. Preserved in the YAML as documentation for anyone reading the config later.
-- `auth.pattern`: Must be one of: `embeddedAuthServer`, `bearerToken`, `headerInjection`, `upstreamInject`, `none`.
+- `auth.type`: How the MCP server maps incoming auth to outgoing requests. One of: `oauth_bearer` (server forwards an OAuth access token), `api_key` (server forwards a static API key), or `none`.
 - `hints`: Optional list of free-text strings per tool. The generator ignores them — they pass through to Phase 4 as instructions to the AI polish step. Use hints to flag known issues the generator can't handle: pagination quirks, large responses that need shaping, required-but-not-marked-required params, rate limit concerns, multi-call opportunities, or anything else that needs human or AI attention after code generation.
 - Any tools not in the YAML are ignored.
 - In contrast, any parameters not in the YAML are pulled from the spec and used as-is. The YAML provides overrides for parameters.
@@ -293,11 +301,12 @@ auth:
 
 | Section | Review Focus |
 |---------|-------------|
+| `scoping-summary.md` | Read the AI's reasoning for endpoint selection, description rewrites, and flagged issues. Use this as context for reviewing the YAML. |
 | `groups` and `tools` | Are the right endpoints selected? Are any missing? Are any unnecessary? |
 | `tool_name` values | Are names clear and consistent? Will an LLM understand the intent from the name alone? |
 | Tool descriptions | Do they accurately describe behavior? Are constraints and defaults correct? |
 | Parameter descriptions | Are inferred descriptions accurate? |
-| `auth` | Is the detected pattern correct? Are scopes complete? |
+| `auth` | Is the detected pattern correct? Are scopes complete? OAuth scopes are often missing or incomplete in specs — insufficient scopes will cause 403 errors at runtime that are hard to diagnose. |
 
 **What the human provides at this stage**:
 
@@ -321,7 +330,7 @@ If there is brittleness in this approach, the AI review in phase 4 can help reco
 | Input | Description |
 |-------|-------------|
 | `mcp-scope.yaml` | The reviewed config from Phase 2 |
-| `py-mcp-template` | The base Python MCP server template (separate repo) |
+| `mcp-template-py` | The base Python MCP server template (separate repo) |
 | OpenAPI spec | The original spec (referenced by `spec.source` in the YAML), used to extract request/response schemas |
 
 **What gets generated**:
@@ -354,12 +363,13 @@ Most of the project comes from `mcp-template-py` unchanged — the auth middlewa
 
 **Generation rules**:
 
-1. **Project scaffolding**: Copy `py-mcp-template` as the base. Set `server.name` in `pyproject.toml`, `Dockerfile` labels, and module names.
+1. **Project scaffolding**: Copy `mcp-template-py` as the base. Set `server.name` in `pyproject.toml`, `Dockerfile` labels, and module names.
 
 2. **Pydantic models** (`models/schemas.py`):
    - For each tool's endpoint, extract the request body schema and response schema from the OpenAPI spec.
    - Generate Pydantic v2 models with `Field()` descriptions pulled from the YAML's parameter descriptions (which override the spec's).
    - Path parameters, query parameters, and request body fields each produce model fields.
+   - In v1, arguments map 1:1 with the API's parameter and request body structure — no flattening or abstraction. For APIs with deeply nested request bodies, Phase 1 can add a hint and Phase 4 can suggest flattening the tool signature to be more LLM-friendly. Automated argument flattening is a future enhancement.
 
 3. **Tool modules** (`tools/<group_name>.py`):
    - One Python module per group in the YAML.
@@ -371,18 +381,27 @@ Most of the project comes from `mcp-template-py` unchanged — the auth middlewa
 4. **HTTP client** (`client.py`):
    - Async HTTP client (httpx-based) with `allow_token_passthrough: true`.
    - Reads the `Authorization` header from the incoming MCP request context and forwards it to the upstream API.
-   - Base URL derived from the OpenAPI spec's `servers[0].url`.
+   - Base URL from `spec.base_url` in the YAML.
    - No retry logic, no caching — keep it simple for v1.
 
 5. **Server entrypoint** (`server.py`):
    - Registers all tools from all group modules.
    - Configures structured logging (JSON format).
-   - Exposes the MCP server on the standard stdio transport (ToolHive handles HTTP/SSE transport externally).
+   - Exposes the MCP server via Streamable HTTP transport (inherited from `mcp-template-py`, which uses FastMCP's `streamable_http_app()` mounted in a Starlette app with uvicorn).
 
 6. **ToolHive deployment manifests** (`deploy/`):
+   - The generator maps `auth.type` from the YAML to ToolHive-specific configs:
+
+     | `auth.type` | ToolHive Config Generated |
+     |-------------|--------------------------|
+     | `oauth_bearer` | `MCPExternalAuthConfig` of type `embeddedAuthServer`, using `auth.oauth.issuer` and `auth.oauth.scopes` |
+     | `api_key` | `MCPExternalAuthConfig` of type `headerInjection` or `bearerToken`, referencing a K8s Secret |
+     | `none` | No auth config |
+
    - `mcpserver.yaml`: ToolHive `MCPServer` CRD manifest with the Docker image reference, resource limits, and auth config reference.
-   - `mcpexternalauthconfig.yaml`: If `auth.pattern` is `embeddedAuthServer`, generates the `MCPExternalAuthConfig` CRD with the upstream IDP config from the YAML.
+   - `mcpexternalauthconfig.yaml`: Generated based on the mapping above.
    - `secret.yaml`: Template with placeholder values for credentials. Never contains actual secrets.
+   - In v1, these are starter templates that must be reviewed before applying — the mapping from `auth.type` to ToolHive CRDs may need manual adjustment for non-standard configurations. Making deployment manifests more automated and reliable is a v2 goal.
 
 **Auth wiring**:
 
@@ -392,7 +411,7 @@ The generated MCP server has **zero OAuth logic**. Auth is entirely ToolHive's r
 - Reads the `Authorization` header from the request context.
 - Forwards it as `Authorization: Bearer <token>` to the upstream API.
 
-This means the generator only needs to know the auth pattern (to produce the correct ToolHive CRD manifests), not the auth implementation.
+This is the same regardless of `auth.type`. For `oauth_bearer`, ToolHive acquires the access token and passes it through. For `api_key`, ToolHive injects the key into the request before it reaches the MCP server — the server still just sees and forwards an Authorization header. The MCP server never needs to know which auth pattern is in use.
 
 ---
 
@@ -427,6 +446,7 @@ This means the generator only needs to know the auth pattern (to produce the cor
    - Token passthrough is enabled.
    - The `Authorization` header is forwarded on every API call.
    - No hardcoded credentials in the generated code.
+   - If the `mcp-scope.yaml` has hints about incomplete OAuth scopes, verify scopes are correct and flag again if still unresolved.
 
 4. **ToolHive integration**
    - CRD manifests are valid YAML and reference the correct image.
@@ -476,7 +496,7 @@ The primary threat surface is the generated MCP server running in a customer's c
 
 ### Authentication and Authorization
 
-The generated MCP server performs no authentication. All auth is delegated to ToolHive via the patterns documented in the `auth` section of `mcp-scope.yaml`. The server only forwards tokens — it never validates, stores, or logs them.
+The generated MCP server performs no authentication or authorization. All auth is delegated to ToolHive via the patterns documented in the `auth` section of `mcp-scope.yaml`. The server only forwards tokens — it never validates, stores, or logs them. Token validation and authorization enforcement happen at two layers: ToolHive (incoming) and the upstream API itself (outgoing). The upstream API is the ultimate authority — if a token is invalid or lacks required scopes, the API will return 401/403.
 
 ### Secrets Management
 
@@ -532,7 +552,7 @@ N/A — this is a new system with no prior version.
 
 - **`mcp-scope.yaml` versioning**: The `version: "1"` field allows future schema evolution. The generator checks the version and rejects unknown versions with a clear error.
 - **Tool consolidation (v2)**: The YAML schema can be extended to support many-to-one endpoint-to-tool mappings without breaking existing 1:1 configs.
-- **Additional languages**: The generator currently targets Python via `py-mcp-template`. Additional language templates (TypeScript, Go) can be added as separate template repos with their own generators, all reading the same `mcp-scope.yaml`.
+- **Additional languages**: The generator currently targets Python via `mcp-template-py`. Additional language templates (TypeScript, Go) can be added as separate template repos with their own generators, all reading the same `mcp-scope.yaml`.
 - **Spec diffing**: A future tool can diff two versions of `mcp-scope.yaml` (generated from old and new specs) to surface what changed.
 
 ## Implementation Plan
@@ -540,7 +560,7 @@ N/A — this is a new system with no prior version.
 ### Phase A: Foundation
 
 - Define and validate the `mcp-scope.yaml` JSON schema.
-- Build the deterministic code generator (Phase 3) against the schema using `py-mcp-template`.
+- Build the deterministic code generator (Phase 3) against the schema using `mcp-template-py`.
 - Write a sample `mcp-scope.yaml` for Google Drive by hand to bootstrap testing.
 - Verify the generator produces a working server from the hand-written YAML.
 
@@ -564,7 +584,7 @@ N/A — this is a new system with no prior version.
 
 ### Dependencies
 
-- `py-mcp-template` repo (existing, maintained by Stacklok).
+- `mcp-template-py` repo (existing, maintained by Stacklok).
 - ToolHive auth patterns (embedded auth server, token passthrough) — already implemented.
 - North cluster access for deployment and testing.
 
@@ -577,7 +597,7 @@ N/A — this is a new system with no prior version.
 ## Open Questions
 
 1. **Spec format support**: Should we support OpenAPI 2.0 (Swagger) specs, or require users to convert to 3.x first? Many enterprise APIs still publish 2.0.
-2. **Template repo coupling**: Should `py-mcp-template` be vendored into this repo or referenced as a separate dependency? Vendoring simplifies versioning; a separate repo allows independent evolution.
+2. **Template repo coupling**: Should `mcp-template-py` be vendored into this repo or referenced as a separate dependency? Vendoring simplifies versioning; a separate repo allows independent evolution.
 3. **Is Scripting Going to be Too Brittle?** The deterministic generator is simple but may not handle all edge cases in real-world specs. The AI validation step is a safety net, but how often will it need to catch generator bugs? If the failure rate is high, we may need to invest in a more robust generator or add more rules to handle common patterns (pagination, nested schemas, etc.).
 
 ## References
