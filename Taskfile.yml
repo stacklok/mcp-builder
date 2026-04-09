@@ -7,17 +7,18 @@ tasks:
       - uv sync --dev --all-packages --group security
 
   lint:
-    desc: Run linting with ruff
+    desc: Run linting with ruff (read-only, no auto-fix)
     cmds:
-      - uv run ruff check . --fix
+      - uv run ruff check .
+      - uv run ruff format --check .
     deps:
       - install
 
   format:
     desc: Fix linting issues and format code
     cmds:
-      - uv run ruff format .
       - uv run ruff check --fix .
+      - uv run ruff format .
     deps:
       - install
 
@@ -37,20 +38,23 @@ tasks:
 
   check:
     desc: Run all checks (lint, typecheck, tests, and security)
-    deps:
-      - lint
-      - format
-      - typecheck
-      - test
-      - security
+    cmds:
+      - task: lint
+      - task: typecheck
+      - task: test
+      - task: security
 
   security:
-    desc: Run security scanning (fails on findings)
+    desc: Run security scanning (generates reports, then fails on findings)
     cmds:
-      - uv run bandit -c pyproject.toml -r src/
-      - uv run pip-audit
-      - uv run bandit -c pyproject.toml -r src/ -f json -o bandit-report.json
-      - uv run pip-audit --format=json --output=pip-audit-report.json
+      - |
+        bandit_exit=0
+        audit_exit=0
+        uv run bandit -c pyproject.toml -r src/ -f json -o bandit-report.json || bandit_exit=$?
+        uv run pip-audit --format=json --output=pip-audit-report.json || audit_exit=$?
+        uv run bandit -c pyproject.toml -r src/ || bandit_exit=$?
+        uv run pip-audit || audit_exit=$?
+        exit $((bandit_exit + audit_exit))
     deps:
       - install
 

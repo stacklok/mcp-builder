@@ -28,7 +28,7 @@ build-backend = "hatchling.build"
 exclude_dirs = ["tests"]
 
 [tool.pytest.ini_options]
-addopts = "--cov=src/mcp_builder --cov-report=html --cov-report=term-missing"
+addopts = "--cov=mcp_builder --cov-report=html --cov-report=term-missing"
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
