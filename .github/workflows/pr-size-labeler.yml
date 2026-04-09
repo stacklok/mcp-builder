@@ -1,0 +1,91 @@
+name: PR Size Labeler
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  label-pr:
+    name: Apply Size Label
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get PR change stats
+        id: pr-stats
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        with:
+          script: |
+            const pr = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.payload.pull_request.number
+            });
+
+            const totalChanges = pr.data.additions + pr.data.deletions;
+            core.info(`Additions: ${pr.data.additions}, Deletions: ${pr.data.deletions}, Total: ${totalChanges}`);
+            return totalChanges;
+
+      - name: Apply size label
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
+        with:
+          script: |
+            const totalChanges = ${{ steps.pr-stats.outputs.result }};
+
+            const thresholds = [
+              { max: 100,  label: 'size/XS', color: '3CBF00' },
+              { max: 300,  label: 'size/S',  color: '5D9801' },
+              { max: 600,  label: 'size/M',  color: '7F7203' },
+              { max: 1000, label: 'size/L',  color: 'A14C05' },
+              { max: Infinity, label: 'size/XL', color: 'C32607' },
+            ];
+            const match = thresholds.find(t => totalChanges < t.max);
+            core.info(`${totalChanges} lines changed → ${match.label}`);
+
+            const { data: repoLabels } = await github.rest.issues.listLabelsForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              per_page: 100,
+            });
+            const repoLabelNames = new Set(repoLabels.map(l => l.name));
+
+            for (const t of thresholds) {
+              if (!repoLabelNames.has(t.label)) {
+                await github.rest.issues.createLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  name: t.label,
+                  color: t.color,
+                });
+                core.info(`Created missing label: ${t.label}`);
+              }
+            }
+
+            const { data: prLabels } = await github.rest.issues.listLabelsOnIssue({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number
+            });
+
+            const allSizeLabels = thresholds.map(t => t.label);
+            const staleLabels = prLabels
+              .map(l => l.name)
+              .filter(name => allSizeLabels.includes(name) && name !== match.label);
+
+            for (const old of staleLabels) {
+              await github.rest.issues.removeLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.payload.pull_request.number,
+                name: old
+              });
+            }
+
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              labels: [match.label]
+            });

@@ -1,0 +1,62 @@
+version: '3'
+
+tasks:
+  install:
+    desc: Install dependencies
+    cmds:
+      - uv sync --dev --all-packages --group security
+
+  lint:
+    desc: Run linting with ruff
+    cmds:
+      - uv run ruff check . --fix
+    deps:
+      - install
+
+  format:
+    desc: Fix linting issues and format code
+    cmds:
+      - uv run ruff format .
+      - uv run ruff check --fix .
+    deps:
+      - install
+
+  typecheck:
+    desc: Run type checking with ty
+    cmds:
+      - uv run ty check .
+    deps:
+      - install
+
+  test:
+    desc: Run unit tests with pytest
+    cmds:
+      - uv run pytest -v
+    deps:
+      - install
+
+  check:
+    desc: Run all checks (lint, typecheck, tests, and security)
+    deps:
+      - lint
+      - format
+      - typecheck
+      - test
+      - security
+
+  security:
+    desc: Run security scanning (fails on findings)
+    cmds:
+      - uv run bandit -c pyproject.toml -r src/
+      - uv run pip-audit
+      - uv run bandit -c pyproject.toml -r src/ -f json -o bandit-report.json
+      - uv run pip-audit --format=json --output=pip-audit-report.json
+    deps:
+      - install
+
+  sbom:
+    desc: Generate Software Bill of Materials (SBOM)
+    cmds:
+      - uv run cyclonedx-py environment --output-format json --output-file sbom.json
+    deps:
+      - install
