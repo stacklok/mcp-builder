@@ -1,0 +1,21 @@
+version: "1"
+
+server:
+  name: minimal-api
+  description: "A minimal MCP server"
+
+spec:
+  source: "https://example.com/openapi.json"
+  format: openapi3
+  base_url: "https://api.example.com"
+
+groups:
+  - name: default
+    description: "Default tool group"
+    tools:
+      - tool_name: get_status
+        endpoint: GET /status
+        description: "Get the API status."
+
+auth:
+  type: none
