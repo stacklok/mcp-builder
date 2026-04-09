@@ -1,0 +1,14 @@
+name: Code Checks
+permissions:
+  contents: read
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches: [ main ]
+
+jobs:
+  code_quality:
+    name: Code Quality
+    uses: ./.github/workflows/code-quality.yml
