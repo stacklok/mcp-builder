@@ -13,12 +13,12 @@ from pathlib import Path
 import pytest
 import yaml
 
-from .conftest import ALL_FIXTURES, FixtureConfig, run_generator, spec_available
+from .conftest import ALL_FIXTURES, FixtureConfig, pipeline_available, run_generator
 
 _google_drive = next(c for c in ALL_FIXTURES if c.server_name == "google-drive")
-requires_google_drive_spec = pytest.mark.skipif(
-    not spec_available(_google_drive),
-    reason="Google Drive OpenAPI spec not downloaded — run scripts/download_openapi_specs.sh",
+requires_google_drive_pipeline = pytest.mark.skipif(
+    not pipeline_available(_google_drive),
+    reason="Codegen not installed or Google Drive OpenAPI spec not downloaded",
 )
 
 
@@ -46,7 +46,7 @@ def _all_py_files(project_dir: Path) -> list[Path]:
 # Fixture: generate project once per config, shared across tests in a class
 # ---------------------------------------------------------------------------
 
-_AVAILABLE_FIXTURES = [c for c in ALL_FIXTURES if spec_available(c)]
+_AVAILABLE_FIXTURES = [c for c in ALL_FIXTURES if pipeline_available(c)]
 _FIXTURE_IDS = [c.server_name for c in _AVAILABLE_FIXTURES]
 
 
@@ -253,7 +253,7 @@ class TestDeploymentManifests:
 
 
 OAUTH_FIXTURES = [
-    c for c in ALL_FIXTURES if c.auth_type == "oauth_bearer" and spec_available(c)
+    c for c in ALL_FIXTURES if c.auth_type == "oauth_bearer" and pipeline_available(c)
 ]
 OAUTH_IDS = [c.server_name for c in OAUTH_FIXTURES]
 
@@ -337,14 +337,20 @@ class TestOAuthManifests:
         )
 
 
+_api_key_config = next(c for c in ALL_FIXTURES if c.auth_type == "api_key")
+
+
+@pytest.mark.skipif(
+    not pipeline_available(_api_key_config),
+    reason="Codegen not installed or api_key spec not available",
+)
 class TestApiKeyManifests:
     """Verify api_key auth produces correct deployment manifests."""
 
     @pytest.fixture
     def api_key_project(self, tmp_path: Path) -> tuple[FixtureConfig, Path]:
-        config = next(c for c in ALL_FIXTURES if c.auth_type == "api_key")
-        project_dir = run_generator(config, tmp_path)
-        return config, project_dir
+        project_dir = run_generator(_api_key_config, tmp_path)
+        return _api_key_config, project_dir
 
     def test_auth_config_type(
         self, api_key_project: tuple[FixtureConfig, Path]
@@ -375,14 +381,20 @@ class TestApiKeyManifests:
         assert manifest["stringData"]["api-key"] == "REPLACE_ME"
 
 
+_no_auth_config = next(c for c in ALL_FIXTURES if c.auth_type == "none")
+
+
+@pytest.mark.skipif(
+    not pipeline_available(_no_auth_config),
+    reason="Codegen not installed or no-auth spec not available",
+)
 class TestNoAuthManifests:
     """Verify auth type 'none' produces no auth config or secret."""
 
     @pytest.fixture
     def no_auth_project(self, tmp_path: Path) -> tuple[FixtureConfig, Path]:
-        config = next(c for c in ALL_FIXTURES if c.auth_type == "none")
-        project_dir = run_generator(config, tmp_path)
-        return config, project_dir
+        project_dir = run_generator(_no_auth_config, tmp_path)
+        return _no_auth_config, project_dir
 
     def test_no_auth_config(self, no_auth_project: tuple[FixtureConfig, Path]) -> None:
         _config, project_dir = no_auth_project
@@ -406,7 +418,7 @@ class TestNoAuthManifests:
 # ---------------------------------------------------------------------------
 
 
-@requires_google_drive_spec
+@requires_google_drive_pipeline
 class TestParameterOverrides:
     """Verify YAML parameter overrides are applied in generated code."""
 
@@ -420,7 +432,7 @@ class TestParameterOverrides:
         assert "The ID of the file to retrieve." in content
 
 
-@requires_google_drive_spec
+@requires_google_drive_pipeline
 class TestHintsNotInGeneratedCode:
     """Verify hints from the YAML are not present in generated Python code."""
 
@@ -435,7 +447,7 @@ class TestHintsNotInGeneratedCode:
         assert "consider field selection" not in content
 
 
-@requires_google_drive_spec
+@requires_google_drive_pipeline
 class TestDeterminism:
     """Verify the generator produces identical output for identical inputs."""
 

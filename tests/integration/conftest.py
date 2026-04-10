@@ -106,9 +106,19 @@ def template_dir() -> Path:
     return TEMPLATE_DIR
 
 
-def spec_available(config: FixtureConfig) -> bool:
-    """Check if the OpenAPI spec for a fixture exists (may need downloading)."""
-    return (OPENAPI_FIXTURES / config.openapi_yaml).exists()
+def _codegen_available() -> bool:
+    """Check if the code generator module is installed."""
+    try:
+        import mcp_builder.cli  # type: ignore[import-not-found]  # noqa: F401
+
+        return True
+    except ImportError:
+        return False
+
+
+def pipeline_available(config: FixtureConfig) -> bool:
+    """Check if a fixture can run the full pipeline (codegen + spec present)."""
+    return _codegen_available() and (OPENAPI_FIXTURES / config.openapi_yaml).exists()
 
 
 def run_generator(config: FixtureConfig, output_dir: Path) -> Path:
@@ -116,7 +126,7 @@ def run_generator(config: FixtureConfig, output_dir: Path) -> Path:
 
     Returns the generated project directory path.
     """
-    from mcp_builder.cli import run_pipeline
+    from mcp_builder.cli import run_pipeline  # type: ignore[import-not-found]
 
     return run_pipeline(
         scope_yaml=INTEGRATION_FIXTURES / config.scope_yaml,
