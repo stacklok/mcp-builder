@@ -1,0 +1,27 @@
+version: "1"
+
+server:
+  name: test-api
+  description: "Test API MCP server with OAuth"
+
+spec:
+  source: "test_openapi.yaml"
+  format: openapi3
+  base_url: "https://api.example.com"
+
+groups:
+  - name: item-operations
+    description: "Item operations"
+    tools:
+      - tool_name: get_item
+        endpoint: GET /items/{itemId}
+        description: "Get an item by its ID."
+
+auth:
+  type: oauth_bearer
+  oauth:
+    issuer: "https://accounts.google.com"
+    scopes:
+      - openid
+      - email
+      - https://www.googleapis.com/auth/drive.readonly
