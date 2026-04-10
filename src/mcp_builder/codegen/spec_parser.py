@@ -20,10 +20,13 @@ class OpenAPIParameter(BaseModel):
 
 
 class OperationInfo(BaseModel):
-    """Key fields extracted from an OpenAPI operation object."""
+    """Key fields extracted from an OpenAPI operation object.
+
+    Note: Only captures $ref-based schemas. Inline schemas are not extracted.
+    For issue #10, a helper to resolve $ref to class name may be needed.
+    """
 
     operation_id: str | None = None
-    parameters: list[OpenAPIParameter] = []
     request_body_ref: str | None = None
     response_ref: str | None = None
 
