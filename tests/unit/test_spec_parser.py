@@ -1,7 +1,5 @@
 """Tests for codegen.spec_parser — OpenAPI spec loading and parameter extraction."""
 
-from pathlib import Path
-
 import pytest
 
 from mcp_builder.codegen.spec_parser import (
@@ -12,19 +10,6 @@ from mcp_builder.codegen.spec_parser import (
     load_openapi_spec,
     parse_endpoint,
 )
-
-FIXTURES = Path(__file__).parent / "fixtures"
-
-
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
-
-
-@pytest.fixture()
-def spec():
-    """Load the test OpenAPI spec fixture."""
-    return load_openapi_spec(FIXTURES / "test_openapi.yaml")
 
 
 # ---------------------------------------------------------------------------

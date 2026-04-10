@@ -5,6 +5,15 @@ This module defines the data contract between spec analysis and rendering.
 All raw OpenAPI access happens here in build_server_plan(). Downstream
 renderers only receive the ServerPlan and never touch the spec.
 
+Terminology (OpenAPI → plan mapping):
+    - Parameters: path/query args from the URL (e.g., /items/{id}?fields=name).
+      Defined in the operation's ``parameters`` array.
+    - Body fields: properties of the JSON request body schema
+      (e.g., {"color": "red"}). Defined under ``requestBody.content``.
+    - Both are flattened into ParamPlan objects with a ``location`` tag
+      ("path", "query", or "body") so renderers don't need to know the
+      OpenAPI distinction.
+
 Reading guide:
     - ServerPlan is the root — it contains everything needed to generate
       an entire MCP server project.
@@ -28,6 +37,7 @@ from mcp_builder.codegen.spec_parser import (
     ExtractedBodyField,
     ExtractedParameter,
     OpenAPISpec,
+    PythonType,
     get_body_fields,
     get_parameters,
     parse_endpoint,
@@ -58,7 +68,7 @@ class ParamPlan(BaseModel):
 
     name: str  # original OpenAPI name
     py_name: str  # sanitized Python identifier (e.g., hyphens → underscores)
-    py_type: str  # Python type string (e.g., "str", "int", "list")
+    py_type: PythonType
     description: str
     required: bool
     location: Literal["path", "query", "body"]
@@ -199,10 +209,146 @@ def build_server_plan(scope: MCPScope, spec: OpenAPISpec) -> ServerPlan:
     )
 
 
+def _build_tool_plan(tool: Tool, spec: OpenAPISpec, group_name: str) -> ToolPlan:
+    """Build a ToolPlan for a single tool definition.
+
+    Extracts parameters from the OpenAPI spec, applies YAML overrides,
+    sanitizes names, and detects collisions.
+    """
+    tool_name = tool.tool_name
+    endpoint = tool.endpoint
+    description = tool.description
+    parameters = tool.parameters or []
+    hints: list[str] = tool.hints or []
+
+    method, path = parse_endpoint(endpoint)
+
+    # Build YAML override lookup: name → (description, required)
+    yaml_overrides: dict[str, tuple[str, bool]] = {
+        p.name: (p.description, p.required) for p in parameters
+    }
+
+    # OpenAPI splits parameters into three locations. For a request like
+    #   POST /items/{itemId}?fields=name  { "color": "red" }
+    # the three param kinds are:
+    #   path_params  — URL template slots (e.g., itemId)
+    #   query_params — ?key=value pairs  (e.g., fields)
+    #   body_fields  — JSON request body properties (e.g., color)
+    #
+    # NOTE: We intentionally skip header and cookie parameters — they are not
+    # exposed as tool arguments. Auth headers are handled by the client layer
+    # (token passthrough), and cookie params are not relevant for MCP tools.
+    spec_params = get_parameters(spec, method, path)
+    path_params = _build_param_plans(
+        [p for p in spec_params if p.location == "path"], yaml_overrides, "path"
+    )
+    query_params = _build_param_plans(
+        [p for p in spec_params if p.location == "query"], yaml_overrides, "query"
+    )
+
+    spec_body = get_body_fields(spec, method, path)
+    body_fields = _build_body_param_plans(spec_body, yaml_overrides)
+
+    # Detect and resolve name collisions across all param locations
+    all_params = path_params + query_params + body_fields
+    _resolve_name_collisions(all_params)
+
+    return ToolPlan(
+        tool_name=tool_name,
+        class_name=_tool_name_to_class(tool_name),
+        http_method=method,
+        path=path,
+        description=description,
+        path_params=path_params,
+        query_params=query_params,
+        body_fields=body_fields,
+        hints=hints,
+        group_name=group_name,
+    )
+
+
+def _build_param_plans(
+    params: list[ExtractedParameter],
+    yaml_overrides: dict[str, tuple[str, bool]],
+    location: Literal["path", "query"],
+) -> list[ParamPlan]:
+    """Convert URL parameters (path/query) into ParamPlan objects.
+
+    Input comes from the operation's ``parameters`` array in the OpenAPI spec.
+    YAML overrides from the scope file are applied on top.
+    """
+    plans = []
+    for param in params:
+        desc = param.description
+        required = param.required
+        if param.name in yaml_overrides:
+            desc, required = yaml_overrides[param.name]
+        py_type = OPENAPI_TYPE_MAP[param.schema_type]
+        plans.append(
+            ParamPlan(
+                name=param.name,
+                py_name=_sanitize_name(param.name),
+                py_type=py_type,
+                description=desc,
+                required=required,
+                location=location,
+                original_name=param.name,
+            )
+        )
+    return plans
+
+
+def _build_body_param_plans(
+    fields: list[ExtractedBodyField],
+    yaml_overrides: dict[str, tuple[str, bool]],
+) -> list[ParamPlan]:
+    """Convert JSON request body properties into ParamPlan objects.
+
+    Input comes from the ``requestBody`` schema in the OpenAPI spec.
+    YAML overrides from the scope file are applied on top.
+    """
+    plans = []
+    for field in fields:
+        desc = field.description
+        required = field.required
+        if field.name in yaml_overrides:
+            desc, required = yaml_overrides[field.name]
+        py_type = OPENAPI_TYPE_MAP[field.schema_type]
+        plans.append(
+            ParamPlan(
+                name=field.name,
+                py_name=_sanitize_name(field.name),
+                py_type=py_type,
+                description=desc,
+                required=required,
+                location="body",
+                original_name=field.name,
+            )
+        )
+    return plans
+
+
+def _build_auth_plan(scope: MCPScope) -> AuthPlan:
+    """Extract auth configuration from scope into an AuthPlan."""
+    if scope.auth.type == "oauth_bearer" and scope.auth.oauth is not None:
+        return AuthPlan(
+            type="oauth_bearer",
+            issuer=scope.auth.oauth.issuer,
+            scopes=list(scope.auth.oauth.scopes),
+        )
+    return AuthPlan(type=scope.auth.type)
+
+
+# ---------------------------------------------------------------------------
+# Utilities — naming, sanitization, collision resolution
+# ---------------------------------------------------------------------------
+
+
 def server_name_to_module(name: str) -> str:
     """Convert a DNS-label server name to a Python module name.
 
-    Pipeline stage: planning (naming utility).
+    The generated MCP server project uses this as its Python package name
+    (e.g., the directory under src/).
 
     Example:
         >>> server_name_to_module("google-drive")
@@ -251,112 +397,6 @@ def _sanitize_name(name: str) -> str:
     return sanitized
 
 
-def _build_tool_plan(tool: Tool, spec: OpenAPISpec, group_name: str) -> ToolPlan:
-    """Build a ToolPlan for a single tool definition.
-
-    Extracts parameters from the OpenAPI spec, applies YAML overrides,
-    sanitizes names, and detects collisions.
-    """
-    tool_name = tool.tool_name
-    endpoint = tool.endpoint
-    description = tool.description
-    parameters = tool.parameters or []
-    hints: list[str] = tool.hints or []
-
-    method, path = parse_endpoint(endpoint)
-
-    # Build YAML override lookup: name → (description, required)
-    yaml_overrides: dict[str, tuple[str, bool]] = {
-        p.name: (p.description, p.required) for p in parameters
-    }
-
-    # Extract params from spec and apply overrides.
-    # NOTE: We intentionally skip header and cookie parameters — they are not
-    # exposed as tool arguments. Auth headers are handled by the client layer
-    # (token passthrough), and cookie params are not relevant for MCP tools.
-    spec_params = get_parameters(spec, method, path)
-    path_params = _build_param_plans(
-        [p for p in spec_params if p.location == "path"], yaml_overrides, "path"
-    )
-    query_params = _build_param_plans(
-        [p for p in spec_params if p.location == "query"], yaml_overrides, "query"
-    )
-
-    # Extract body fields
-    spec_body = get_body_fields(spec, method, path)
-    body_fields = _build_body_param_plans(spec_body, yaml_overrides)
-
-    # Detect and resolve name collisions across all param locations
-    all_params = path_params + query_params + body_fields
-    _resolve_name_collisions(all_params)
-
-    return ToolPlan(
-        tool_name=tool_name,
-        class_name=_tool_name_to_class(tool_name),
-        http_method=method,
-        path=path,
-        description=description,
-        path_params=path_params,
-        query_params=query_params,
-        body_fields=body_fields,
-        hints=hints,
-        group_name=group_name,
-    )
-
-
-def _build_param_plans(
-    params: list[ExtractedParameter],
-    yaml_overrides: dict[str, tuple[str, bool]],
-    location: Literal["path", "query"],
-) -> list[ParamPlan]:
-    """Convert extracted parameters into ParamPlan objects with YAML overrides applied."""
-    plans = []
-    for param in params:
-        desc = param.description
-        required = param.required
-        if param.name in yaml_overrides:
-            desc, required = yaml_overrides[param.name]
-        py_type = OPENAPI_TYPE_MAP.get(param.schema_type, "str")
-        plans.append(
-            ParamPlan(
-                name=param.name,
-                py_name=_sanitize_name(param.name),
-                py_type=py_type,
-                description=desc,
-                required=required,
-                location=location,
-                original_name=param.name,
-            )
-        )
-    return plans
-
-
-def _build_body_param_plans(
-    fields: list[ExtractedBodyField],
-    yaml_overrides: dict[str, tuple[str, bool]],
-) -> list[ParamPlan]:
-    """Convert extracted body fields into ParamPlan objects."""
-    plans = []
-    for field in fields:
-        desc = field.description
-        required = field.required
-        if field.name in yaml_overrides:
-            desc, required = yaml_overrides[field.name]
-        py_type = OPENAPI_TYPE_MAP.get(field.schema_type, "str")
-        plans.append(
-            ParamPlan(
-                name=field.name,
-                py_name=_sanitize_name(field.name),
-                py_type=py_type,
-                description=desc,
-                required=required,
-                location="body",
-                original_name=field.name,
-            )
-        )
-    return plans
-
-
 def _resolve_name_collisions(params: list[ParamPlan]) -> None:
     """Detect and resolve py_name collisions by suffixing with location.
 
@@ -388,14 +428,3 @@ def _resolve_name_collisions(params: list[ParamPlan]) -> None:
         if len(group) > 1:
             for i, p in enumerate(group):
                 p.py_name = f"{py_name}_{i + 1}" if i > 0 else py_name
-
-
-def _build_auth_plan(scope: MCPScope) -> AuthPlan:
-    """Extract auth configuration from scope into an AuthPlan."""
-    if scope.auth.type == "oauth_bearer" and scope.auth.oauth is not None:
-        return AuthPlan(
-            type="oauth_bearer",
-            issuer=scope.auth.oauth.issuer,
-            scopes=list(scope.auth.oauth.scopes),
-        )
-    return AuthPlan(type=scope.auth.type)

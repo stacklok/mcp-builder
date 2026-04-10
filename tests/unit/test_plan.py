@@ -11,7 +11,6 @@ from mcp_builder.codegen.plan import (
     build_server_plan,
     server_name_to_module,
 )
-from mcp_builder.codegen.spec_parser import load_openapi_spec
 from mcp_builder.schema.models import load_scope
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -20,16 +19,6 @@ FIXTURES = Path(__file__).parent / "fixtures"
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
-
-
-@pytest.fixture()
-def spec():
-    return load_openapi_spec(FIXTURES / "test_openapi.yaml")
-
-
-@pytest.fixture()
-def scope():
-    return load_scope(FIXTURES / "test_scope.yaml")
 
 
 @pytest.fixture()

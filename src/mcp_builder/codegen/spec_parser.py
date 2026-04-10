@@ -7,6 +7,15 @@ functions to extract parameters and request body fields from operations.
 
 Downstream consumers (codegen.plan) call these helpers to build a
 ServerPlan. Renderers never call this module directly.
+
+OpenAPI terminology used in this module:
+    - Operation: a single HTTP method on a path (e.g., GET /items/{id}).
+      Each operation can have parameters and a request body.
+    - Parameter: a named value passed via URL path, query string, header,
+      or cookie (e.g., ``itemId`` in /items/{itemId}, ``fields`` in ?fields=name).
+    - Body field: a property of the JSON request body schema
+      (e.g., ``name`` in {"name": "foo"}). Body fields are separate from
+      parameters in OpenAPI — they live under ``requestBody``, not ``parameters``.
 """
 
 from __future__ import annotations
@@ -42,7 +51,12 @@ OpenAPISchema = Schema30 | Schema31
 # OpenAPI types that map to Python built-in types. We intentionally error
 # on unknown types rather than silently defaulting to str — this catches
 # spec issues early rather than producing subtly wrong generated code.
-OPENAPI_TYPE_MAP: dict[str, str] = {
+# The set of parameter locations, schema types, and Python types we support,
+# expressed as Literal types for static type safety.
+ParameterLocation = Literal["path", "query", "header", "cookie"]
+PythonType = Literal["str", "int", "float", "bool", "list", "dict"]
+
+OPENAPI_TYPE_MAP: dict[str, PythonType] = {
     "string": "str",
     "integer": "int",
     "number": "float",
@@ -50,10 +64,6 @@ OPENAPI_TYPE_MAP: dict[str, str] = {
     "array": "list",
     "object": "dict",
 }
-
-# The set of parameter locations and schema types we support, expressed
-# as Literal types for static type safety.
-ParameterLocation = Literal["path", "query", "header", "cookie"]
 SchemaType = Literal["string", "integer", "number", "boolean", "array", "object"]
 
 
@@ -170,6 +180,11 @@ def _get_operation(
 
     Shared by get_parameters() and get_body_fields() to avoid
     duplicating the path/method lookup and error handling.
+
+    Example:
+        path_item, operation = _get_operation(spec, "GET", "/items/{itemId}")
+        # path_item contains all methods for /items/{itemId}
+        # operation is the GET operation object
 
     Raises:
         KeyError: If the path or method is not found in the spec.
