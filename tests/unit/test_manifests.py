@@ -100,8 +100,9 @@ def test_auth_config_api_key_secret_ref(scope_api_key: MCPScope) -> None:
     assert result is not None
     parsed = yaml.safe_load(result)
     bearer = parsed["spec"]["bearerToken"]
-    assert bearer["secretRef"]["name"] == "weather-api-secret"
-    assert bearer["key"] == "api-key"
+    secret_ref = bearer["secretRef"]
+    assert secret_ref["name"] == "weather-api-secret"
+    assert secret_ref["key"] == "api-key"
 
 
 def test_auth_config_none_returns_none(minimal_scope: MCPScope) -> None:

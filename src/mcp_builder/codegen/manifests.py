@@ -49,7 +49,7 @@ def generate_auth_config(scope: MCPScope) -> str | None:
     name = scope.server.name
     manifest: dict[str, Any] = {
         "apiVersion": "mcp.toolhive.stacklok.dev/v1alpha1",
-        "kind": "AuthConfig",
+        "kind": "MCPExternalAuthConfig",
         "metadata": {"name": f"{name}-auth"},
         "spec": {},
     }
@@ -71,8 +71,7 @@ def generate_auth_config(scope: MCPScope) -> str | None:
         manifest["spec"] = {
             "type": "bearerToken",
             "bearerToken": {
-                "secretRef": {"name": f"{name}-secret"},
-                "key": "api-key",
+                "secretRef": {"name": f"{name}-secret", "key": "api-key"},
             },
         }
 
@@ -98,6 +97,7 @@ def generate_secret(scope: MCPScope) -> str | None:
         "apiVersion": "v1",
         "kind": "Secret",
         "metadata": {"name": f"{name}-secret"},
+        "type": "Opaque",
     }
 
     if scope.auth.type == "oauth_bearer":

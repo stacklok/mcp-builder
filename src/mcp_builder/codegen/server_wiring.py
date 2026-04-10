@@ -96,7 +96,7 @@ def patch_app_builder(content: str, module_name: str) -> str:
     stopped_log = 'AppBuilder.logger.info("MCP session manager stopped")'
     content = content.replace(
         stopped_log,
-        "await client.close()\n        " + stopped_log,
+        "await client.close()\n            " + stopped_log,
     )
 
     return content
