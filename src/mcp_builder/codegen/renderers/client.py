@@ -17,6 +17,7 @@ from __future__ import annotations
 import textwrap
 
 from mcp_builder.codegen.plan import ServerPlan
+from mcp_builder.codegen.renderers.escape import escape_python_string
 
 _CLIENT_TEMPLATE = textwrap.dedent('''\
     """Async HTTP client for upstream API calls.
@@ -90,10 +91,5 @@ def render_client_module(plan: ServerPlan) -> str:
     """
     return _CLIENT_TEMPLATE.format(
         module_name=plan.module_name,
-        base_url=_py_string_escape(plan.base_url),
+        base_url=escape_python_string(plan.base_url),
     )
-
-
-def _py_string_escape(value: str) -> str:
-    """Escape a string for use inside a Python double-quoted string literal."""
-    return value.replace("\\", "\\\\").replace('"', '\\"')

@@ -17,6 +17,7 @@ from pathlib import Path
 from jinja2 import Environment, FileSystemLoader
 
 from mcp_builder.codegen.plan import ServerPlan
+from mcp_builder.codegen.renderers.escape import escape_python_string
 
 logger = logging.getLogger(__name__)
 
@@ -49,11 +50,6 @@ def render_parameter_models(plan: ServerPlan) -> str:
         trim_blocks=True,
         lstrip_blocks=True,
     )
-    env.filters["py_string"] = _py_string_escape
+    env.filters["py_string"] = escape_python_string
     template = env.get_template("parameter_model.py.jinja2")
     return template.render(tools=tools_with_body)
-
-
-def _py_string_escape(value: str) -> str:
-    """Escape a string for use inside a Python double-quoted string literal."""
-    return value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")

@@ -15,6 +15,7 @@ import shutil
 from pathlib import Path
 
 from mcp_builder.codegen.plan import ServerPlan
+from mcp_builder.codegen.renderers.escape import escape_toml_string
 
 logger = logging.getLogger(__name__)
 
@@ -90,10 +91,9 @@ def _update_pyproject(pyproject_path: Path, plan: ServerPlan) -> None:
     )
 
     # Replace description (escape quotes for valid TOML).
-    escaped_desc = plan.description.replace("\\", "\\\\").replace('"', '\\"')
     text = re.sub(
         r'description = ".*?"',
-        f'description = "{escaped_desc}"',
+        f'description = "{escape_toml_string(plan.description)}"',
         text,
     )
 
