@@ -20,6 +20,40 @@ OPENAPI_TYPE_MAP: dict[str, str] = {
 }
 
 
+def _sanitize_name(name: str) -> str:
+    """Convert an OpenAPI parameter name to a valid Python identifier.
+
+    Replaces hyphens, dots, and dollar signs with underscores, then strips
+    any leading underscores introduced by the replacement (e.g. ``$filter``
+    becomes ``filter``).  If the result starts with a digit or is empty,
+    ``param_`` is prepended.  The final value is guaranteed to satisfy
+    ``str.isidentifier()``.
+    """
+    sanitized = name.replace("-", "_").replace(".", "_").replace("$", "_")
+    sanitized = sanitized.lstrip("_")
+    if not sanitized or sanitized[0].isdigit():
+        sanitized = "param_" + sanitized
+    assert sanitized.isidentifier(), (
+        f"Could not sanitize {name!r} to a valid identifier"
+    )
+    return sanitized
+
+
+def _build_path_fstring(path: str, path_param_names: dict[str, str]) -> str:
+    """Build the path string for a request, replacing OpenAPI placeholders.
+
+    ``path_param_names`` maps original OpenAPI name -> sanitized Python name.
+    Returns a bare string (no f-prefix) when there are no path params, or an
+    f-string literal (with the ``f`` prefix) when substitution is needed.
+    """
+    if not path_param_names:
+        return f'"{path}"'
+    result = path
+    for original, sanitized in path_param_names.items():
+        result = result.replace(f"{{{original}}}", f"{{{sanitized}}}")
+    return f'f"{result}"'
+
+
 def generate_tools(scope: MCPScope, spec: dict, module_name: str) -> str:
     """Generate the tools.py module with a Tools class.
 
@@ -82,28 +116,50 @@ def _generate_method(tool: Tool, spec: dict) -> list[str]:
         for override in tool.parameters:
             yaml_overrides[override.name] = (override.description, override.required)
 
-    # Build ordered arg list: required first, then optional
-    required_args: list[tuple[str, str, str]] = []  # (name, py_type, description)
-    optional_args: list[tuple[str, str, str]] = []
+    # Assign sanitized names, then detect collisions and suffix with location.
+    # Each entry: (sanitized_name, original_name, location, OpenAPIParameter)
+    entries: list[tuple[str, str, str, OpenAPIParameter]] = []
+    for param in path_params:
+        entries.append((_sanitize_name(param.name), param.name, "path", param))
+    for param in query_params:
+        entries.append((_sanitize_name(param.name), param.name, "query", param))
+    for param in body_params:
+        entries.append((_sanitize_name(param.name), param.name, "body", param))
 
-    for param in path_params + query_params + body_params:
+    # Count occurrences of each sanitized name to find collisions.
+    name_counts: dict[str, int] = {}
+    for sanitized, _, _, _ in entries:
+        name_counts[sanitized] = name_counts.get(sanitized, 0) + 1
+
+    deduped: list[tuple[str, str, str, OpenAPIParameter]] = []
+    for sanitized, original, location, param in entries:
+        if name_counts[sanitized] > 1:
+            sanitized = f"{sanitized}_{location}"
+        deduped.append((sanitized, original, location, param))
+
+    # Build ordered arg list: required first, then optional.
+    # Each arg: (sanitized_name, original_name, location, py_type, description)
+    required_args: list[tuple[str, str, str, str, str]] = []
+    optional_args: list[tuple[str, str, str, str, str]] = []
+
+    for sanitized, original, location, param in deduped:
         py_type = OPENAPI_TYPE_MAP.get(param.schema_type, "str")
         desc, required = _resolve_param_info(param, yaml_overrides)
         desc_escaped = _escape_description(desc)
         if required:
-            required_args.append((param.name, py_type, desc_escaped))
+            required_args.append((sanitized, original, location, py_type, desc_escaped))
         else:
-            optional_args.append((param.name, py_type, desc_escaped))
+            optional_args.append((sanitized, original, location, py_type, desc_escaped))
 
     # Build signature lines
     sig_parts: list[str] = ["        self,"]
-    for name, py_type, desc in required_args:
+    for sanitized, _orig, _loc, py_type, desc in required_args:
         sig_parts.append(
-            f'        {name}: Annotated[{py_type}, Field(description="{desc}")],'
+            f'        {sanitized}: Annotated[{py_type}, Field(description="{desc}")],'
         )
-    for name, py_type, desc in optional_args:
+    for sanitized, _orig, _loc, py_type, desc in optional_args:
         sig_parts.append(
-            f'        {name}: Annotated[{py_type} | None, Field(description="{desc}")] = None,'
+            f'        {sanitized}: Annotated[{py_type} | None, Field(description="{desc}")] = None,'
         )
 
     desc_escaped = _escape_description(tool.description)
@@ -114,30 +170,35 @@ def _generate_method(tool: Tool, spec: dict) -> list[str]:
     lines.append("    ) -> str:")
     lines.append(f'        """{desc_escaped}"""')
 
-    # Build call body
-    path_param_names = {p.name for p in path_params}
-    query_param_names = [p.name for p in query_params]
-    body_param_names = [p.name for p in body_params]
+    # Build call body using sanitized names for values, original names for keys.
+    all_args = required_args + optional_args
 
-    # Path interpolation: OpenAPI {paramName} -> Python f-string
-    # The param names in the path match the flat arg names directly
-    has_path_params = bool(path_param_names)
-    f_prefix = "f" if has_path_params else ""
-    path_str = f'{f_prefix}"{path}"'
+    path_arg_map: dict[str, str] = {
+        orig: san for san, orig, loc, _pt, _desc in all_args if loc == "path"
+    }
+    query_arg_pairs: list[tuple[str, str]] = [
+        (orig, san) for san, orig, loc, _pt, _desc in all_args if loc == "query"
+    ]
+    body_arg_pairs: list[tuple[str, str]] = [
+        (orig, san) for san, orig, loc, _pt, _desc in all_args if loc == "body"
+    ]
 
-    # Query params dict comprehension (filter out None values)
-    if query_param_names:
-        inner = ", ".join(f'"{n}": {n}' for n in query_param_names)
+    # Path f-string uses sanitized variable names
+    path_str = _build_path_fstring(path, path_arg_map)
+
+    # Query params dict: original name as key, sanitized name as value
+    if query_arg_pairs:
+        inner = ", ".join(f'"{orig}": {san}' for orig, san in query_arg_pairs)
         params_expr = "{k: v for k, v in {" + inner + "}.items() if v is not None}"
-        params_line = f"            params={params_expr},"
+        params_line: str | None = f"            params={params_expr},"
     else:
         params_line = None
 
-    # Body json dict comprehension (filter out None values)
-    if body_param_names:
-        inner = ", ".join(f'"{n}": {n}' for n in body_param_names)
+    # Body json dict: original name as key, sanitized name as value
+    if body_arg_pairs:
+        inner = ", ".join(f'"{orig}": {san}' for orig, san in body_arg_pairs)
         body_expr = "{k: v for k, v in {" + inner + "}.items() if v is not None}"
-        body_line = f"            json_body={body_expr},"
+        body_line: str | None = f"            json_body={body_expr},"
     else:
         body_line = None
 

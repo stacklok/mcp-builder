@@ -152,3 +152,148 @@ def test_tools_deterministic(scope_with_tools: MCPScope, openapi_spec: dict) -> 
     r1 = generate_tools(scope_with_tools, openapi_spec, "test_api_mcp")
     r2 = generate_tools(scope_with_tools, openapi_spec, "test_api_mcp")
     assert r1 == r2
+
+
+def test_tools_sanitizes_hyphenated_param_names() -> None:
+    """Params like page-size become page_size in Python but keep original name in HTTP dict."""
+    spec = {
+        "paths": {
+            "/search": {
+                "get": {
+                    "operationId": "search",
+                    "parameters": [
+                        {
+                            "name": "page-size",
+                            "in": "query",
+                            "required": False,
+                            "schema": {"type": "integer"},
+                            "description": "Page size",
+                        },
+                        {
+                            "name": "sort-by",
+                            "in": "query",
+                            "required": False,
+                            "schema": {"type": "string"},
+                            "description": "Sort field",
+                        },
+                    ],
+                    "responses": {"200": {"description": "OK"}},
+                }
+            }
+        },
+        "components": {"schemas": {}},
+    }
+    scope = MCPScope.model_validate(
+        {
+            "version": "1",
+            "server": {"name": "test-api", "description": "Test"},
+            "spec": {
+                "source": "test.yaml",
+                "format": "openapi3",
+                "base_url": "https://example.com",
+            },
+            "groups": [
+                {
+                    "name": "search",
+                    "description": "Search",
+                    "tools": [
+                        {
+                            "tool_name": "search_items",
+                            "endpoint": "GET /search",
+                            "description": "Search for items.",
+                        }
+                    ],
+                }
+            ],
+            "auth": {"type": "none"},
+        }
+    )
+    output = generate_tools(scope, spec, "test_api_mcp")
+    # Sanitized Python names
+    assert "page_size:" in output
+    assert "sort_by:" in output
+    # Original names in HTTP dict
+    assert '"page-size": page_size' in output
+    assert '"sort-by": sort_by' in output
+    # Should compile
+    compile(output, "<test>", "exec")
+
+
+def test_tools_handles_name_collision() -> None:
+    """Same param name in path and body gets suffixed to avoid collision."""
+    spec = {
+        "paths": {
+            "/items/{id}": {
+                "parameters": [
+                    {
+                        "name": "id",
+                        "in": "path",
+                        "required": True,
+                        "schema": {"type": "string"},
+                        "description": "Item ID",
+                    },
+                ],
+                "put": {
+                    "operationId": "updateItem",
+                    "requestBody": {
+                        "required": True,
+                        "content": {
+                            "application/json": {
+                                "schema": {"$ref": "#/components/schemas/UpdateRequest"}
+                            }
+                        },
+                    },
+                    "responses": {"200": {"description": "OK"}},
+                },
+            }
+        },
+        "components": {
+            "schemas": {
+                "UpdateRequest": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "string", "description": "New ID value"},
+                        "name": {"type": "string", "description": "Name"},
+                    },
+                    "required": ["id", "name"],
+                },
+            }
+        },
+    }
+    scope = MCPScope.model_validate(
+        {
+            "version": "1",
+            "server": {"name": "test-api", "description": "Test"},
+            "spec": {
+                "source": "test.yaml",
+                "format": "openapi3",
+                "base_url": "https://example.com",
+            },
+            "groups": [
+                {
+                    "name": "items",
+                    "description": "Items",
+                    "tools": [
+                        {
+                            "tool_name": "update_item",
+                            "endpoint": "PUT /items/{id}",
+                            "description": "Update an item.",
+                            "parameters": [
+                                {
+                                    "name": "id",
+                                    "description": "The item ID.",
+                                    "required": True,
+                                }
+                            ],
+                        }
+                    ],
+                }
+            ],
+            "auth": {"type": "none"},
+        }
+    )
+    output = generate_tools(scope, spec, "test_api_mcp")
+    # Should not have duplicate "id" params — should be suffixed
+    assert "id_path:" in output or "id_body:" in output
+    # Should still compile
+    compile(output, "<test>", "exec")
