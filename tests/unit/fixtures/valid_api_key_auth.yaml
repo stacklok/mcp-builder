@@ -1,0 +1,26 @@
+version: "1"
+
+server:
+  name: weather-api
+  description: "Weather data MCP server"
+
+spec:
+  source: "https://api.weather.com/openapi.yaml"
+  format: openapi3.1
+  base_url: "https://api.weather.com/v1"
+
+groups:
+  - name: forecasts
+    description: "Weather forecast operations"
+    tools:
+      - tool_name: get_forecast
+        endpoint: GET /forecast/{location}
+        description: "Get weather forecast for a location."
+        parameters:
+          - name: location
+            description: "Location identifier (city name or coordinates)."
+            required: true
+
+auth:
+  type: api_key
+  notes: "API key injected from K8s Secret by ToolHive."
