@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import yaml
 
 from mcp_builder.schema.models import MCPScope
@@ -17,17 +19,18 @@ def generate_mcpserver(scope: MCPScope) -> str:
         YAML string for the MCPServer custom resource.
     """
     name = scope.server.name
-    manifest: dict = {
+    spec: dict[str, Any] = {
+        "image": f"{name}-mcp:latest",
+        "transport": "streamablehttp",
+    }
+    if scope.auth.type != "none":
+        spec["externalAuthConfig"] = {"name": f"{name}-auth"}
+    manifest: dict[str, Any] = {
         "apiVersion": "mcp.toolhive.stacklok.dev/v1alpha1",
         "kind": "MCPServer",
         "metadata": {"name": name},
-        "spec": {
-            "image": f"{name}-mcp:latest",
-            "transport": "streamablehttp",
-        },
+        "spec": spec,
     }
-    if scope.auth.type != "none":
-        manifest["spec"]["externalAuthConfig"] = {"name": f"{name}-auth"}
     return yaml.dump(manifest, default_flow_style=False, sort_keys=False)
 
 
@@ -44,7 +47,7 @@ def generate_auth_config(scope: MCPScope) -> str | None:
         return None
 
     name = scope.server.name
-    manifest: dict = {
+    manifest: dict[str, Any] = {
         "apiVersion": "mcp.toolhive.stacklok.dev/v1alpha1",
         "kind": "AuthConfig",
         "metadata": {"name": f"{name}-auth"},
@@ -52,7 +55,10 @@ def generate_auth_config(scope: MCPScope) -> str | None:
     }
 
     if scope.auth.type == "oauth_bearer":
-        assert scope.auth.oauth is not None  # validated by model
+        if scope.auth.oauth is None:
+            raise ValueError(
+                "oauth config is required when auth type is 'oauth_bearer'"
+            )
         manifest["spec"] = {
             "type": "embeddedAuthServer",
             "embeddedAuthServer": {
@@ -88,7 +94,7 @@ def generate_secret(scope: MCPScope) -> str | None:
         return None
 
     name = scope.server.name
-    manifest: dict = {
+    manifest: dict[str, Any] = {
         "apiVersion": "v1",
         "kind": "Secret",
         "metadata": {"name": f"{name}-secret"},
