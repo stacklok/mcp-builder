@@ -1,0 +1,343 @@
+openapi: "3.0.3"
+info:
+  title: GitHub REST API (subset)
+  version: v3
+paths:
+  /repos/{owner}/{repo}/issues:
+    parameters:
+      - name: owner
+        in: path
+        required: true
+        schema:
+          type: string
+        description: The account owner of the repository.
+      - name: repo
+        in: path
+        required: true
+        schema:
+          type: string
+        description: The name of the repository.
+    get:
+      operationId: listIssues
+      parameters:
+        - name: state
+          in: query
+          schema:
+            type: string
+          description: Filter by state.
+        - name: labels
+          in: query
+          schema:
+            type: string
+          description: Comma-separated list of label names.
+        - name: per_page
+          in: query
+          schema:
+            type: integer
+          description: Results per page.
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Issue"
+    post:
+      operationId: createIssue
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateIssueRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Issue"
+  /repos/{owner}/{repo}/issues/{issue_number}:
+    parameters:
+      - name: owner
+        in: path
+        required: true
+        schema:
+          type: string
+        description: The account owner of the repository.
+      - name: repo
+        in: path
+        required: true
+        schema:
+          type: string
+        description: The name of the repository.
+      - name: issue_number
+        in: path
+        required: true
+        schema:
+          type: integer
+        description: The issue number.
+    get:
+      operationId: getIssue
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Issue"
+  /repos/{owner}/{repo}/issues/{issue_number}/comments:
+    parameters:
+      - name: owner
+        in: path
+        required: true
+        schema:
+          type: string
+        description: The account owner of the repository.
+      - name: repo
+        in: path
+        required: true
+        schema:
+          type: string
+        description: The name of the repository.
+      - name: issue_number
+        in: path
+        required: true
+        schema:
+          type: integer
+        description: The issue number.
+    post:
+      operationId: createIssueComment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateIssueCommentRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IssueComment"
+  /repos/{owner}/{repo}/contents/{path}:
+    parameters:
+      - name: owner
+        in: path
+        required: true
+        schema:
+          type: string
+        description: The account owner of the repository.
+      - name: repo
+        in: path
+        required: true
+        schema:
+          type: string
+        description: The name of the repository.
+      - name: path
+        in: path
+        required: true
+        schema:
+          type: string
+        description: The file path.
+    get:
+      operationId: getFileContent
+      parameters:
+        - name: ref
+          in: query
+          schema:
+            type: string
+          description: Branch, tag, or commit SHA.
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FileContent"
+  /search/code:
+    get:
+      operationId: searchCode
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Search query.
+        - name: per_page
+          in: query
+          schema:
+            type: integer
+          description: Results per page.
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CodeSearchResult"
+  /orgs/{org}/projectsV2/{project_number}/items:
+    parameters:
+      - name: org
+        in: path
+        required: true
+        schema:
+          type: string
+        description: The organization.
+      - name: project_number
+        in: path
+        required: true
+        schema:
+          type: integer
+        description: The project number.
+    get:
+      operationId: listProjectItems
+      parameters:
+        - name: per_page
+          in: query
+          schema:
+            type: integer
+          description: Items per page.
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectItemList"
+  /orgs/{org}/projectsV2/{project_number}/fields:
+    parameters:
+      - name: org
+        in: path
+        required: true
+        schema:
+          type: string
+        description: The organization.
+      - name: project_number
+        in: path
+        required: true
+        schema:
+          type: integer
+        description: The project number.
+    get:
+      operationId: listProjectFields
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectFieldList"
+components:
+  schemas:
+    Issue:
+      type: object
+      properties:
+        id:
+          type: integer
+        number:
+          type: integer
+        title:
+          type: string
+        state:
+          type: string
+        body:
+          type: string
+      required:
+        - id
+        - number
+        - title
+    CreateIssueRequest:
+      type: object
+      properties:
+        title:
+          type: string
+          description: The title of the issue.
+        body:
+          type: string
+          description: The body content of the issue.
+        labels:
+          type: array
+          items:
+            type: string
+          description: Labels to apply.
+      required:
+        - title
+    CreateIssueCommentRequest:
+      type: object
+      properties:
+        body:
+          type: string
+          description: The comment text.
+      required:
+        - body
+    IssueComment:
+      type: object
+      properties:
+        id:
+          type: integer
+        body:
+          type: string
+      required:
+        - id
+        - body
+    FileContent:
+      type: object
+      properties:
+        name:
+          type: string
+        path:
+          type: string
+        content:
+          type: string
+        encoding:
+          type: string
+      required:
+        - name
+        - path
+    CodeSearchResult:
+      type: object
+      properties:
+        total_count:
+          type: integer
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              path:
+                type: string
+              repository:
+                type: string
+    ProjectItemList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              title:
+                type: string
+    ProjectFieldList:
+      type: object
+      properties:
+        fields:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+              type:
+                type: string

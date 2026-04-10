@@ -1,0 +1,235 @@
+openapi: "3.0.3"
+info:
+  title: BambooHR API (subset)
+  version: v1
+paths:
+  /v1/employees/directory:
+    get:
+      operationId: listEmployees
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmployeeDirectory"
+  /v1/employees/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: The BambooHR employee ID.
+    get:
+      operationId: getEmployee
+      parameters:
+        - name: fields
+          in: query
+          schema:
+            type: string
+          description: Comma-separated list of field names.
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Employee"
+  /v1/time_off/whos_out/:
+    get:
+      operationId: getWhosOut
+      parameters:
+        - name: start
+          in: query
+          schema:
+            type: string
+          description: Start date in YYYY-MM-DD format.
+        - name: end
+          in: query
+          schema:
+            type: string
+          description: End date in YYYY-MM-DD format.
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TimeOffEntry"
+  /v1/time_off/requests:
+    get:
+      operationId: listTimeOffRequests
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+          description: Filter by request status.
+        - name: start
+          in: query
+          schema:
+            type: string
+          description: Filter by start date.
+        - name: end
+          in: query
+          schema:
+            type: string
+          description: Filter by end date.
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TimeOffRequest"
+    post:
+      operationId: requestTimeOff
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTimeOffRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TimeOffRequest"
+  /v1/time_off/policies:
+    get:
+      operationId: getTimeOffPolicies
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TimeOffPolicy"
+  /v1/benefits/company_benefit:
+    get:
+      operationId: listCompanyBenefits
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CompanyBenefit"
+  /v1/benefits/member-benefits:
+    get:
+      operationId: getMemberBenefits
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MemberBenefit"
+components:
+  schemas:
+    Employee:
+      type: object
+      properties:
+        id:
+          type: string
+        firstName:
+          type: string
+        lastName:
+          type: string
+        department:
+          type: string
+      required:
+        - id
+        - firstName
+        - lastName
+    EmployeeDirectory:
+      type: object
+      properties:
+        employees:
+          type: array
+          items:
+            $ref: "#/components/schemas/Employee"
+    TimeOffEntry:
+      type: object
+      properties:
+        employeeId:
+          type: string
+        name:
+          type: string
+        start:
+          type: string
+        end:
+          type: string
+    TimeOffRequest:
+      type: object
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+        start:
+          type: string
+        end:
+          type: string
+      required:
+        - id
+        - status
+    CreateTimeOffRequest:
+      type: object
+      properties:
+        timeOffTypeId:
+          type: string
+          description: The ID of the time-off policy type.
+        start:
+          type: string
+          description: Start date in YYYY-MM-DD format.
+        end:
+          type: string
+          description: End date in YYYY-MM-DD format.
+        notes:
+          type: string
+          description: Optional note or reason.
+      required:
+        - timeOffTypeId
+        - start
+        - end
+    TimeOffPolicy:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+    CompanyBenefit:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+    MemberBenefit:
+      type: object
+      properties:
+        id:
+          type: string
+        planName:
+          type: string
+        coverageLevel:
+          type: string
