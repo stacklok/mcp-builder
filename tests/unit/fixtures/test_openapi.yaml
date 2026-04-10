@@ -30,6 +30,22 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Item"
+    put:
+      operationId: updateItem
+      summary: Update an item
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateItemRequest"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Item"
   /items:
     post:
       operationId: createItem

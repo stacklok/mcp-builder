@@ -84,6 +84,40 @@ def find_operation(spec: dict, method: str, path: str) -> OperationInfo:
     )
 
 
+def ref_to_class_name(ref: str) -> str:
+    """Extract class name from an OpenAPI $ref string.
+
+    Example: '#/components/schemas/CreateItemRequest' -> 'CreateItemRequest'
+    """
+    return ref.rsplit("/", 1)[-1]
+
+
+def get_body_fields(spec: dict, method: str, path: str) -> list[OpenAPIParameter]:
+    """Get request body schema fields as flat parameters.
+
+    Resolves the $ref in the request body to extract top-level fields
+    from the referenced schema. Returns empty list if no request body.
+    """
+    op = find_operation(spec, method, path)
+    if not op.request_body_ref:
+        return []
+
+    schema_name = ref_to_class_name(op.request_body_ref)
+    schema = spec.get("components", {}).get("schemas", {}).get(schema_name, {})
+    required_fields = set(schema.get("required", []))
+
+    return [
+        OpenAPIParameter(
+            name=name,
+            location="body",
+            required=name in required_fields,
+            schema_type=prop.get("type", "string"),
+            description=prop.get("description", ""),
+        )
+        for name, prop in schema.get("properties", {}).items()
+    ]
+
+
 def get_parameters(spec: dict, method: str, path: str) -> list[OpenAPIParameter]:
     """Get all parameters for an operation (path-level + operation-level).
 

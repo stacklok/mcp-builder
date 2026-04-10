@@ -7,9 +7,11 @@ import pytest
 from mcp_builder.codegen.spec_parser import (
     OpenAPIParameter,
     find_operation,
+    get_body_fields,
     get_parameters,
     load_openapi_spec,
     parse_endpoint,
+    ref_to_class_name,
 )
 
 
@@ -75,3 +77,45 @@ def test_get_parameters_returns_typed_objects(openapi_spec: dict) -> None:
 def test_get_parameters_post_no_params(openapi_spec: dict) -> None:
     params = get_parameters(openapi_spec, "POST", "/items")
     assert params == []
+
+
+def test_ref_to_class_name_simple() -> None:
+    assert ref_to_class_name("#/components/schemas/Item") == "Item"
+
+
+def test_ref_to_class_name_nested() -> None:
+    assert (
+        ref_to_class_name("#/components/schemas/CreateItemRequest")
+        == "CreateItemRequest"
+    )
+
+
+def test_get_body_fields_post_with_body(openapi_spec: dict) -> None:
+    fields = get_body_fields(openapi_spec, "POST", "/items")
+    names = {f.name for f in fields}
+    assert "name" in names
+    assert "description" in names
+
+
+def test_get_body_fields_required_flag(openapi_spec: dict) -> None:
+    fields = get_body_fields(openapi_spec, "POST", "/items")
+    by_name = {f.name: f for f in fields}
+    assert by_name["name"].required is True
+    assert by_name["description"].required is False
+
+
+def test_get_body_fields_has_descriptions(openapi_spec: dict) -> None:
+    fields = get_body_fields(openapi_spec, "POST", "/items")
+    by_name = {f.name: f for f in fields}
+    assert by_name["name"].description == "The name of the item."
+
+
+def test_get_body_fields_get_no_body(openapi_spec: dict) -> None:
+    fields = get_body_fields(openapi_spec, "GET", "/items/{itemId}")
+    assert fields == []
+
+
+def test_get_body_fields_location_is_body(openapi_spec: dict) -> None:
+    fields = get_body_fields(openapi_spec, "POST", "/items")
+    for f in fields:
+        assert f.location == "body"
