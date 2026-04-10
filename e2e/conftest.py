@@ -6,5 +6,5 @@ def pytest_addoption(parser):
         "--keep-generated",
         action="store_true",
         default=False,
-        help="Keep generated projects in tests/e2e/output/ after test run",
+        help="Keep generated projects in e2e/output/ after test run",
     )

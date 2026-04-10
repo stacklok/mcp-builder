@@ -1,19 +1,20 @@
 #!/usr/bin/env bash
-# Download real OpenAPI specs for integration test fixtures.
+# Download real OpenAPI specs for e2e testing.
 #
 # Usage:
-#   ./scripts/download_openapi_specs.sh
+#   ./e2e/download_openapi_specs.sh
 #
-# Downloads specs to tests/integration/fixtures/openapi/.
+# Downloads specs to e2e/fixtures/ alongside their scope YAMLs.
 # The weather_api and minimal_api specs are synthetic (no real API)
 # and are checked into the repo — this script only fetches real ones.
 
 set -euo pipefail
 
-OUTDIR="tests/integration/fixtures/openapi"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+OUTDIR="$SCRIPT_DIR/fixtures"
 mkdir -p "$OUTDIR"
 
-echo "Downloading OpenAPI specs..."
+echo "Downloading OpenAPI specs to $OUTDIR..."
 
 # GitHub REST API (OpenAPI 3.1, ~25MB)
 echo "  github..."
@@ -30,22 +31,17 @@ echo "  slack..."
 curl -sL -o "$OUTDIR/slack_openapi.yaml" \
   "https://raw.githubusercontent.com/slackapi/slack-api-specs/master/web-api/slack_web_openapi_v2.json"
 
-# Google Drive API — Google publishes Discovery format, not OpenAPI.
-# A community-maintained OpenAPI conversion is available from APIs-guru:
+# Google Drive API — community-maintained OpenAPI conversion from APIs-guru
 echo "  google_drive..."
 curl -sL -o "$OUTDIR/google_drive_openapi.yaml" \
   "https://raw.githubusercontent.com/APIs-guru/openapi-directory/main/APIs/googleapis.com/drive/v3/openapi.yaml"
 
-# BambooHR — no public OpenAPI spec available. Their docs page
-# (https://documentation.bamboohr.com/reference) describes the API
-# but doesn't serve a machine-readable spec. You'll need to either:
+# BambooHR — no public OpenAPI spec available.
+# https://documentation.bamboohr.com/reference describes the API but
+# doesn't serve a machine-readable spec. Options:
 #   1. Export from their developer portal if you have access
 #   2. Hand-curate a subset matching the scope YAML endpoints
-#   3. Use a community spec if one exists
-echo "  bamboohr... SKIPPED (no public OpenAPI spec — see script comments)"
+echo "  bamboohr... SKIPPED (no public OpenAPI spec)"
 
 echo ""
-echo "Done. Downloaded specs to $OUTDIR/"
-echo ""
-echo "Missing specs (need manual download):"
-echo "  - bamboohr_openapi.yaml"
+echo "Done. Missing: bamboohr_openapi.yaml (no public spec)"

@@ -30,18 +30,17 @@ build-backend = "hatchling.build"
 
 [tool.ruff]
 # E2E output contains generated projects with their own dependencies.
-exclude = ["tests/e2e/output"]
+exclude = ["e2e/output"]
 
 [tool.ty.src]
-# E2E tests are manual-run and import modules not yet on main (mcp_builder.cli, httpx).
-# Integration conftest conditionally imports mcp_builder.cli (may not exist yet).
-exclude = ["tests/e2e", "tests/integration/conftest.py"]
+# E2E tests are manual-run and import modules not available until codegen lands.
+exclude = ["e2e"]
 
 [tool.bandit]
-exclude_dirs = ["tests"]
+exclude_dirs = ["tests", "e2e"]
 
 [tool.pytest.ini_options]
-addopts = "--cov=mcp_builder --cov-report=html --cov-report=term-missing --ignore=tests/e2e"
+addopts = "--cov=mcp_builder --cov-report=html --cov-report=term-missing --ignore=e2e"
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
