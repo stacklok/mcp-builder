@@ -2,6 +2,9 @@
 .claude/settings.local.json
 .claude/worktrees/
 
+# Planning artifacts
+planning-*/
+
 # Security / CI report artifacts
 .coverage
 bandit-report.json

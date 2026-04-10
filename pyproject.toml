@@ -5,6 +5,7 @@ description = "A pipeline for generating ToolHive-ready MCP servers from OpenAPI
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "jinja2>=3.1.6",
     "openapi-pydantic>=0.5.1",
     "pydantic>=2.12.5",
     "pyyaml>=6.0.3",
@@ -34,7 +35,8 @@ exclude = ["e2e/output"]
 
 [tool.ty.src]
 # E2E tests are manual-run and import modules not available until codegen lands.
-exclude = ["e2e"]
+# Template fixture contains stub Python with deps not in our venv.
+exclude = ["e2e", "tests/unit/fixtures/template/"]
 
 [tool.bandit]
 exclude_dirs = ["tests", "e2e"]
