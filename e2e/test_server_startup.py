@@ -6,13 +6,13 @@ startup) and meant to be run manually, not in CI.
 
 Usage:
     # Run all fixtures (requires /Users/laurel/Documents/code/mcp-template-py):
-    uv run pytest tests/e2e/test_server_startup.py -v -s
+    uv run pytest e2e/test_server_startup.py -v -s
 
     # Run a single fixture:
-    uv run pytest tests/e2e/test_server_startup.py -v -s -k google-drive
+    uv run pytest e2e/test_server_startup.py -v -s -k google-drive
 
-    # Keep generated projects for inspection (written to tests/e2e/output/):
-    uv run pytest tests/e2e/test_server_startup.py -v -s --keep-generated
+    # Keep generated projects for inspection (written to e2e/output/):
+    uv run pytest e2e/test_server_startup.py -v -s --keep-generated
 
 After a test passes, the output shows how to connect each server to Claude Code.
 """
@@ -36,9 +36,11 @@ import pytest
 from mcp_builder.schema.models import load_scope
 
 REAL_TEMPLATE = Path("/Users/laurel/Documents/code/mcp-template-py")
-INTEGRATION_FIXTURES = Path(__file__).parent.parent / "integration" / "fixtures"
-OPENAPI_FIXTURES = INTEGRATION_FIXTURES / "openapi"
-E2E_OUTPUT = Path(__file__).parent / "output"
+E2E_DIR = Path(__file__).parent
+FIXTURES_DIR = E2E_DIR / "fixtures"
+# Scope YAMLs for real APIs live in the main integration fixtures dir
+INTEGRATION_FIXTURES = E2E_DIR.parent / "tests" / "integration" / "fixtures"
+E2E_OUTPUT = E2E_DIR / "output"
 
 
 @dataclass(frozen=True)
@@ -49,9 +51,11 @@ class E2EFixture:
     module_name: str
     tool_count: int
     port: int
+    fixtures_dir: Path  # where this fixture's files live
 
 
 ALL_E2E = [
+    # Real API fixtures — scope YAMLs in tests/integration/fixtures/, OpenAPI specs downloaded to e2e/fixtures/
     E2EFixture(
         "google_drive.yaml",
         "google_drive_openapi.yaml",
@@ -59,15 +63,45 @@ ALL_E2E = [
         "google_drive_mcp",
         5,
         8201,
-    ),
-    E2EFixture("github.yaml", "github_openapi.yaml", "github", "github_mcp", 8, 8202),
-    E2EFixture(
-        "bamboohr.yaml", "bamboohr_openapi.yaml", "bamboohr", "bamboohr_mcp", 8, 8203
+        INTEGRATION_FIXTURES,
     ),
     E2EFixture(
-        "jira.yaml", "jira_openapi.yaml", "jira-cloud", "jira_cloud_mcp", 7, 8204
+        "github.yaml",
+        "github_openapi.yaml",
+        "github",
+        "github_mcp",
+        8,
+        8202,
+        INTEGRATION_FIXTURES,
     ),
-    E2EFixture("slack.yaml", "slack_openapi.yaml", "slack", "slack_mcp", 7, 8205),
+    E2EFixture(
+        "bamboohr.yaml",
+        "bamboohr_openapi.yaml",
+        "bamboohr",
+        "bamboohr_mcp",
+        8,
+        8203,
+        INTEGRATION_FIXTURES,
+    ),
+    E2EFixture(
+        "jira.yaml",
+        "jira_openapi.yaml",
+        "jira-cloud",
+        "jira_cloud_mcp",
+        7,
+        8204,
+        INTEGRATION_FIXTURES,
+    ),
+    E2EFixture(
+        "slack.yaml",
+        "slack_openapi.yaml",
+        "slack",
+        "slack_mcp",
+        7,
+        8205,
+        INTEGRATION_FIXTURES,
+    ),
+    # Synthetic fixtures — both scope YAML and OpenAPI spec in e2e/fixtures/
     E2EFixture(
         "weather_api.yaml",
         "weather_api_openapi.yaml",
@@ -75,6 +109,7 @@ ALL_E2E = [
         "weather_api_mcp",
         1,
         8206,
+        FIXTURES_DIR,
     ),
     E2EFixture(
         "minimal_api.yaml",
@@ -83,10 +118,23 @@ ALL_E2E = [
         "minimal_api_mcp",
         1,
         8207,
+        FIXTURES_DIR,
     ),
 ]
 
-AVAILABLE_E2E = [f for f in ALL_E2E if (OPENAPI_FIXTURES / f.openapi_yaml).exists()]
+
+def _spec_path(fixture: E2EFixture) -> Path:
+    """OpenAPI specs for real APIs are downloaded to e2e/fixtures/; synthetic ones live there too."""
+    return FIXTURES_DIR / fixture.openapi_yaml
+
+
+def _scope_path(fixture: E2EFixture) -> Path:
+    return fixture.fixtures_dir / fixture.scope_yaml
+
+
+AVAILABLE_E2E = [
+    f for f in ALL_E2E if _scope_path(f).exists() and _spec_path(f).exists()
+]
 E2E_IDS = [f.server_name for f in AVAILABLE_E2E]
 
 
@@ -108,15 +156,14 @@ def _generate_project(fixture: E2EFixture, output_dir: Path) -> Path:
     from mcp_builder.cli import run_pipeline
 
     return run_pipeline(
-        scope_yaml=INTEGRATION_FIXTURES / fixture.scope_yaml,
-        openapi_spec=OPENAPI_FIXTURES / fixture.openapi_yaml,
+        scope_yaml=_scope_path(fixture),
+        openapi_spec=_spec_path(fixture),
         template_dir=REAL_TEMPLATE,
         output_dir=output_dir,
     )
 
 
 def _install_deps(project_dir: Path) -> None:
-    # Remove stale venv/lockfile copied from template
     for stale in (".venv", "uv.lock"):
         p = project_dir / stale
         if p.is_dir():
@@ -124,18 +171,8 @@ def _install_deps(project_dir: Path) -> None:
         elif p.is_file():
             p.unlink()
 
-    subprocess.run(
-        ["uv", "venv"],
-        cwd=project_dir,
-        check=True,
-        capture_output=True,
-    )
-    subprocess.run(
-        ["uv", "sync"],
-        cwd=project_dir,
-        check=True,
-        capture_output=True,
-    )
+    subprocess.run(["uv", "venv"], cwd=project_dir, check=True, capture_output=True)
+    subprocess.run(["uv", "sync"], cwd=project_dir, check=True, capture_output=True)
 
 
 def _start_server(project_dir: Path, fixture: E2EFixture) -> subprocess.Popen:
@@ -154,6 +191,30 @@ def _start_server(project_dir: Path, fixture: E2EFixture) -> subprocess.Popen:
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
+
+
+def _initialize(port: int) -> str:
+    """Send initialize and return the session ID."""
+    resp = httpx.post(
+        f"http://127.0.0.1:{port}/mcp",
+        json={
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-03-26",
+                "capabilities": {},
+                "clientInfo": {"name": "e2e-test", "version": "0.1"},
+            },
+        },
+        headers={
+            "Content-Type": "application/json",
+            "Accept": "application/json, text/event-stream",
+        },
+        timeout=10.0,
+    )
+    resp.raise_for_status()
+    return resp.headers["mcp-session-id"]
 
 
 def _mcp_request(
@@ -185,36 +246,11 @@ def _mcp_request(
     )
     resp.raise_for_status()
 
-    # Parse SSE response — find the data: line with JSON
     for line in resp.text.splitlines():
         if line.startswith("data: "):
             return json.loads(line[6:])
 
     raise ValueError(f"No SSE data in response: {resp.text}")
-
-
-def _initialize(port: int) -> str:
-    """Send initialize and return the session ID."""
-    resp = httpx.post(
-        f"http://127.0.0.1:{port}/mcp",
-        json={
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "initialize",
-            "params": {
-                "protocolVersion": "2025-03-26",
-                "capabilities": {},
-                "clientInfo": {"name": "e2e-test", "version": "0.1"},
-            },
-        },
-        headers={
-            "Content-Type": "application/json",
-            "Accept": "application/json, text/event-stream",
-        },
-        timeout=10.0,
-    )
-    resp.raise_for_status()
-    return resp.headers["mcp-session-id"]
 
 
 # ---------------------------------------------------------------------------
@@ -231,10 +267,7 @@ pytestmark = pytest.mark.skipif(
 def running_server(
     request: pytest.FixtureRequest, tmp_path: Path
 ) -> Generator[tuple[E2EFixture, Path, list[dict]]]:
-    """Generate, install, start a server, list tools, then tear down.
-
-    Yields (fixture_config, project_dir, tools_list).
-    """
+    """Generate, install, start a server, list tools, then tear down."""
     fixture: E2EFixture = request.param
     keep = request.config.getoption("--keep-generated", default=False)
 
@@ -249,26 +282,17 @@ def running_server(
 
     assert _port_free(fixture.port), f"Port {fixture.port} already in use"
 
-    # Generate
     project_dir = _generate_project(fixture, output_dir)
-
-    # Install
     _install_deps(project_dir)
 
-    # Start server
     proc = _start_server(project_dir, fixture)
     try:
         _wait_for_port(fixture.port)
-
-        # Initialize MCP session
         session_id = _initialize(fixture.port)
-
-        # List tools
         data = _mcp_request(
             fixture.port, "tools/list", request_id=2, session_id=session_id
         )
         tools = data["result"]["tools"]
-
         yield fixture, project_dir, tools
     finally:
         proc.send_signal(signal.SIGTERM)
@@ -291,7 +315,7 @@ class TestServerStartup:
         self, running_server: tuple[E2EFixture, Path, list[dict]]
     ) -> None:
         fixture, _project_dir, tools = running_server
-        scope = load_scope(INTEGRATION_FIXTURES / fixture.scope_yaml)
+        scope = load_scope(_scope_path(fixture))
         expected = {t.tool_name for g in scope.groups for t in g.tools}
         actual = {t["name"] for t in tools}
         assert actual == expected
