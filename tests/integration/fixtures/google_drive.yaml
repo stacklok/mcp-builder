@@ -1,0 +1,135 @@
+version: "1"
+
+server:
+  name: google-drive
+  description: "Google Drive MCP server for file management and collaboration"
+
+spec:
+  source: "https://www.googleapis.com/discovery/v1/apis/drive/v3/rest"
+  format: openapi3
+  base_url: "https://www.googleapis.com"
+  total_endpoints: 60
+  scoped_endpoints: 5
+
+workflows:
+  - "Engineers search for and read design docs and specs"
+  - "Team members create shared documents and leave review comments"
+
+groups:
+  - name: file-operations
+    description: "File search, lookup, and creation"
+    tools:
+      - tool_name: list_files
+        endpoint: GET /drive/v3/files
+        description: >
+          List files in the user's Drive or a specific folder. Returns file
+          names, IDs, MIME types, and modification times. Supports query
+          filtering via the 'q' parameter using Drive query syntax.
+        parameters:
+          - name: q
+            description: >
+              Drive search query string. Examples: "name contains 'design'"
+              or "mimeType = 'application/pdf'". See Drive query syntax docs.
+            required: false
+          - name: pageSize
+            description: >
+              Number of files to return per page. Default is 100, maximum 1000.
+            required: false
+          - name: pageToken
+            description: >
+              Token for continuing a previous list request. Returned as
+              nextPageToken in paginated responses.
+            required: false
+          - name: fields
+            description: >
+              Comma-separated list of fields to include. Use
+              "files(id,name,mimeType,modifiedTime)" for common fields.
+            required: false
+        hints:
+          - "paginated: uses pageToken/nextPageToken cursor pattern"
+          - "response is large — use fields param to limit returned data"
+
+      - tool_name: get_file
+        endpoint: GET /drive/v3/files/{fileId}
+        description: >
+          Get metadata for a single file by ID. Returns the full file
+          resource including name, size, MIME type, and parent folders.
+        parameters:
+          - name: fileId
+            description: "The ID of the file to retrieve."
+            required: true
+          - name: fields
+            description: >
+              Comma-separated list of fields to include in the response.
+              The full resource has 50+ fields.
+            required: false
+        hints:
+          - "response has 50+ fields — consider field selection"
+
+      - tool_name: create_file
+        endpoint: POST /drive/v3/files
+        description: >
+          Create a new file or folder. For folders, set mimeType to
+          "application/vnd.google-apps.folder". This creates metadata only;
+          file content requires a separate upload request.
+        parameters:
+          - name: name
+            description: "The name of the file or folder to create."
+            required: true
+          - name: mimeType
+            description: >
+              MIME type of the file. Use "application/vnd.google-apps.folder"
+              for folders, "application/vnd.google-apps.document" for
+              Google Docs.
+            required: true
+          - name: parents
+            description: >
+              List of parent folder IDs. If not specified, the file is
+              placed in the user's My Drive root.
+            required: false
+
+  - name: comments
+    description: "File comments for collaboration and review"
+    tools:
+      - tool_name: list_comments
+        endpoint: GET /drive/v3/files/{fileId}/comments
+        description: >
+          List all comments on a file. Returns comment text, author, and
+          timestamps. Use this to review feedback and discussion on a
+          document.
+        parameters:
+          - name: fileId
+            description: "The ID of the file."
+            required: true
+          - name: pageSize
+            description: "Number of comments to return per page. Default is 20."
+            required: false
+        hints:
+          - "paginated: uses pageToken/nextPageToken cursor pattern"
+
+      - tool_name: create_comment
+        endpoint: POST /drive/v3/files/{fileId}/comments
+        description: >
+          Add a comment to a file. Use this to leave feedback or start a
+          discussion thread on a document.
+        parameters:
+          - name: fileId
+            description: "The ID of the file to comment on."
+            required: true
+          - name: content
+            description: "The plain text content of the comment."
+            required: true
+
+auth:
+  type: oauth_bearer
+  oauth:
+    issuer: "https://accounts.google.com"
+    scopes:
+      - openid
+      - email
+      - https://www.googleapis.com/auth/drive
+  notes: >
+    Google Drive uses OAuth2 with OIDC. The MCP server receives an access
+    token via the Authorization header and forwards it to Drive API
+    endpoints. The drive scope provides full read/write access needed for
+    file creation and commenting.

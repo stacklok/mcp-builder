@@ -1,0 +1,210 @@
+version: "1"
+
+server:
+  name: github
+  description: "GitHub MCP server for issues, code browsing, and project tracking"
+
+spec:
+  source: "https://raw.githubusercontent.com/github/rest-api-description/main/descriptions/api.github.com/api.github.com.yaml"
+  format: openapi3.1
+  base_url: "https://api.github.com"
+  total_endpoints: 900
+  scoped_endpoints: 8
+
+workflows:
+  - "Engineers triage and comment on issues in a repository"
+  - "Developers read file contents and search code across repositories"
+  - "Team leads review project board items and field configurations"
+
+groups:
+  - name: issues
+    description: "Issue tracking and discussion"
+    tools:
+      - tool_name: list_issues
+        endpoint: GET /repos/{owner}/{repo}/issues
+        description: >
+          List issues in a repository. Returns issue title, number, state,
+          labels, assignees, and timestamps. Supports filtering by state,
+          labels, assignee, and sort order.
+        parameters:
+          - name: owner
+            description: "The account owner of the repository."
+            required: true
+          - name: repo
+            description: "The name of the repository."
+            required: true
+          - name: state
+            description: >
+              Filter by issue state. One of "open", "closed", or "all".
+              Defaults to "open".
+            required: false
+          - name: labels
+            description: >
+              Comma-separated list of label names to filter by.
+              Example: "bug,priority:high".
+            required: false
+          - name: per_page
+            description: "Number of results per page. Default 30, maximum 100."
+            required: false
+        hints:
+          - "paginated: uses page/per_page pattern"
+          - "also returns pull requests — filter with is:issue in search if needed"
+
+      - tool_name: get_issue
+        endpoint: GET /repos/{owner}/{repo}/issues/{issue_number}
+        description: >
+          Get a single issue by number. Returns full issue details including
+          body, labels, assignees, milestone, and timeline metadata.
+        parameters:
+          - name: owner
+            description: "The account owner of the repository."
+            required: true
+          - name: repo
+            description: "The name of the repository."
+            required: true
+          - name: issue_number
+            description: "The issue number."
+            required: true
+
+      - tool_name: create_issue
+        endpoint: POST /repos/{owner}/{repo}/issues
+        description: >
+          Create a new issue in a repository. Requires at minimum a title.
+          Can optionally include body text, labels, assignees, and milestone.
+        parameters:
+          - name: owner
+            description: "The account owner of the repository."
+            required: true
+          - name: repo
+            description: "The name of the repository."
+            required: true
+          - name: title
+            description: "The title of the issue."
+            required: true
+          - name: body
+            description: "The body content of the issue. Supports GitHub Flavored Markdown."
+            required: false
+          - name: labels
+            description: "List of label names to apply to the issue."
+            required: false
+
+      - tool_name: create_issue_comment
+        endpoint: POST /repos/{owner}/{repo}/issues/{issue_number}/comments
+        description: >
+          Add a comment to an existing issue. Use this to provide updates,
+          ask questions, or discuss the issue with collaborators.
+        parameters:
+          - name: owner
+            description: "The account owner of the repository."
+            required: true
+          - name: repo
+            description: "The name of the repository."
+            required: true
+          - name: issue_number
+            description: "The issue number to comment on."
+            required: true
+          - name: body
+            description: "The comment text. Supports GitHub Flavored Markdown."
+            required: true
+
+  - name: code
+    description: "Repository contents and code search"
+    tools:
+      - tool_name: get_file_content
+        endpoint: GET /repos/{owner}/{repo}/contents/{path}
+        description: >
+          Get the contents of a file in a repository. Returns the file
+          content (base64 encoded), size, and SHA. For directories, returns
+          a listing of entries.
+        parameters:
+          - name: owner
+            description: "The account owner of the repository."
+            required: true
+          - name: repo
+            description: "The name of the repository."
+            required: true
+          - name: path
+            description: "The file path relative to the repository root."
+            required: true
+          - name: ref
+            description: >
+              Branch, tag, or commit SHA to read from. Defaults to the
+              repository's default branch.
+            required: false
+        hints:
+          - "file content is base64 encoded — decode before displaying"
+          - "only files smaller than 100 MB can be retrieved"
+
+      - tool_name: search_code
+        endpoint: GET /search/code
+        description: >
+          Search for code across all public repositories or within specific
+          repositories. Uses GitHub's code search syntax for the query
+          parameter.
+        parameters:
+          - name: q
+            description: >
+              Search query using GitHub code search syntax. Examples:
+              "addClass repo:jquery/jquery", "filename:config.yaml org:acme",
+              "HTTPClient language:go".
+            required: true
+          - name: per_page
+            description: "Number of results per page. Default 30, maximum 100."
+            required: false
+        hints:
+          - "only searches the default branch"
+          - "only files smaller than 384 KB are searchable"
+          - "must include at least one search term beyond qualifiers"
+
+  - name: projects
+    description: "Project board items and field configuration"
+    tools:
+      - tool_name: list_project_items
+        endpoint: GET /orgs/{org}/projectsV2/{project_number}/items
+        description: >
+          List all items on an organization project board. Returns issues,
+          pull requests, and draft items with their field values (status,
+          priority, iteration, etc.).
+        parameters:
+          - name: org
+            description: "The organization that owns the project."
+            required: true
+          - name: project_number
+            description: "The project number (visible in the project URL)."
+            required: true
+          - name: per_page
+            description: "Number of items per page. Default 30, maximum 100."
+            required: false
+        hints:
+          - "paginated: uses page/per_page pattern"
+
+      - tool_name: list_project_fields
+        endpoint: GET /orgs/{org}/projectsV2/{project_number}/fields
+        description: >
+          List all field definitions for an organization project. Returns
+          field names, types, and allowed values. Use this to understand
+          what fields like Status, Priority, or Sprint are configured on
+          the board.
+        parameters:
+          - name: org
+            description: "The organization that owns the project."
+            required: true
+          - name: project_number
+            description: "The project number."
+            required: true
+
+auth:
+  type: oauth_bearer
+  oauth:
+    issuer: "https://github.com"
+    scopes:
+      - repo
+      - read:org
+      - read:user
+      - read:project
+  notes: >
+    GitHub uses OAuth2 authorization code flow. Create an OAuth App at
+    github.com/settings/developers. The MCP server receives an access
+    token via the Authorization header and forwards it to the GitHub API.
+    The repo scope grants full access to repositories; read:org and
+    read:project enable project board access.
