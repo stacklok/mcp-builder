@@ -1,0 +1,242 @@
+openapi: "3.0.3"
+info:
+  title: Jira Cloud REST API (subset)
+  version: v3
+paths:
+  /rest/api/3/issue/search:
+    get:
+      operationId: searchIssues
+      parameters:
+        - name: jql
+          in: query
+          required: true
+          schema:
+            type: string
+          description: JQL query string.
+        - name: fields
+          in: query
+          schema:
+            type: string
+          description: Comma-separated list of fields.
+        - name: maxResults
+          in: query
+          schema:
+            type: integer
+          description: Maximum number of issues to return.
+        - name: nextPageToken
+          in: query
+          schema:
+            type: string
+          description: Pagination token from previous request.
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SearchResults"
+  /rest/api/3/issue/{issueIdOrKey}:
+    parameters:
+      - name: issueIdOrKey
+        in: path
+        required: true
+        schema:
+          type: string
+        description: The issue key or ID.
+    get:
+      operationId: getIssue
+      parameters:
+        - name: fields
+          in: query
+          schema:
+            type: string
+          description: Comma-separated list of fields.
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Issue"
+    put:
+      operationId: updateIssue
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateIssueRequest"
+      responses:
+        "204":
+          description: Updated successfully
+    delete:
+      operationId: deleteIssue
+      parameters:
+        - name: deleteSubtasks
+          in: query
+          schema:
+            type: boolean
+          description: Whether to delete subtasks.
+      responses:
+        "204":
+          description: Deleted successfully
+  /rest/api/3/issue:
+    post:
+      operationId: createIssue
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateIssueRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Issue"
+  /rest/api/3/issue/{issueIdOrKey}/comment:
+    parameters:
+      - name: issueIdOrKey
+        in: path
+        required: true
+        schema:
+          type: string
+        description: The issue key or ID.
+    post:
+      operationId: addComment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddCommentRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Comment"
+  /rest/api/3/issue/{issueIdOrKey}/transitions:
+    parameters:
+      - name: issueIdOrKey
+        in: path
+        required: true
+        schema:
+          type: string
+        description: The issue key or ID.
+    post:
+      operationId: transitionIssue
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TransitionRequest"
+      responses:
+        "204":
+          description: Transition executed
+components:
+  schemas:
+    Issue:
+      type: object
+      properties:
+        id:
+          type: string
+        key:
+          type: string
+        summary:
+          type: string
+        status:
+          type: string
+      required:
+        - id
+        - key
+    SearchResults:
+      type: object
+      properties:
+        issues:
+          type: array
+          items:
+            $ref: "#/components/schemas/Issue"
+        total:
+          type: integer
+        nextPageToken:
+          type: string
+    CreateIssueRequest:
+      type: object
+      properties:
+        project:
+          type: string
+          description: The project key or ID.
+        issuetype:
+          type: string
+          description: The issue type name or ID.
+        summary:
+          type: string
+          description: The issue summary.
+        description:
+          type: string
+          description: The issue description in ADF.
+        labels:
+          type: array
+          items:
+            type: string
+          description: Labels to apply.
+        assignee:
+          type: string
+          description: The accountId of the assignee.
+      required:
+        - project
+        - issuetype
+        - summary
+    UpdateIssueRequest:
+      type: object
+      properties:
+        summary:
+          type: string
+          description: Updated summary.
+        description:
+          type: string
+          description: Updated description in ADF.
+        labels:
+          type: array
+          items:
+            type: string
+          description: Updated labels.
+        assignee:
+          type: string
+          description: The accountId of the new assignee.
+    AddCommentRequest:
+      type: object
+      properties:
+        body:
+          type: string
+          description: The comment body in ADF.
+      required:
+        - body
+    Comment:
+      type: object
+      properties:
+        id:
+          type: string
+        body:
+          type: string
+        author:
+          type: string
+      required:
+        - id
+        - body
+    TransitionRequest:
+      type: object
+      properties:
+        transitionId:
+          type: string
+          description: The ID of the transition to execute.
+        comment:
+          type: string
+          description: Optional comment in ADF format.
+      required:
+        - transitionId
