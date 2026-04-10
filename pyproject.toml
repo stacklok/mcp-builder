@@ -28,6 +28,14 @@ security = [
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.ruff]
+# Template fixtures contain intentional unused imports for scaffolding tests.
+exclude = ["tests/unit/fixtures/template"]
+
+[tool.ty.src]
+# Template fixtures are not real source; exclude from type checking.
+exclude = ["tests/unit/fixtures/template"]
+
 [tool.bandit]
 exclude_dirs = ["tests"]
 
