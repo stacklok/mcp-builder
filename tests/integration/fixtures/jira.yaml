@@ -1,0 +1,193 @@
+version: "1"
+
+server:
+  name: jira-cloud
+  description: "Jira Cloud MCP server for issue tracking and workflow management"
+
+spec:
+  source: "https://developer.atlassian.com/cloud/jira/platform/swagger-v3.v3.json"
+  format: openapi3
+  base_url: "https://{domain}.atlassian.net"
+  total_endpoints: 120
+  scoped_endpoints: 7
+
+workflows:
+  - "Engineers search, create, and update issues throughout the development lifecycle"
+  - "Team members transition issues through workflow states and leave comments during review"
+
+groups:
+  - name: issues
+    description: "Full issue lifecycle — search, create, read, update, comment, transition, and delete"
+    tools:
+      - tool_name: search_issues
+        endpoint: GET /rest/api/3/issue/search
+        description: >
+          Search for issues using JQL (Jira Query Language). Returns issue
+          keys, summaries, statuses, assignees, and any requested fields.
+          JQL supports complex filtering by project, status, assignee,
+          labels, dates, and custom fields.
+        parameters:
+          - name: jql
+            description: >
+              JQL query string. Examples: "project = ENG AND status = 'In Progress'",
+              "assignee = currentUser() AND sprint in openSprints()",
+              "labels = bug AND created >= -7d ORDER BY priority DESC".
+            required: true
+          - name: fields
+            description: >
+              Comma-separated list of field names to include in the response.
+              Use "*all" for everything or "summary,status,assignee" for
+              specific fields. Reduces payload size significantly.
+            required: false
+          - name: maxResults
+            description: "Maximum number of issues to return. Default 50, maximum 100."
+            required: false
+          - name: nextPageToken
+            description: >
+              Pagination token returned from a previous request. Replaces
+              the deprecated startAt parameter.
+            required: false
+        hints:
+          - "paginated: uses nextPageToken cursor pattern (startAt is deprecated)"
+          - "JQL is its own query language — see Atlassian JQL docs for syntax"
+          - "requesting fewer fields dramatically improves response time"
+
+      - tool_name: get_issue
+        endpoint: GET /rest/api/3/issue/{issueIdOrKey}
+        description: >
+          Get full details for a single issue by key or ID. Returns all
+          fields including summary, description (in Atlassian Document
+          Format), status, assignee, reporter, comments, and custom fields.
+        parameters:
+          - name: issueIdOrKey
+            description: "The issue key (e.g. PROJ-123) or numeric issue ID."
+            required: true
+          - name: fields
+            description: >
+              Comma-separated list of fields to return. Use "*all" for
+              everything or specific names to reduce payload.
+            required: false
+        hints:
+          - "description and comments use Atlassian Document Format (ADF), not plain text"
+
+      - tool_name: create_issue
+        endpoint: POST /rest/api/3/issue
+        description: >
+          Create a new issue in a project. Requires at minimum a project
+          key, issue type, and summary. Description must be in Atlassian
+          Document Format (ADF) for API v3.
+        parameters:
+          - name: project
+            description: "The project key (e.g. ENG) or project ID."
+            required: true
+          - name: issuetype
+            description: >
+              The issue type name or ID. Common values: "Bug", "Story",
+              "Task", "Epic".
+            required: true
+          - name: summary
+            description: "The issue summary/title."
+            required: true
+          - name: description
+            description: >
+              The issue description in Atlassian Document Format (ADF).
+              ADF is a structured JSON format, not plain text or Markdown.
+            required: false
+          - name: labels
+            description: "List of label strings to apply to the issue."
+            required: false
+          - name: assignee
+            description: "The accountId of the user to assign. Use 'myself' endpoint to get your own."
+            required: false
+
+      - tool_name: update_issue
+        endpoint: PUT /rest/api/3/issue/{issueIdOrKey}
+        description: >
+          Update fields on an existing issue. Only include the fields you
+          want to change. Supports updating summary, description, labels,
+          assignee, priority, and custom fields.
+        parameters:
+          - name: issueIdOrKey
+            description: "The issue key (e.g. PROJ-123) or numeric issue ID."
+            required: true
+          - name: summary
+            description: "Updated summary/title."
+            required: false
+          - name: description
+            description: "Updated description in Atlassian Document Format (ADF)."
+            required: false
+          - name: labels
+            description: "Updated list of label strings."
+            required: false
+          - name: assignee
+            description: "The accountId of the new assignee, or null to unassign."
+            required: false
+
+      - tool_name: delete_issue
+        endpoint: DELETE /rest/api/3/issue/{issueIdOrKey}
+        description: >
+          Permanently delete an issue. This cannot be undone. If the issue
+          has subtasks, they must be deleted first unless deleteSubtasks
+          is set to true.
+        parameters:
+          - name: issueIdOrKey
+            description: "The issue key (e.g. PROJ-123) or numeric issue ID."
+            required: true
+          - name: deleteSubtasks
+            description: "Set to true to also delete all subtasks. Defaults to false."
+            required: false
+
+      - tool_name: add_comment
+        endpoint: POST /rest/api/3/issue/{issueIdOrKey}/comment
+        description: >
+          Add a comment to an issue. In API v3, the comment body must be
+          in Atlassian Document Format (ADF), a structured JSON format.
+          Comments support visibility restrictions to specific roles.
+        parameters:
+          - name: issueIdOrKey
+            description: "The issue key (e.g. PROJ-123) or numeric issue ID."
+            required: true
+          - name: body
+            description: >
+              The comment body in Atlassian Document Format (ADF). This is
+              a structured JSON document, not plain text or Markdown.
+            required: true
+        hints:
+          - "body must be ADF — plain text strings will be rejected by the v3 API"
+
+      - tool_name: transition_issue
+        endpoint: POST /rest/api/3/issue/{issueIdOrKey}/transitions
+        description: >
+          Move an issue to a new workflow state. First call with GET to
+          retrieve available transitions for the issue's current state,
+          then POST with the target transition ID to execute it. Common
+          transitions include "To Do" -> "In Progress" -> "Done".
+        parameters:
+          - name: issueIdOrKey
+            description: "The issue key (e.g. PROJ-123) or numeric issue ID."
+            required: true
+          - name: transitionId
+            description: >
+              The ID of the transition to execute. Get available transitions
+              by calling GET on this same endpoint.
+            required: true
+          - name: comment
+            description: "Optional comment to add when transitioning, in ADF format."
+            required: false
+
+auth:
+  type: oauth_bearer
+  oauth:
+    issuer: "https://auth.atlassian.com"
+    scopes:
+      - read:jira-work
+      - write:jira-work
+      - read:jira-user
+  notes: >
+    Jira Cloud uses Atlassian's OAuth 2.0 (3LO) authorization code flow.
+    The issuer is auth.atlassian.com, separate from the product domain.
+    Create an OAuth app at developer.atlassian.com/console. The
+    {domain} placeholder in the base URL must be replaced with the
+    customer's Atlassian site name. Scopes cannot restrict access to
+    specific projects — project-level access is governed by Jira
+    permissions for the authenticated user.
