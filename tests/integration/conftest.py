@@ -106,6 +106,11 @@ def template_dir() -> Path:
     return TEMPLATE_DIR
 
 
+def spec_available(config: FixtureConfig) -> bool:
+    """Check if the OpenAPI spec for a fixture exists (may need downloading)."""
+    return (OPENAPI_FIXTURES / config.openapi_yaml).exists()
+
+
 def run_generator(config: FixtureConfig, output_dir: Path) -> Path:
     """Run the full generation pipeline for a fixture config.
 

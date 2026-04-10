@@ -13,7 +13,13 @@ from pathlib import Path
 import pytest
 import yaml
 
-from .conftest import ALL_FIXTURES, FixtureConfig, run_generator
+from .conftest import ALL_FIXTURES, FixtureConfig, run_generator, spec_available
+
+_google_drive = next(c for c in ALL_FIXTURES if c.server_name == "google-drive")
+requires_google_drive_spec = pytest.mark.skipif(
+    not spec_available(_google_drive),
+    reason="Google Drive OpenAPI spec not downloaded — run scripts/download_openapi_specs.sh",
+)
 
 
 # ---------------------------------------------------------------------------
@@ -40,14 +46,19 @@ def _all_py_files(project_dir: Path) -> list[Path]:
 # Fixture: generate project once per config, shared across tests in a class
 # ---------------------------------------------------------------------------
 
-_FIXTURE_IDS = [c.server_name for c in ALL_FIXTURES]
+_AVAILABLE_FIXTURES = [c for c in ALL_FIXTURES if spec_available(c)]
+_FIXTURE_IDS = [c.server_name for c in _AVAILABLE_FIXTURES]
 
 
-@pytest.fixture(params=ALL_FIXTURES, ids=_FIXTURE_IDS)
+@pytest.fixture(params=_AVAILABLE_FIXTURES, ids=_FIXTURE_IDS)
 def generated_project(
     request: pytest.FixtureRequest, tmp_path: Path
 ) -> tuple[FixtureConfig, Path]:
-    """Run the generator pipeline and return (config, project_dir)."""
+    """Run the generator pipeline and return (config, project_dir).
+
+    Fixtures whose OpenAPI spec hasn't been downloaded are automatically
+    skipped. Run scripts/download_openapi_specs.sh to fetch them.
+    """
     config: FixtureConfig = request.param
     project_dir = run_generator(config, tmp_path)
     return config, project_dir
@@ -241,7 +252,9 @@ class TestDeploymentManifests:
 # ---------------------------------------------------------------------------
 
 
-OAUTH_FIXTURES = [c for c in ALL_FIXTURES if c.auth_type == "oauth_bearer"]
+OAUTH_FIXTURES = [
+    c for c in ALL_FIXTURES if c.auth_type == "oauth_bearer" and spec_available(c)
+]
 OAUTH_IDS = [c.server_name for c in OAUTH_FIXTURES]
 
 
@@ -393,12 +406,13 @@ class TestNoAuthManifests:
 # ---------------------------------------------------------------------------
 
 
+@requires_google_drive_spec
 class TestParameterOverrides:
     """Verify YAML parameter overrides are applied in generated code."""
 
     def test_google_drive_file_id_description(self, tmp_path: Path) -> None:
         """The get_file tool should use the YAML description for fileId, not the spec default."""
-        config = next(c for c in ALL_FIXTURES if c.server_name == "google-drive")
+        config = _google_drive
         project_dir = run_generator(config, tmp_path)
         tools_path = project_dir / "src" / config.module_name / "api" / "tools.py"
         content = tools_path.read_text()
@@ -406,11 +420,12 @@ class TestParameterOverrides:
         assert "The ID of the file to retrieve." in content
 
 
+@requires_google_drive_spec
 class TestHintsNotInGeneratedCode:
     """Verify hints from the YAML are not present in generated Python code."""
 
     def test_no_hints_in_tools(self, tmp_path: Path) -> None:
-        config = next(c for c in ALL_FIXTURES if c.server_name == "google-drive")
+        config = _google_drive
         project_dir = run_generator(config, tmp_path)
         tools_path = project_dir / "src" / config.module_name / "api" / "tools.py"
         content = tools_path.read_text()
@@ -420,11 +435,12 @@ class TestHintsNotInGeneratedCode:
         assert "consider field selection" not in content
 
 
+@requires_google_drive_spec
 class TestDeterminism:
     """Verify the generator produces identical output for identical inputs."""
 
     def test_pipeline_is_deterministic(self, tmp_path: Path) -> None:
-        config = next(c for c in ALL_FIXTURES if c.server_name == "google-drive")
+        config = _google_drive
 
         dir_a = tmp_path / "run_a"
         dir_b = tmp_path / "run_b"

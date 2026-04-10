@@ -86,7 +86,8 @@ ALL_E2E = [
     ),
 ]
 
-E2E_IDS = [f.server_name for f in ALL_E2E]
+AVAILABLE_E2E = [f for f in ALL_E2E if (OPENAPI_FIXTURES / f.openapi_yaml).exists()]
+E2E_IDS = [f.server_name for f in AVAILABLE_E2E]
 
 
 def _port_free(port: int) -> bool:
@@ -226,7 +227,7 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-@pytest.fixture(params=ALL_E2E, ids=E2E_IDS)
+@pytest.fixture(params=AVAILABLE_E2E, ids=E2E_IDS)
 def running_server(
     request: pytest.FixtureRequest, tmp_path: Path
 ) -> Generator[tuple[E2EFixture, Path, list[dict]]]:
