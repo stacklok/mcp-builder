@@ -5,6 +5,7 @@ description = "A pipeline for generating ToolHive-ready MCP servers from OpenAPI
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "openapi-pydantic>=0.5.1",
     "pydantic>=2.12.5",
     "pyyaml>=6.0.3",
 ]

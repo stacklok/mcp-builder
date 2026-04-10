@@ -1,0 +1,405 @@
+"""OpenAPI spec loading and parameter extraction.
+
+Pipeline stage: loading (files → typed data).
+This is the first step in the codegen pipeline. It loads an OpenAPI spec
+file into a fully typed model (via openapi-pydantic) and provides helper
+functions to extract parameters and request body fields from operations.
+
+Downstream consumers (codegen.plan) call these helpers to build a
+ServerPlan. Renderers never call this module directly.
+
+OpenAPI terminology used in this module:
+    - Operation: a single HTTP method on a path (e.g., GET /items/{id}).
+      Each operation can have parameters and a request body.
+    - Parameter: a named value passed via URL path, query string, header,
+      or cookie (e.g., ``itemId`` in /items/{itemId}, ``fields`` in ?fields=name).
+    - Body field: a property of the JSON request body schema
+      (e.g., ``name`` in {"name": "foo"}). Body fields are separate from
+      parameters in OpenAPI — they live under ``requestBody``, not ``parameters``.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+from pathlib import Path
+from typing import Literal, cast
+
+import yaml
+from openapi_pydantic import parse_obj
+from openapi_pydantic.v3.v3_0 import OpenAPI as OpenAPI30
+from openapi_pydantic.v3.v3_0 import Operation as Op30
+from openapi_pydantic.v3.v3_0 import Parameter as OAParam30
+from openapi_pydantic.v3.v3_0 import PathItem as PathItem30
+from openapi_pydantic.v3.v3_0 import Reference as Ref30
+from openapi_pydantic.v3.v3_0 import Schema as Schema30
+from openapi_pydantic.v3.v3_1 import OpenAPI as OpenAPI31
+from openapi_pydantic.v3.v3_1 import Operation as Op31
+from openapi_pydantic.v3.v3_1 import Parameter as OAParam31
+from openapi_pydantic.v3.v3_1 import PathItem as PathItem31
+from openapi_pydantic.v3.v3_1 import Reference as Ref31
+from openapi_pydantic.v3.v3_1 import Schema as Schema31
+from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
+
+# Union of both OpenAPI versions. The field interfaces are identical
+# (same names, same types) so downstream code can treat them uniformly.
+OpenAPISpec = OpenAPI30 | OpenAPI31
+OpenAPISchema = Schema30 | Schema31
+
+# OpenAPI types that map to Python built-in types. We intentionally error
+# on unknown types rather than silently defaulting to str — this catches
+# spec issues early rather than producing subtly wrong generated code.
+# The set of parameter locations, schema types, and Python types we support,
+# expressed as Literal types for static type safety.
+ParameterLocation = Literal["path", "query", "header", "cookie"]
+PythonType = Literal["str", "int", "float", "bool", "list", "dict"]
+
+OPENAPI_TYPE_MAP: dict[str, PythonType] = {
+    "string": "str",
+    "integer": "int",
+    "number": "float",
+    "boolean": "bool",
+    "array": "list",
+    "object": "dict",
+}
+SchemaType = Literal["string", "integer", "number", "boolean", "array", "object"]
+
+
+class ExtractedParameter(BaseModel):
+    """A single parameter extracted from an OpenAPI operation.
+
+    Pipeline stage: loading (intermediate data from spec_parser).
+    Consumed by: codegen.plan.build_server_plan() to build ParamPlan objects.
+
+    Example (from GET /items/{itemId}):
+        ExtractedParameter(
+            name="itemId", location="path", required=True,
+            schema_type="string", description="The ID of the item."
+        )
+    """
+
+    name: str
+    location: ParameterLocation
+    required: bool = False
+    schema_type: SchemaType = "string"
+    description: str = ""
+
+
+class ExtractedBodyField(BaseModel):
+    """A single field from a request body schema.
+
+    Pipeline stage: loading (intermediate data from spec_parser).
+    Consumed by: codegen.plan.build_server_plan() to build ParamPlan objects
+    with location="body".
+
+    Example (from POST /items with CreateItemRequest body):
+        ExtractedBodyField(
+            name="name", schema_type="string",
+            description="The name of the item.", required=True
+        )
+    """
+
+    name: str
+    schema_type: SchemaType = "string"
+    description: str = ""
+    required: bool = False
+
+
+def load_openapi_spec(path: str | Path) -> OpenAPISpec:
+    """Load an OpenAPI spec from a JSON or YAML file into a typed model.
+
+    Pipeline stage: loading (file → typed OpenAPI model).
+    Called by: codegen.plan.build_server_plan() or cli.run_pipeline().
+
+    Supports OpenAPI 3.0.x and 3.1.x specs. The version is auto-detected
+    from the ``openapi`` field in the document.
+
+    Args:
+        path: Path to the OpenAPI spec file (.json, .yaml, or .yml).
+
+    Returns:
+        Typed OpenAPI model (OpenAPI30 or OpenAPI31).
+
+    Raises:
+        FileNotFoundError: If the file does not exist.
+        ValueError: If the spec cannot be parsed into a valid OpenAPI model.
+    """
+    path = Path(path)
+    logger.info("Loading OpenAPI spec from %s", path)
+    with path.open() as f:
+        if path.suffix in (".yaml", ".yml"):
+            raw = yaml.safe_load(f)
+        else:
+            raw = json.load(f)
+
+    spec = parse_obj(raw)
+    if spec is None:
+        raise ValueError(f"Failed to parse OpenAPI spec from '{path}'")
+
+    logger.info(
+        "Loaded OpenAPI %s spec: %s v%s (%d paths)",
+        raw.get("openapi", "unknown"),
+        spec.info.title,
+        spec.info.version,
+        len(spec.paths) if spec.paths else 0,
+    )
+    return spec
+
+
+def parse_endpoint(endpoint: str) -> tuple[str, str]:
+    """Parse an endpoint string into its HTTP method and path.
+
+    Pipeline stage: loading (string parsing utility).
+    Used by: codegen.plan.build_server_plan() when iterating over tools.
+
+    Example:
+        >>> parse_endpoint("GET /items/{itemId}")
+        ("GET", "/items/{itemId}")
+
+    Args:
+        endpoint: Endpoint string in "METHOD /path" format.
+
+    Returns:
+        Tuple of (method, path).
+
+    Raises:
+        ValueError: If the endpoint string is not in the expected format.
+    """
+    parts = endpoint.split(" ", 1)
+    if len(parts) != 2:
+        raise ValueError(f"Endpoint '{endpoint}' must be in 'METHOD /path' format")
+    return parts[0], parts[1]
+
+
+def _get_operation(
+    spec: OpenAPISpec, method: str, path: str
+) -> tuple[PathItem30 | PathItem31, Op30 | Op31]:
+    """Look up a path item and operation from the spec.
+
+    Shared by get_parameters() and get_body_fields() to avoid
+    duplicating the path/method lookup and error handling.
+
+    Example:
+        path_item, operation = _get_operation(spec, "GET", "/items/{itemId}")
+        # path_item contains all methods for /items/{itemId}
+        # operation is the GET operation object
+
+    Raises:
+        KeyError: If the path or method is not found in the spec.
+    """
+    path_item = (spec.paths or {}).get(path)
+    if path_item is None:
+        raise KeyError(f"Path '{path}' not found in spec")
+    operation = getattr(path_item, method.lower(), None)
+    if operation is None:
+        raise KeyError(f"Method '{method}' not found for path '{path}'")
+    return path_item, operation
+
+
+def get_parameters(
+    spec: OpenAPISpec, method: str, path: str
+) -> list[ExtractedParameter]:
+    """Extract all path/query parameters for an operation.
+
+    Pipeline stage: loading (spec → typed parameter list).
+    Called by: codegen.plan.build_server_plan().
+
+    Merges path-level and operation-level parameters. When both define a
+    parameter with the same (name, location), the operation-level one wins.
+
+    Example:
+        Given GET /items/{itemId} with path param "itemId" and query param "fields":
+        >>> get_parameters(spec, "GET", "/items/{itemId}")
+        [ExtractedParameter(name="itemId", ...), ExtractedParameter(name="fields", ...)]
+
+    Args:
+        spec: Typed OpenAPI spec.
+        method: HTTP method (e.g., "GET").
+        path: URL path (e.g., "/items/{itemId}").
+
+    Returns:
+        List of extracted parameters. Empty if the operation has none.
+
+    Raises:
+        KeyError: If the path or method is not found in the spec.
+    """
+    path_item, operation = _get_operation(spec, method, path)
+
+    # Merge path-level and operation-level params. Operation wins on conflict.
+    merged: dict[tuple[str, str], OAParam30 | OAParam31] = {}
+
+    # NOTE: $ref parameters (e.g., $ref: "#/components/parameters/fileId") are
+    # not yet resolved. Real-world specs like Google Drive and GitHub use these
+    # heavily. See https://github.com/StacklokLabs/mcp-builder/issues/19
+    for param in path_item.parameters or []:
+        if isinstance(param, Ref30 | Ref31):
+            raise NotImplementedError(
+                f"$ref parameter '{param.ref}' in path '{path}' is not yet supported. "
+                "See https://github.com/StacklokLabs/mcp-builder/issues/19"
+            )
+        merged[(param.name, param.param_in.value)] = param
+
+    for param in operation.parameters or []:
+        if isinstance(param, Ref30 | Ref31):
+            raise NotImplementedError(
+                f"$ref parameter '{param.ref}' in {method} {path} is not yet supported. "
+                "See https://github.com/StacklokLabs/mcp-builder/issues/19"
+            )
+        merged[(param.name, param.param_in.value)] = param
+
+    result = []
+    for param in merged.values():
+        schema_type = _extract_schema_type(param)
+        result.append(
+            ExtractedParameter(
+                name=param.name,
+                location=param.param_in.value,
+                required=param.required,
+                schema_type=schema_type,
+                description=param.description or "",
+            )
+        )
+    return result
+
+
+def get_body_fields(
+    spec: OpenAPISpec, method: str, path: str
+) -> list[ExtractedBodyField]:
+    """Extract request body fields for an operation.
+
+    Pipeline stage: loading (spec → typed body field list).
+    Called by: codegen.plan.build_server_plan().
+
+    Looks for an application/json request body with either inline properties
+    or a $ref to a component schema. Resolves the $ref and extracts fields.
+
+    Example:
+        Given POST /items with a CreateItemRequest body containing "name" (required)
+        and "description" (optional):
+        >>> get_body_fields(spec, "POST", "/items")
+        [ExtractedBodyField(name="name", ..., required=True),
+         ExtractedBodyField(name="description", ..., required=False)]
+
+    Args:
+        spec: Typed OpenAPI spec.
+        method: HTTP method (e.g., "POST").
+        path: URL path (e.g., "/items").
+
+    Returns:
+        List of extracted body fields. Empty if the operation has no JSON body.
+
+    Raises:
+        KeyError: If the path or method is not found in the spec.
+    """
+    _, operation = _get_operation(spec, method, path)
+
+    if operation.requestBody is None:
+        return []
+
+    # NOTE: $ref on requestBody (e.g., $ref: "#/components/requestBodies/CreateItem")
+    # is not yet resolved. See https://github.com/StacklokLabs/mcp-builder/issues/19
+    req_body = operation.requestBody
+    if isinstance(req_body, Ref30 | Ref31):
+        raise NotImplementedError(
+            f"$ref requestBody '{req_body.ref}' in {method} {path} is not yet supported. "
+            "See https://github.com/StacklokLabs/mcp-builder/issues/19"
+        )
+
+    json_media = (req_body.content or {}).get("application/json")
+    if json_media is None:
+        return []
+
+    schema = json_media.media_type_schema
+    if schema is None:
+        return []
+
+    # Resolve $ref to component schema
+    if isinstance(schema, Ref30 | Ref31):
+        resolved = _resolve_schema_ref(spec, schema.ref)
+        if resolved is None:
+            return []
+        schema = resolved
+
+    required_names = set(schema.required or [])
+    fields = []
+    # NOTE: allOf/oneOf/anyOf schema composition is not yet supported.
+    # Real-world specs use these for inheritance and union types.
+    # See https://github.com/StacklokLabs/mcp-builder/issues/19
+    for composed_key in ("allOf", "oneOf", "anyOf"):
+        if getattr(schema, composed_key, None):
+            raise NotImplementedError(
+                f"Schema composition '{composed_key}' in {method} {path} body "
+                "is not yet supported. "
+                "See https://github.com/StacklokLabs/mcp-builder/issues/19"
+            )
+
+    for name, prop in (schema.properties or {}).items():
+        # NOTE: $ref on individual body properties is not yet resolved.
+        # See https://github.com/StacklokLabs/mcp-builder/issues/19
+        if isinstance(prop, Ref30 | Ref31):
+            raise NotImplementedError(
+                f"$ref property '{prop.ref}' in {method} {path} body "
+                "is not yet supported. "
+                "See https://github.com/StacklokLabs/mcp-builder/issues/19"
+            )
+        prop_type = _schema_to_type(prop)
+        fields.append(
+            ExtractedBodyField(
+                name=name,
+                schema_type=prop_type,
+                description=prop.description or "",
+                required=name in required_names,
+            )
+        )
+    return fields
+
+
+def _extract_schema_type(param: OAParam30 | OAParam31) -> SchemaType:
+    """Extract the schema type string from a parameter's schema.
+
+    Raises ValueError for unknown types rather than silently defaulting.
+    """
+    if param.param_schema is None or isinstance(param.param_schema, Ref30 | Ref31):
+        return "string"
+    return _schema_to_type(param.param_schema)
+
+
+def _schema_to_type(schema: OpenAPISchema) -> SchemaType:
+    """Extract the type string from an inline schema object."""
+    raw_type = schema.type
+    if raw_type is None:
+        return "string"
+    # v3.1 can return a list of types; take the first non-null one
+    if isinstance(raw_type, list):
+        for t in raw_type:
+            if t.value != "null":
+                raw_type = t
+                break
+        else:
+            return "string"
+    type_str: str = raw_type.value if hasattr(raw_type, "value") else str(raw_type)
+    if type_str not in OPENAPI_TYPE_MAP:
+        raise ValueError(
+            f"Unknown OpenAPI schema type '{type_str}'. "
+            f"Supported types: {sorted(OPENAPI_TYPE_MAP.keys())}"
+        )
+    # We've verified type_str is in OPENAPI_TYPE_MAP, which only contains valid
+    # SchemaType values, so this cast is safe.
+    return cast(SchemaType, type_str)
+
+
+def _resolve_schema_ref(spec: OpenAPISpec, ref: str) -> OpenAPISchema | None:
+    """Resolve a $ref string like '#/components/schemas/Foo' to the schema object."""
+    if not ref.startswith("#/components/schemas/"):
+        logger.warning("Cannot resolve non-component $ref: %s", ref)
+        return None
+    schema_name = ref.rsplit("/", 1)[-1]
+    if spec.components is None:
+        return None
+    schemas = spec.components.schemas or {}
+    schema = schemas.get(schema_name)
+    if schema is None or isinstance(schema, Ref30 | Ref31):
+        return None  # nested $ref not supported
+    return schema

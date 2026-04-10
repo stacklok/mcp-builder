@@ -1,0 +1,74 @@
+openapi: "3.0.3"
+info:
+  title: "Test API"
+  version: "1.0.0"
+servers:
+  - url: "https://api.example.com"
+paths:
+  /items/{itemId}:
+    parameters:
+      - name: itemId
+        in: path
+        required: true
+        schema:
+          type: string
+        description: "The ID of the item."
+    get:
+      operationId: getItem
+      summary: Get an item by ID
+      parameters:
+        - name: fields
+          in: query
+          required: false
+          schema:
+            type: string
+          description: "Comma-separated fields to include."
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Item"
+  /items:
+    post:
+      operationId: createItem
+      summary: Create a new item
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateItemRequest"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Item"
+components:
+  schemas:
+    Item:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+      required:
+        - id
+        - name
+    CreateItemRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          description: "The name of the item."
+        description:
+          type: string
+          description: "Optional description."
+      required:
+        - name
