@@ -1,0 +1,148 @@
+version: "1"
+
+server:
+  name: bamboohr
+  description: "BambooHR MCP server for employee directory, time-off management, and benefits"
+
+spec:
+  source: "https://documentation.bamboohr.com/reference"
+  format: openapi3
+  base_url: "https://api.bamboohr.com/api/gateway.php/{companyDomain}/v1"
+  total_endpoints: 65
+  scoped_endpoints: 8
+
+workflows:
+  - "Employees check who is out today and request time off"
+  - "Managers review and filter pending time-off requests across their team"
+  - "Employees browse available benefits plans and view their own enrollment"
+
+groups:
+  - name: employee-directory
+    description: "Employee lookup and directory browsing"
+    tools:
+      - tool_name: list_employees
+        endpoint: GET /v1/employees/directory
+        description: >
+          List all employees in the company directory. Returns names, IDs,
+          departments, job titles, and work emails. Use this to browse or
+          search the org chart.
+        hints:
+          - "response may be large for big orgs — consider extracting only needed fields"
+
+      - tool_name: get_employee
+        endpoint: GET /v1/employees/{id}
+        description: >
+          Get detailed information for a single employee by their BambooHR ID.
+          Supports selecting specific fields via a comma-separated list. The
+          API supports over 400 possible fields per employee record.
+        parameters:
+          - name: id
+            description: "The BambooHR employee ID."
+            required: true
+          - name: fields
+            description: >
+              Comma-separated list of field names to include in the response.
+              Examples: "firstName,lastName,department,jobTitle,workEmail".
+              Use GET /v1/meta/fields to discover available field names.
+            required: false
+
+  - name: time-off
+    description: "Time-off requests, policies, and out-of-office visibility"
+    tools:
+      - tool_name: get_whos_out
+        endpoint: GET /v1/time_off/whos_out/
+        description: >
+          Get a list of employees who are currently out or will be out in a
+          date range. Includes both time-off and company holidays. Defaults
+          to today through 14 days out if no dates are specified.
+        parameters:
+          - name: start
+            description: "Start date in YYYY-MM-DD format. Defaults to today."
+            required: false
+          - name: end
+            description: "End date in YYYY-MM-DD format. Defaults to 14 days from start."
+            required: false
+
+      - tool_name: list_time_off_requests
+        endpoint: GET /v1/time_off/requests
+        description: >
+          List time-off requests across the organization. Managers use this
+          to review pending, approved, or denied requests for their reports.
+          Supports filtering by status, employee, date range, and request type.
+        parameters:
+          - name: status
+            description: >
+              Filter by request status. One of: "approved", "denied",
+              "superseded", "requested", "canceled".
+            required: false
+          - name: start
+            description: "Filter requests starting on or after this date (YYYY-MM-DD)."
+            required: false
+          - name: end
+            description: "Filter requests ending on or before this date (YYYY-MM-DD)."
+            required: false
+        hints:
+          - "managers see all direct-report requests; employees see only their own"
+
+      - tool_name: get_time_off_policies
+        endpoint: GET /v1/time_off/policies
+        description: >
+          List available time-off policies for the company. Returns policy
+          names, types, and accrual details. Use this to understand what
+          types of time off are available before creating a request.
+
+      - tool_name: request_time_off
+        endpoint: POST /v1/time_off/requests
+        description: >
+          Submit a new time-off request for the authenticated employee.
+          Requires specifying the time-off type, start and end dates, and
+          an optional note. The request enters a pending state for manager
+          approval unless auto-approve is configured.
+        parameters:
+          - name: timeOffTypeId
+            description: "The ID of the time-off policy type (from get_time_off_policies)."
+            required: true
+          - name: start
+            description: "Start date of the time off in YYYY-MM-DD format."
+            required: true
+          - name: end
+            description: "End date of the time off in YYYY-MM-DD format."
+            required: true
+          - name: notes
+            description: "Optional note or reason for the request."
+            required: false
+
+  - name: benefits
+    description: "Company benefits plans and employee enrollment"
+    tools:
+      - tool_name: list_company_benefits
+        endpoint: GET /v1/benefits/company_benefit
+        description: >
+          List all benefits plans offered by the company. Returns plan names,
+          types, and coverage details. Use this to understand what benefits
+          are available for enrollment.
+
+      - tool_name: get_member_benefits
+        endpoint: GET /v1/benefits/member-benefits
+        description: >
+          Get the authenticated employee's enrolled benefits. Returns current
+          plan selections, coverage levels, and enrollment status. Results
+          are paginated for employees with many benefit elections.
+        hints:
+          - "paginated: uses page/pageSize cursor pattern"
+
+auth:
+  type: oauth_bearer
+  oauth:
+    issuer: "https://{companyDomain}.bamboohr.com"
+    scopes:
+      - openid
+      - email
+      - offline_access
+      - employees.read
+  notes: >
+    BambooHR uses OAuth2 authorization code flow with a company-specific
+    issuer URL. The {companyDomain} placeholder must be replaced with the
+    customer's BambooHR subdomain. The MCP server receives an access token
+    via the Authorization header and forwards it to BambooHR API endpoints.
+    Tokens expire after 1 hour; offline_access scope enables refresh tokens.

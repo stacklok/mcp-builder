@@ -1,0 +1,181 @@
+version: "1"
+
+server:
+  name: slack
+  description: "Slack MCP server for channels, messaging, and user lookup"
+
+spec:
+  source: "https://raw.githubusercontent.com/slackapi/slack-api-specs/master/web-api/slack_web_openapi_v2.json"
+  format: openapi2
+  base_url: "https://slack.com"
+  total_endpoints: 200
+  scoped_endpoints: 7
+
+workflows:
+  - "Engineers search message history for context on past decisions"
+  - "Team members send status updates and announcements to channels"
+  - "Managers look up team member profiles and channel membership"
+
+groups:
+  - name: channels
+    description: "Channel discovery and metadata"
+    tools:
+      - tool_name: list_channels
+        endpoint: GET /api/conversations.list
+        description: >
+          List all channels visible to the authenticated user. Returns
+          channel names, IDs, topics, purposes, and member counts.
+          Includes public channels and private channels the user belongs to.
+        parameters:
+          - name: types
+            description: >
+              Comma-separated list of channel types to include. Values:
+              "public_channel", "private_channel", "mpim", "im".
+              Defaults to "public_channel".
+            required: false
+          - name: limit
+            description: "Number of channels to return per page. Default 100, maximum 1000."
+            required: false
+          - name: cursor
+            description: >
+              Pagination cursor returned from a previous request as
+              next_cursor in the response_metadata.
+            required: false
+        hints:
+          - "paginated: uses cursor/next_cursor pattern in response_metadata"
+          - "returns archived channels by default — use exclude_archived=true to filter"
+
+      - tool_name: get_channel_info
+        endpoint: GET /api/conversations.info
+        description: >
+          Get detailed information about a single channel by ID. Returns
+          the channel's name, topic, purpose, creation date, member count,
+          and pinned items.
+        parameters:
+          - name: channel
+            description: "The channel ID (e.g. C0123456789)."
+            required: true
+
+  - name: messages
+    description: "Message reading, searching, and sending"
+    tools:
+      - tool_name: get_channel_history
+        endpoint: GET /api/conversations.history
+        description: >
+          Fetch message history for a channel. Returns messages in reverse
+          chronological order with text, author, timestamps, and reactions.
+          Use oldest/latest params to narrow the time window.
+        parameters:
+          - name: channel
+            description: "The channel ID to fetch history from."
+            required: true
+          - name: limit
+            description: "Number of messages to return. Default 100, maximum 1000."
+            required: false
+          - name: oldest
+            description: >
+              Only return messages after this Unix timestamp (inclusive).
+              Example: "1234567890.123456".
+            required: false
+          - name: latest
+            description: >
+              Only return messages before this Unix timestamp (exclusive).
+              Defaults to now.
+            required: false
+          - name: cursor
+            description: "Pagination cursor for fetching additional pages."
+            required: false
+        hints:
+          - "paginated: uses cursor/next_cursor pattern in response_metadata"
+          - "timestamps are Unix epoch strings with microsecond precision"
+
+      - tool_name: search_messages
+        endpoint: GET /api/search.messages
+        description: >
+          Search for messages across the entire workspace. Uses Slack's
+          search syntax supporting keywords, channel filters, user filters,
+          and date ranges.
+        parameters:
+          - name: query
+            description: >
+              Search query string. Supports Slack search modifiers like
+              "in:#general", "from:@alice", "after:2024-01-01", and
+              "has:link". Combine with plain text keywords.
+            required: true
+          - name: count
+            description: "Number of results per page. Default 20, maximum 100."
+            required: false
+          - name: sort
+            description: >
+              Sort order for results. One of "score" (relevance) or
+              "timestamp". Defaults to "score".
+            required: false
+        hints:
+          - "paginated: uses page/total_count pattern"
+          - "only searches messages the authenticated user can see"
+
+      - tool_name: send_message
+        endpoint: POST /api/chat.postMessage
+        description: >
+          Send a message to a channel or direct message. Supports plain
+          text and Slack's Block Kit for rich formatting. The authenticated
+          user appears as the message author.
+        parameters:
+          - name: channel
+            description: "The channel ID or user ID to send the message to."
+            required: true
+          - name: text
+            description: >
+              The message text. Used as the notification text and fallback
+              for clients that don't support blocks. Supports Slack
+              mrkdwn formatting.
+            required: true
+
+  - name: users
+    description: "User directory and profile lookup"
+    tools:
+      - tool_name: list_users
+        endpoint: GET /api/users.list
+        description: >
+          List all users in the workspace. Returns user IDs, display names,
+          real names, email addresses, and status. Includes active and
+          deactivated accounts.
+        parameters:
+          - name: limit
+            description: "Number of users to return per page. Default 200."
+            required: false
+          - name: cursor
+            description: "Pagination cursor for fetching additional pages."
+            required: false
+        hints:
+          - "paginated: uses cursor/next_cursor pattern in response_metadata"
+          - "may be slow for large workspaces — use limit to page through results"
+
+      - tool_name: get_user_profile
+        endpoint: GET /api/users.profile.get
+        description: >
+          Get the full profile for a user. Returns display name, real name,
+          title, phone, email, status text, status emoji, and custom
+          profile fields configured by the workspace admin.
+        parameters:
+          - name: user
+            description: "The user ID to look up (e.g. U0123456789)."
+            required: true
+
+auth:
+  type: oauth_bearer
+  oauth:
+    issuer: "https://slack.com"
+    scopes:
+      - channels:read
+      - chat:write
+      - search:read
+      - users:read
+      - users.profile:read
+  notes: >
+    Slack uses OAuth2 authorization code flow via V2. Create an app at
+    api.slack.com/apps and install it to your workspace. The MCP server
+    receives a bot or user token via the Authorization header. Scopes are
+    extremely granular — each API method documents its required scope.
+    User tokens are needed for search; bot tokens work for most other
+    operations.
