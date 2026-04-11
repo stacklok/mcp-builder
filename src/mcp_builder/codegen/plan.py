@@ -26,9 +26,10 @@ Reading guide:
 from __future__ import annotations
 
 import keyword
-import logging
 import re
 from typing import Literal
+
+import structlog
 
 from pydantic import BaseModel
 
@@ -44,7 +45,7 @@ from mcp_builder.codegen.spec_parser import (
 )
 from mcp_builder.schema.models import MCPScope, Tool
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 
 # ---------------------------------------------------------------------------
@@ -182,21 +183,35 @@ def build_server_plan(scope: MCPScope, spec: OpenAPISpec) -> ServerPlan:
     """
     module_name = server_name_to_module(scope.server.name)
     logger.info(
-        "Building plan for server '%s' (module: %s)", scope.server.name, module_name
+        "building server plan",
+        server_name=scope.server.name,
+        module_name=module_name,
     )
 
     tools: list[ToolPlan] = []
     groups: list[GroupPlan] = []
 
     for group in scope.groups:
+        logger.debug(
+            "processing group", group_name=group.name, tool_count=len(group.tools)
+        )
         group_tool_names: list[str] = []
         for tool in group.tools:
             tool_plan = _build_tool_plan(tool, spec, group.name)
             tools.append(tool_plan)
             group_tool_names.append(tool.tool_name)
+            logger.debug(
+                "built tool plan",
+                tool_name=tool.tool_name,
+                path_params=len(tool_plan.path_params),
+                query_params=len(tool_plan.query_params),
+                body_fields=len(tool_plan.body_fields),
+            )
         groups.append(GroupPlan(name=group.name, tool_names=group_tool_names))
 
     auth = _build_auth_plan(scope)
+
+    logger.info("plan complete", tool_count=len(tools), group_count=len(groups))
 
     return ServerPlan(
         module_name=module_name,
@@ -222,11 +237,16 @@ def _build_tool_plan(tool: Tool, spec: OpenAPISpec, group_name: str) -> ToolPlan
     hints: list[str] = tool.hints or []
 
     method, path = parse_endpoint(endpoint)
+    logger.debug("building tool plan", tool_name=tool_name, endpoint=endpoint)
 
     # Build YAML override lookup: name → (description, required)
     yaml_overrides: dict[str, tuple[str, bool]] = {
         p.name: (p.description, p.required) for p in parameters
     }
+    if yaml_overrides:
+        logger.debug(
+            "yaml overrides", tool_name=tool_name, override_keys=list(yaml_overrides)
+        )
 
     # OpenAPI splits parameters into three locations. For a request like
     #   POST /items/{itemId}?fields=name  { "color": "red" }
@@ -239,6 +259,13 @@ def _build_tool_plan(tool: Tool, spec: OpenAPISpec, group_name: str) -> ToolPlan
     # exposed as tool arguments. Auth headers are handled by the client layer
     # (token passthrough), and cookie params are not relevant for MCP tools.
     spec_params = get_parameters(spec, method, path)
+    skipped = [p for p in spec_params if p.location not in ("path", "query")]
+    if skipped:
+        logger.debug(
+            "skipping header/cookie params",
+            tool_name=tool_name,
+            skipped=[p.name for p in skipped],
+        )
     path_params = _build_param_plans(
         [p for p in spec_params if p.location == "path"], yaml_overrides, "path"
     )
@@ -283,11 +310,26 @@ def _build_param_plans(
         required = param.required
         if param.name in yaml_overrides:
             desc, required = yaml_overrides[param.name]
+            logger.debug(
+                "applied yaml override",
+                param_name=param.name,
+                location=location,
+                required=required,
+            )
+        py_name = _sanitize_name(param.name)
         py_type = OPENAPI_TYPE_MAP[param.schema_type]
+        logger.debug(
+            "param plan",
+            name=param.name,
+            py_name=py_name,
+            py_type=py_type,
+            location=location,
+            required=required,
+        )
         plans.append(
             ParamPlan(
                 name=param.name,
-                py_name=_sanitize_name(param.name),
+                py_name=py_name,
                 py_type=py_type,
                 description=desc,
                 required=required,
@@ -313,11 +355,25 @@ def _build_body_param_plans(
         required = field.required
         if field.name in yaml_overrides:
             desc, required = yaml_overrides[field.name]
+            logger.debug(
+                "applied yaml override",
+                field_name=field.name,
+                location="body",
+                required=required,
+            )
+        py_name = _sanitize_name(field.name)
         py_type = OPENAPI_TYPE_MAP[field.schema_type]
+        logger.debug(
+            "body param plan",
+            name=field.name,
+            py_name=py_name,
+            py_type=py_type,
+            required=required,
+        )
         plans.append(
             ParamPlan(
                 name=field.name,
-                py_name=_sanitize_name(field.name),
+                py_name=py_name,
                 py_type=py_type,
                 description=desc,
                 required=required,
@@ -330,7 +386,13 @@ def _build_body_param_plans(
 
 def _build_auth_plan(scope: MCPScope) -> AuthPlan:
     """Extract auth configuration from scope into an AuthPlan."""
+    logger.debug("building auth plan", auth_type=scope.auth.type)
     if scope.auth.type == "oauth_bearer" and scope.auth.oauth is not None:
+        logger.debug(
+            "oauth config",
+            issuer=scope.auth.oauth.issuer,
+            scopes=scope.auth.oauth.scopes,
+        )
         return AuthPlan(
             type="oauth_bearer",
             issuer=scope.auth.oauth.issuer,
@@ -394,6 +456,8 @@ def _sanitize_name(name: str) -> str:
     # Avoid Python keywords: from -> from_, class -> class_
     if keyword.iskeyword(sanitized):
         sanitized += "_"
+    if sanitized != name:
+        logger.debug("sanitized name", original=name, sanitized=sanitized)
     return sanitized
 
 
@@ -409,6 +473,8 @@ def _resolve_name_collisions(params: list[ParamPlan]) -> None:
     "foo_bar_query" if they're in the same location). In that case, appends
     a numeric suffix.
     """
+    logger.debug("checking for name collisions", param_count=len(params))
+
     # First pass: suffix with location
     seen: dict[str, list[ParamPlan]] = {}
     for p in params:
@@ -416,8 +482,21 @@ def _resolve_name_collisions(params: list[ParamPlan]) -> None:
 
     for py_name, group in seen.items():
         if len(group) > 1:
+            logger.warning(
+                "name collision detected",
+                py_name=py_name,
+                params=[(p.name, p.location) for p in group],
+            )
             for p in group:
+                old_name = p.py_name
                 p.py_name = f"{py_name}_{p.location}"
+                logger.debug(
+                    "collision rename (location suffix)",
+                    original=old_name,
+                    renamed=p.py_name,
+                    param_name=p.name,
+                    location=p.location,
+                )
 
     # Second pass: if location-suffixed names still collide, add numeric suffix
     seen2: dict[str, list[ParamPlan]] = {}
@@ -426,5 +505,21 @@ def _resolve_name_collisions(params: list[ParamPlan]) -> None:
 
     for py_name, group in seen2.items():
         if len(group) > 1:
+            logger.warning(
+                "post-suffix collision",
+                py_name=py_name,
+                params=[(p.name, p.location) for p in group],
+            )
             for i, p in enumerate(group):
+                old_name = p.py_name
                 p.py_name = f"{py_name}_{i + 1}" if i > 0 else py_name
+                if p.py_name != old_name:
+                    logger.debug(
+                        "collision rename (numeric suffix)",
+                        original=old_name,
+                        renamed=p.py_name,
+                    )
+
+    collisions_found = any(len(g) > 1 for g in seen.values())
+    if not collisions_found:
+        logger.debug("no name collisions detected")

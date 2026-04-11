@@ -6,8 +6,11 @@ import re
 from pathlib import Path
 from typing import Literal, Self
 
+import structlog
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+logger = structlog.get_logger()
 
 
 class Parameter(BaseModel):
@@ -162,8 +165,18 @@ def load_scope(path: str | Path) -> MCPScope:
         pydantic.ValidationError: If the YAML content fails schema validation.
     """
     path = Path(path)
+    logger.info("loading scope", path=str(path))
     with path.open() as f:
         raw = yaml.safe_load(f)
     if raw is None:
         raise ValueError(f"File '{path}' is empty or contains only comments")
-    return MCPScope.model_validate(raw)
+    scope = MCPScope.model_validate(raw)
+    tool_count = sum(len(g.tools) for g in scope.groups)
+    logger.info(
+        "scope loaded",
+        server_name=scope.server.name,
+        group_count=len(scope.groups),
+        tool_count=tool_count,
+        auth_type=scope.auth.type,
+    )
+    return scope

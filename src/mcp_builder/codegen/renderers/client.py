@@ -16,8 +16,12 @@ from __future__ import annotations
 
 import textwrap
 
+import structlog
+
 from mcp_builder.codegen.plan import ServerPlan
 from mcp_builder.codegen.renderers.escape import escape_python_string
+
+logger = structlog.get_logger()
 
 _CLIENT_TEMPLATE = textwrap.dedent('''\
     """Async HTTP client for upstream API calls.
@@ -89,7 +93,10 @@ def render_client_module(plan: ServerPlan) -> str:
             def __init__(self, base_url: str = "https://api.example.com"):
                 ...
     """
-    return _CLIENT_TEMPLATE.format(
+    logger.info("rendering client module", base_url=plan.base_url)
+    result = _CLIENT_TEMPLATE.format(
         module_name=plan.module_name,
         base_url=escape_python_string(plan.base_url),
     )
+    logger.debug("client module rendered", chars=len(result))
+    return result

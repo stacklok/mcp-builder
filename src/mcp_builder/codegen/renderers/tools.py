@@ -12,15 +12,15 @@ Template: renderers/templates/tools.py.jinja2
 
 from __future__ import annotations
 
-import logging
 from pathlib import Path
 
+import structlog
 from jinja2 import Environment, FileSystemLoader
 
 from mcp_builder.codegen.plan import ParamPlan, ServerPlan, ToolPlan
 from mcp_builder.codegen.renderers.escape import escape_python_string
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 _TEMPLATES_DIR = Path(__file__).parent / "templates"
 
@@ -41,6 +41,7 @@ def render_tools_module(plan: ServerPlan) -> str:
     Returns:
         Python source code string for the tools module.
     """
+    logger.info("rendering tools module", tool_count=len(plan.tools))
     env = Environment(  # nosec B701 — generating Python source, not HTML
         loader=FileSystemLoader(_TEMPLATES_DIR),
         keep_trailing_newline=True,
@@ -52,11 +53,13 @@ def render_tools_module(plan: ServerPlan) -> str:
 
     tools_context = [_build_tool_context(t) for t in plan.tools]
 
-    return template.render(
+    result = template.render(
         module_name=plan.module_name,
         server_name=plan.server_name,
         tools=tools_context,
     )
+    logger.debug("tools module rendered", chars=len(result))
+    return result
 
 
 def _build_tool_context(tool: ToolPlan) -> dict:
@@ -70,6 +73,15 @@ def _build_tool_context(tool: ToolPlan) -> dict:
     required = [p for p in all_params if p.required]
     optional = [p for p in all_params if not p.required]
     ordered = required + optional
+
+    logger.debug(
+        "building tool context",
+        tool_name=tool.tool_name,
+        http_method=tool.http_method,
+        path=tool.path,
+        required_params=len(required),
+        optional_params=len(optional),
+    )
 
     signature = _build_signature(ordered)
     path_expr = _build_path_expr(tool.path, tool.path_params)
