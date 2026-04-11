@@ -143,7 +143,7 @@ class ServerPlan(BaseModel):
             module_name="google_drive_mcp",
             server_name="google-drive",
             description="Google Drive MCP server",
-            base_url="https://www.googleapis.com",
+            base_url="https://www.googleapis.com/drive/v3",
             auth=AuthPlan(type="oauth_bearer", ...),
             tools=[ToolPlan(tool_name="list_files", ...), ...],
             groups=[GroupPlan(name="file-operations", ...), ...],
