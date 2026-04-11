@@ -4,14 +4,15 @@
 # Usage:
 #   ./e2e/download_openapi_specs.sh
 #
-# Downloads specs to e2e/fixtures/ alongside their scope YAMLs.
-# The weather_api and minimal_api specs are synthetic (no real API)
-# and are checked into the repo — this script only fetches real ones.
+# Downloads specs to e2e/fixtures/real/ alongside their scope YAMLs.
+# The synthetic fixtures (weather_api, minimal_api) are checked into
+# the repo under e2e/fixtures/synthetic/ — this script only fetches
+# specs for real APIs.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-OUTDIR="$SCRIPT_DIR/fixtures"
+OUTDIR="$SCRIPT_DIR/fixtures/real"
 mkdir -p "$OUTDIR"
 
 echo "Downloading OpenAPI specs to $OUTDIR..."
