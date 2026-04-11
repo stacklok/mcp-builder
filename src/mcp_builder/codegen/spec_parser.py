@@ -142,7 +142,7 @@ def load_openapi_spec(path: str | Path) -> OpenAPISpec:
         raise ValueError(
             f"'{path}' is a Swagger {raw['swagger']} spec. "
             "Only OpenAPI 3.0+ is supported. Convert with: "
-            "swagger2openapi input.json -o output.yaml --yaml"
+            "swagger2openapi <input-file> -o <output>.yaml --yaml"
         )
 
     spec = parse_obj(raw)

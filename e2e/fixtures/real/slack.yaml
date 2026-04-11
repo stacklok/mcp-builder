@@ -5,6 +5,9 @@ server:
   description: "Slack MCP server for channels, messaging, and user lookup"
 
 spec:
+  # NOTE: The source URL serves Swagger 2.0. The download script
+  # (e2e/download_openapi_specs.sh) converts it to OpenAPI 3.0
+  # via swagger2openapi at fetch time.
   source: "https://raw.githubusercontent.com/slackapi/slack-api-specs/master/web-api/slack_web_openapi_v2.json"
   format: openapi3
   base_url: "https://slack.com/api"

@@ -1,8 +1,6 @@
 """Tests for codegen.spec_parser — OpenAPI spec loading and parameter extraction."""
 
 import json
-import tempfile
-from pathlib import Path
 
 import pytest
 
@@ -39,21 +37,20 @@ class TestLoadSpec:
         assert hasattr(spec, "info")
         assert hasattr(spec, "components")
 
-    def test_swagger_2_gives_clear_error(self):
+    def test_swagger_2_gives_clear_error(self, tmp_path):
         """Swagger 2.0 specs should fail early with a helpful conversion hint."""
-        swagger_doc = {
-            "swagger": "2.0",
-            "info": {"title": "Test", "version": "1.0"},
-            "paths": {},
-        }
-        with tempfile.NamedTemporaryFile(suffix=".json", mode="w", delete=False) as f:
-            json.dump(swagger_doc, f)
-            tmp_path = Path(f.name)
-        try:
-            with pytest.raises(ValueError, match="Swagger.*swagger2openapi"):
-                load_openapi_spec(tmp_path)
-        finally:
-            tmp_path.unlink()
+        swagger_file = tmp_path / "swagger2.json"
+        swagger_file.write_text(
+            json.dumps(
+                {
+                    "swagger": "2.0",
+                    "info": {"title": "Test", "version": "1.0"},
+                    "paths": {},
+                }
+            )
+        )
+        with pytest.raises(ValueError, match="Swagger.*swagger2openapi"):
+            load_openapi_spec(swagger_file)
 
 
 # ---------------------------------------------------------------------------

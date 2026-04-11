@@ -38,7 +38,7 @@ class SpecConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     source: str
-    format: Literal["openapi2", "openapi3", "openapi3.1"]
+    format: Literal["openapi3", "openapi3.1"]
     base_url: str
     total_endpoints: int | None = None
     scoped_endpoints: int | None = None

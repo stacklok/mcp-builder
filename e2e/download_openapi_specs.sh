@@ -38,8 +38,8 @@ if command -v swagger2openapi &> /dev/null; then
   echo "    converted to OpenAPI 3.0"
 else
   echo "    WARNING: swagger2openapi not found. Install with: npm install -g swagger2openapi"
-  echo "    Slack spec left as Swagger 2.0 (will not work with mcp-builder)"
-  mv "$OUTDIR/slack_swagger2.json" "$OUTDIR/slack_openapi.yaml"
+  echo "    Slack spec NOT downloaded (conversion required)"
+  rm "$OUTDIR/slack_swagger2.json"
 fi
 
 # Google Drive API — community-maintained OpenAPI conversion from APIs-guru
