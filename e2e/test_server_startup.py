@@ -37,9 +37,8 @@ from mcp_builder.schema.models import load_scope
 
 REAL_TEMPLATE = Path("/Users/laurel/Documents/code/mcp-template-py")
 E2E_DIR = Path(__file__).parent
-FIXTURES_DIR = E2E_DIR / "fixtures"
-# Scope YAMLs for real APIs live in the main integration fixtures dir
-INTEGRATION_FIXTURES = E2E_DIR.parent / "tests" / "integration" / "fixtures"
+SYNTHETIC_FIXTURES = E2E_DIR / "fixtures" / "synthetic"
+REAL_FIXTURES = E2E_DIR / "fixtures" / "real"
 E2E_OUTPUT = E2E_DIR / "output"
 
 
@@ -55,7 +54,7 @@ class E2EFixture:
 
 
 ALL_E2E = [
-    # Real API fixtures — scope YAMLs in tests/integration/fixtures/, OpenAPI specs downloaded to e2e/fixtures/
+    # Real API fixtures — scope YAMLs and downloaded OpenAPI specs in e2e/fixtures/real/
     E2EFixture(
         "google_drive.yaml",
         "google_drive_openapi.yaml",
@@ -63,7 +62,7 @@ ALL_E2E = [
         "google_drive_mcp",
         5,
         8201,
-        INTEGRATION_FIXTURES,
+        REAL_FIXTURES,
     ),
     E2EFixture(
         "github.yaml",
@@ -72,7 +71,7 @@ ALL_E2E = [
         "github_mcp",
         8,
         8202,
-        INTEGRATION_FIXTURES,
+        REAL_FIXTURES,
     ),
     E2EFixture(
         "bamboohr.yaml",
@@ -81,7 +80,7 @@ ALL_E2E = [
         "bamboohr_mcp",
         8,
         8203,
-        INTEGRATION_FIXTURES,
+        REAL_FIXTURES,
     ),
     E2EFixture(
         "jira.yaml",
@@ -90,7 +89,7 @@ ALL_E2E = [
         "jira_cloud_mcp",
         7,
         8204,
-        INTEGRATION_FIXTURES,
+        REAL_FIXTURES,
     ),
     E2EFixture(
         "slack.yaml",
@@ -99,9 +98,9 @@ ALL_E2E = [
         "slack_mcp",
         7,
         8205,
-        INTEGRATION_FIXTURES,
+        REAL_FIXTURES,
     ),
-    # Synthetic fixtures — both scope YAML and OpenAPI spec in e2e/fixtures/
+    # Synthetic fixtures — checked-in scope YAMLs and OpenAPI specs in e2e/fixtures/synthetic/
     E2EFixture(
         "weather_api.yaml",
         "weather_api_openapi.yaml",
@@ -109,7 +108,7 @@ ALL_E2E = [
         "weather_api_mcp",
         1,
         8206,
-        FIXTURES_DIR,
+        SYNTHETIC_FIXTURES,
     ),
     E2EFixture(
         "minimal_api.yaml",
@@ -118,14 +117,14 @@ ALL_E2E = [
         "minimal_api_mcp",
         1,
         8207,
-        FIXTURES_DIR,
+        SYNTHETIC_FIXTURES,
     ),
 ]
 
 
 def _spec_path(fixture: E2EFixture) -> Path:
-    """OpenAPI specs for real APIs are downloaded to e2e/fixtures/; synthetic ones live there too."""
-    return FIXTURES_DIR / fixture.openapi_yaml
+    """OpenAPI spec lives alongside the scope YAML in the fixture's directory."""
+    return fixture.fixtures_dir / fixture.openapi_yaml
 
 
 def _scope_path(fixture: E2EFixture) -> Path:

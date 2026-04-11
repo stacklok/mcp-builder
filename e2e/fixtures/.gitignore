@@ -1,6 +1,3 @@
 # Downloaded real API specs — regenerate with e2e/download_openapi_specs.sh
-bamboohr_openapi.yaml
-github_openapi.yaml
-google_drive_openapi.yaml
-jira_openapi.yaml
-slack_openapi.yaml
+real/*_openapi.yaml
+real/*_openapi.json
