@@ -503,7 +503,7 @@ def _resolve_request_body_ref(
             "spec has no components section, cannot resolve requestBody $ref", ref=ref
         )
         return None
-    bodies = getattr(spec.components, "requestBodies", None) or {}
+    bodies = spec.components.requestBodies or {}
     body = bodies.get(body_name)
     if body is None or isinstance(body, Ref30 | Ref31):
         logger.warning(

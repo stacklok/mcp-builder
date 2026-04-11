@@ -1,8 +1,5 @@
 """Tests for codegen.spec_parser — OpenAPI spec loading and parameter extraction."""
 
-import tempfile
-from pathlib import Path
-
 import pytest
 import yaml
 
@@ -137,13 +134,22 @@ class TestGetParameters:
         names = {p.name for p in params}
         assert names == {"owner", "repo", "per_page"}
 
-    def test_ref_to_missing_component_skips_gracefully(self):
+    def test_resolves_ref_parameter_at_path_level(self, spec):
+        """$ref parameters at path level (not operation level) are resolved."""
+        params = get_parameters(spec, "GET", "/repos/{owner}/{repo}/issues")
+        owner = next(p for p in params if p.name == "owner")
+        assert owner.location == "path"
+        assert owner.required is True
+        assert owner.schema_type == "string"
+        assert owner.description == "The account owner of the repository."
+
+    def test_ref_to_missing_component_skips_gracefully(self, tmp_path):
         """A $ref pointing to a nonexistent component is skipped, not crashed."""
         raw = {
             "openapi": "3.0.3",
             "info": {"title": "Minimal", "version": "0.0.1"},
             "paths": {
-                "/test": {
+                "/things": {
                     "get": {
                         "operationId": "testOp",
                         "parameters": [{"$ref": "#/components/parameters/nonexistent"}],
@@ -153,15 +159,11 @@ class TestGetParameters:
             },
             "components": {"parameters": {}},
         }
-        with tempfile.NamedTemporaryFile(suffix=".yaml", mode="w", delete=False) as f:
-            yaml.dump(raw, f)
-            tmp_path = f.name
-
-        spec = load_openapi_spec(Path(tmp_path))
-        params = get_parameters(spec, "GET", "/test")
-        # The unresolvable ref should be skipped, not cause a crash.
-        assert all(isinstance(p, ExtractedParameter) for p in params)
-        assert not any(p.name == "nonexistent" for p in params)
+        spec_file = tmp_path / "minimal.yaml"
+        spec_file.write_text(yaml.dump(raw))
+        spec = load_openapi_spec(spec_file)
+        params = get_parameters(spec, "GET", "/things")
+        assert params == []
 
 
 # ---------------------------------------------------------------------------
@@ -198,6 +200,40 @@ class TestGetBodyFields:
         fields = get_body_fields(spec, "POST", "/items")
         name_field = next(f for f in fields if f.name == "name")
         assert name_field.description == "The name of the item."
+
+    def test_resolves_ref_request_body(self, spec):
+        """A $ref requestBody pointing to components.requestBodies is resolved."""
+        fields = get_body_fields(spec, "POST", "/items-with-ref-body")
+        names = {f.name for f in fields}
+        assert "name" in names
+        assert "description" in names
+        name_field = next(f for f in fields if f.name == "name")
+        assert name_field.required is True
+        assert name_field.description == "The name of the item."
+
+    def test_ref_request_body_missing_component_returns_empty(self, tmp_path):
+        """A $ref requestBody pointing to a nonexistent component returns empty list."""
+        raw = {
+            "openapi": "3.0.3",
+            "info": {"title": "Minimal", "version": "0.0.1"},
+            "paths": {
+                "/things": {
+                    "post": {
+                        "operationId": "createThing",
+                        "requestBody": {
+                            "$ref": "#/components/requestBodies/Nonexistent"
+                        },
+                        "responses": {"201": {"description": "Created"}},
+                    }
+                }
+            },
+            "components": {"requestBodies": {}},
+        }
+        spec_file = tmp_path / "minimal.yaml"
+        spec_file.write_text(yaml.dump(raw))
+        spec = load_openapi_spec(spec_file)
+        fields = get_body_fields(spec, "POST", "/things")
+        assert fields == []
 
     def test_missing_path_raises(self, spec):
         with pytest.raises(KeyError, match="not found in spec"):
