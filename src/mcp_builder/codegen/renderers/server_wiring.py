@@ -12,7 +12,11 @@ from __future__ import annotations
 
 import re
 
+import structlog
+
 from mcp_builder.codegen.plan import ServerPlan
+
+logger = structlog.get_logger()
 
 
 def patch_mcp_builder(source: str, plan: ServerPlan) -> str:
@@ -35,19 +39,33 @@ def patch_mcp_builder(source: str, plan: ServerPlan) -> str:
     Returns:
         Patched source text.
     """
+    logger.info("patching mcp_builder.py", tool_count=len(plan.tools))
+
     # 1. Add APIClient import before Settings import.
     # Source: mcp-template-py src/mcp_template_py/api/mcp_builder.py (copied at scaffold.py:46)
     settings_import = f"from {plan.module_name}.settings import Settings"
     client_import = f"from {plan.module_name}.client import APIClient\n"
+    if settings_import not in source:
+        logger.warning(
+            "patch 1/4: settings import not found, APIClient import may be missing",
+            expected=settings_import,
+        )
     source = source.replace(settings_import, client_import + settings_import)
+    logger.debug("patch 1/4: added APIClient import")
 
     # 2. Fix FastMCP server name from template placeholder.
     # Source: mcp-template-py src/mcp_template_py/api/mcp_builder.py (copied at scaffold.py:46)
+    if not re.search(r'FastMCP\("[^"]*"', source):
+        logger.warning("patch 2/4: FastMCP() call not found in source")
     source = re.sub(r'FastMCP\("[^"]*"', f'FastMCP("{plan.server_name}"', source)
+    logger.debug("patch 2/4: set FastMCP server name", server_name=plan.server_name)
 
     # 3. Inject client into Tools constructor.
     # Source: mcp-template-py src/mcp_template_py/api/mcp_builder.py (copied at scaffold.py:46)
+    if "tools = Tools()" not in source:
+        logger.warning("patch 3/4: 'Tools()' not found, client injection may fail")
     source = source.replace("tools = Tools()", "tools = Tools(APIClient())")
+    logger.debug("patch 3/4: injected APIClient into Tools constructor")
 
     # 4. Replace template tool registrations with generated ones.
     # Source: mcp-template-py src/mcp_template_py/api/mcp_builder.py (copied at scaffold.py:46)
@@ -55,10 +73,17 @@ def patch_mcp_builder(source: str, plan: ServerPlan) -> str:
     registrations = "".join(
         f"        mcp.add_tool(tools.{t.tool_name})\n" for t in plan.tools
     )
+    if "        return mcp" not in source:
+        logger.warning("patch 4/4: 'return mcp' not found, tool registration may fail")
     source = source.replace(
         "        return mcp", registrations + "\n        return mcp"
     )
+    logger.debug(
+        "patch 4/4: registered tools",
+        tools=[t.tool_name for t in plan.tools],
+    )
 
+    logger.debug("patching complete", chars=len(source))
     return source
 
 
@@ -79,4 +104,5 @@ def patch_app_builder(source: str, plan: ServerPlan) -> str:
     Returns:
         Source text unchanged.
     """
+    logger.debug("patch_app_builder called (no-op)")
     return source

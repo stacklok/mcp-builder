@@ -21,10 +21,10 @@ OpenAPI terminology used in this module:
 from __future__ import annotations
 
 import json
-import logging
 from pathlib import Path
 from typing import Literal, cast
 
+import structlog
 import yaml
 from openapi_pydantic import parse_obj
 from openapi_pydantic.v3.v3_0 import OpenAPI as OpenAPI30
@@ -41,7 +41,7 @@ from openapi_pydantic.v3.v3_1 import Reference as Ref31
 from openapi_pydantic.v3.v3_1 import Schema as Schema31
 from pydantic import BaseModel
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 # Union of both OpenAPI versions. The field interfaces are identical
 # (same names, same types) so downstream code can treat them uniformly.
@@ -127,23 +127,25 @@ def load_openapi_spec(path: str | Path) -> OpenAPISpec:
         ValueError: If the spec cannot be parsed into a valid OpenAPI model.
     """
     path = Path(path)
-    logger.info("Loading OpenAPI spec from %s", path)
+    logger.info("loading openapi spec", path=str(path))
     with path.open() as f:
         if path.suffix in (".yaml", ".yml"):
             raw = yaml.safe_load(f)
         else:
             raw = json.load(f)
+    logger.debug("detected spec format", suffix=path.suffix)
 
     spec = parse_obj(raw)
     if spec is None:
         raise ValueError(f"Failed to parse OpenAPI spec from '{path}'")
 
+    path_count = len(spec.paths) if spec.paths else 0
     logger.info(
-        "Loaded OpenAPI %s spec: %s v%s (%d paths)",
-        raw.get("openapi", "unknown"),
-        spec.info.title,
-        spec.info.version,
-        len(spec.paths) if spec.paths else 0,
+        "openapi spec loaded",
+        openapi_version=raw.get("openapi", "unknown"),
+        title=spec.info.title,
+        spec_version=spec.info.version,
+        path_count=path_count,
     )
     return spec
 
@@ -195,6 +197,12 @@ def _get_operation(
     operation = getattr(path_item, method.lower(), None)
     if operation is None:
         raise KeyError(f"Method '{method}' not found for path '{path}'")
+    logger.debug(
+        "resolved operation",
+        method=method,
+        path=path,
+        operation_id=getattr(operation, "operationId", None),
+    )
     return path_item, operation
 
 
@@ -249,6 +257,17 @@ def get_parameters(
             )
         merged[(param.name, param.param_in.value)] = param
 
+    path_level_count = len(path_item.parameters or [])
+    op_level_count = len(operation.parameters or [])
+    logger.debug(
+        "merged parameters",
+        method=method,
+        path=path,
+        path_level=path_level_count,
+        operation_level=op_level_count,
+        unique=len(merged),
+    )
+
     result = []
     for param in merged.values():
         schema_type = _extract_schema_type(param)
@@ -260,6 +279,23 @@ def get_parameters(
                 schema_type=schema_type,
                 description=param.description or "",
             )
+        )
+        logger.debug(
+            "extracted parameter",
+            name=param.name,
+            location=param.param_in.value,
+            schema_type=schema_type,
+            required=param.required,
+        )
+
+    if not result:
+        logger.debug("no parameters found", method=method, path=path)
+    else:
+        logger.debug(
+            "parameter extraction complete",
+            method=method,
+            path=path,
+            count=len(result),
         )
     return result
 
@@ -296,6 +332,7 @@ def get_body_fields(
     _, operation = _get_operation(spec, method, path)
 
     if operation.requestBody is None:
+        logger.debug("no request body", method=method, path=path)
         return []
 
     # NOTE: $ref on requestBody (e.g., $ref: "#/components/requestBodies/CreateItem")
@@ -309,16 +346,28 @@ def get_body_fields(
 
     json_media = (req_body.content or {}).get("application/json")
     if json_media is None:
+        logger.debug("no application/json media type", method=method, path=path)
         return []
 
     schema = json_media.media_type_schema
     if schema is None:
+        logger.debug("no schema in json media type", method=method, path=path)
         return []
 
     # Resolve $ref to component schema
     if isinstance(schema, Ref30 | Ref31):
-        resolved = _resolve_schema_ref(spec, schema.ref)
+        ref_str = schema.ref
+        logger.debug(
+            "resolving body schema $ref", ref=ref_str, method=method, path=path
+        )
+        resolved = _resolve_schema_ref(spec, ref_str)
         if resolved is None:
+            logger.warning(
+                "failed to resolve body schema $ref",
+                ref=ref_str,
+                method=method,
+                path=path,
+            )
             return []
         schema = resolved
 
@@ -334,6 +383,9 @@ def get_body_fields(
                 "is not yet supported. "
                 "See https://github.com/StacklokLabs/mcp-builder/issues/19"
             )
+
+    if not (schema.properties or {}):
+        logger.warning("body schema has no properties", method=method, path=path)
 
     for name, prop in (schema.properties or {}).items():
         # NOTE: $ref on individual body properties is not yet resolved.
@@ -353,6 +405,20 @@ def get_body_fields(
                 required=name in required_names,
             )
         )
+        logger.debug(
+            "extracted body field",
+            name=name,
+            schema_type=prop_type,
+            required=name in required_names,
+        )
+
+    logger.debug(
+        "body field extraction complete",
+        method=method,
+        path=path,
+        field_count=len(fields),
+        required_fields=sorted(required_names),
+    )
     return fields
 
 
@@ -362,6 +428,14 @@ def _extract_schema_type(param: OAParam30 | OAParam31) -> SchemaType:
     Raises ValueError for unknown types rather than silently defaulting.
     """
     if param.param_schema is None or isinstance(param.param_schema, Ref30 | Ref31):
+        schema_kind = (
+            type(param.param_schema).__name__ if param.param_schema else "None"
+        )
+        logger.debug(
+            "no inline schema for parameter, defaulting to string",
+            param_name=param.name,
+            schema_kind=schema_kind,
+        )
         return "string"
     return _schema_to_type(param.param_schema)
 
@@ -370,6 +444,7 @@ def _schema_to_type(schema: OpenAPISchema) -> SchemaType:
     """Extract the type string from an inline schema object."""
     raw_type = schema.type
     if raw_type is None:
+        logger.debug("schema has no type field, defaulting to string")
         return "string"
     # v3.1 can return a list of types; take the first non-null one
     if isinstance(raw_type, list):
@@ -378,6 +453,9 @@ def _schema_to_type(schema: OpenAPISchema) -> SchemaType:
                 raw_type = t
                 break
         else:
+            logger.warning(
+                "schema type list contains only null types, defaulting to string"
+            )
             return "string"
     type_str: str = raw_type.value if hasattr(raw_type, "value") else str(raw_type)
     if type_str not in OPENAPI_TYPE_MAP:
@@ -393,13 +471,20 @@ def _schema_to_type(schema: OpenAPISchema) -> SchemaType:
 def _resolve_schema_ref(spec: OpenAPISpec, ref: str) -> OpenAPISchema | None:
     """Resolve a $ref string like '#/components/schemas/Foo' to the schema object."""
     if not ref.startswith("#/components/schemas/"):
-        logger.warning("Cannot resolve non-component $ref: %s", ref)
+        logger.warning("cannot resolve non-component $ref", ref=ref)
         return None
     schema_name = ref.rsplit("/", 1)[-1]
+    logger.debug("resolving schema $ref", ref=ref, component=schema_name)
     if spec.components is None:
+        logger.warning("spec has no components section, cannot resolve $ref", ref=ref)
         return None
     schemas = spec.components.schemas or {}
     schema = schemas.get(schema_name)
     if schema is None or isinstance(schema, Ref30 | Ref31):
+        logger.warning(
+            "schema not found in components (or is a nested $ref)",
+            schema_name=schema_name,
+        )
         return None  # nested $ref not supported
+    logger.debug("resolved schema $ref", schema_name=schema_name)
     return schema
