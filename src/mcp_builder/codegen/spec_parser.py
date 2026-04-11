@@ -135,6 +135,16 @@ def load_openapi_spec(path: str | Path) -> OpenAPISpec:
             raw = json.load(f)
     logger.debug("detected spec format", suffix=path.suffix)
 
+    # Swagger 2.0 specs use "swagger" instead of "openapi". The
+    # openapi-pydantic library only supports 3.x, so fail early with a
+    # message that tells the caller how to convert.
+    if "swagger" in raw and not raw.get("openapi"):
+        raise ValueError(
+            f"'{path}' is a Swagger {raw['swagger']} spec. "
+            "Only OpenAPI 3.0+ is supported. Convert with: "
+            "swagger2openapi input.json -o output.yaml --yaml"
+        )
+
     spec = parse_obj(raw)
     if spec is None:
         raise ValueError(f"Failed to parse OpenAPI spec from '{path}'")

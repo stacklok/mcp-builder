@@ -6,8 +6,8 @@ server:
 
 spec:
   source: "https://raw.githubusercontent.com/slackapi/slack-api-specs/master/web-api/slack_web_openapi_v2.json"
-  format: openapi2
-  base_url: "https://slack.com"
+  format: openapi3
+  base_url: "https://slack.com/api"
   total_endpoints: 200
   scoped_endpoints: 7
 
@@ -21,7 +21,7 @@ groups:
     description: "Channel discovery and metadata"
     tools:
       - tool_name: list_channels
-        endpoint: GET /api/conversations.list
+        endpoint: GET /conversations.list
         description: >
           List all channels visible to the authenticated user. Returns
           channel names, IDs, topics, purposes, and member counts.
@@ -46,7 +46,7 @@ groups:
           - "returns archived channels by default — use exclude_archived=true to filter"
 
       - tool_name: get_channel_info
-        endpoint: GET /api/conversations.info
+        endpoint: GET /conversations.info
         description: >
           Get detailed information about a single channel by ID. Returns
           the channel's name, topic, purpose, creation date, member count,
@@ -60,7 +60,7 @@ groups:
     description: "Message reading, searching, and sending"
     tools:
       - tool_name: get_channel_history
-        endpoint: GET /api/conversations.history
+        endpoint: GET /conversations.history
         description: >
           Fetch message history for a channel. Returns messages in reverse
           chronological order with text, author, timestamps, and reactions.
@@ -90,7 +90,7 @@ groups:
           - "timestamps are Unix epoch strings with microsecond precision"
 
       - tool_name: search_messages
-        endpoint: GET /api/search.messages
+        endpoint: GET /search.messages
         description: >
           Search for messages across the entire workspace. Uses Slack's
           search syntax supporting keywords, channel filters, user filters,
@@ -115,7 +115,7 @@ groups:
           - "only searches messages the authenticated user can see"
 
       - tool_name: send_message
-        endpoint: POST /api/chat.postMessage
+        endpoint: POST /chat.postMessage
         description: >
           Send a message to a channel or direct message. Supports plain
           text and Slack's Block Kit for rich formatting. The authenticated
@@ -135,7 +135,7 @@ groups:
     description: "User directory and profile lookup"
     tools:
       - tool_name: list_users
-        endpoint: GET /api/users.list
+        endpoint: GET /users.list
         description: >
           List all users in the workspace. Returns user IDs, display names,
           real names, email addresses, and status. Includes active and
@@ -152,7 +152,7 @@ groups:
           - "may be slow for large workspaces — use limit to page through results"
 
       - tool_name: get_user_profile
-        endpoint: GET /api/users.profile.get
+        endpoint: GET /users.profile.get
         description: >
           Get the full profile for a user. Returns display name, real name,
           title, phone, email, status text, status emoji, and custom
