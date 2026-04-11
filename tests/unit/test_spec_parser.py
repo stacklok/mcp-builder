@@ -107,6 +107,11 @@ class TestGetParameters:
         for p in params:
             assert p.schema_type == "string"
 
+    def test_path_with_server_prefix_not_found(self, spec):
+        """Paths must match the spec exactly; prepending the server base path is wrong."""
+        with pytest.raises(KeyError, match="/v1/items/\\{itemId\\}"):
+            get_parameters(spec, "GET", "/v1/items/{itemId}")
+
 
 # ---------------------------------------------------------------------------
 # get_body_fields

@@ -122,6 +122,8 @@ The skill file guides the AI through the following steps. Each step produces int
    - Parse the OpenAPI spec and extract all endpoints, parameters, request/response schemas, and security schemes.
    - Produce a quality report: count of endpoints, percentage with descriptions, parameter documentation coverage, schema completeness.
    - Flag spec quality issues that will require human attention (e.g., missing descriptions on >50% of parameters, inconsistent naming, undocumented auth flows).
+   - **Path validation**: Verify that every endpoint path in the generated scope exists in the spec's `paths` object. Paths must match the spec exactly — do not prepend the server base path (e.g., if the spec has `servers[0].url: "https://api.example.com/v3"` and `paths: {"/files": ...}`, the endpoint is `GET /files`, not `GET /v3/files`).
+   - **Base URL derivation**: Set `spec.base_url` from `servers[0].url`, which may include a path prefix (e.g., `https://www.googleapis.com/drive/v3`).
 
 2. **Semantic Endpoint Grouping**
    - Cluster all endpoints into meaningful semantic groups based on the API's domain (e.g., "File Operations", "Permissions", "Comments", "Revisions"). This is similar to how [GitHub's remote MCP server](https://api.githubcopilot.com/mcp/) organizes endpoints into toolsets — users can include or exclude entire groups rather than picking endpoints one by one.
