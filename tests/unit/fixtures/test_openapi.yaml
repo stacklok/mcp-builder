@@ -47,7 +47,38 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Item"
+  /repos/{owner}/{repo}/issues:
+    get:
+      operationId: listIssues
+      summary: List issues for a repository
+      parameters:
+        - $ref: "#/components/parameters/owner"
+        - name: repo
+          in: path
+          required: true
+          schema:
+            type: string
+          description: "The name of the repository."
+        - $ref: "#/components/parameters/per-page"
+      responses:
+        "200":
+          description: Successful response
 components:
+  parameters:
+    owner:
+      name: owner
+      in: path
+      required: true
+      schema:
+        type: string
+      description: "The account owner of the repository."
+    per-page:
+      name: per_page
+      in: query
+      required: false
+      schema:
+        type: integer
+      description: "Number of results per page."
   schemas:
     Item:
       type: object

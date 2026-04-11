@@ -1,6 +1,10 @@
 """Tests for codegen.spec_parser — OpenAPI spec loading and parameter extraction."""
 
+import tempfile
+from pathlib import Path
+
 import pytest
+import yaml
 
 from mcp_builder.codegen.spec_parser import (
     ExtractedBodyField,
@@ -111,6 +115,53 @@ class TestGetParameters:
         """Paths must match the spec exactly; prepending the server base path is wrong."""
         with pytest.raises(KeyError, match="/v1/items/\\{itemId\\}"):
             get_parameters(spec, "GET", "/v1/items/{itemId}")
+
+    def test_resolves_ref_parameter_in_operation(self, spec):
+        """$ref parameters like '#/components/parameters/owner' are resolved."""
+        params = get_parameters(spec, "GET", "/repos/{owner}/{repo}/issues")
+        owner = next(p for p in params if p.name == "owner")
+        assert owner.location == "path"
+        assert owner.required is True
+        assert owner.schema_type == "string"
+
+    def test_resolves_ref_query_parameter(self, spec):
+        """$ref query parameters are resolved with correct type."""
+        params = get_parameters(spec, "GET", "/repos/{owner}/{repo}/issues")
+        per_page = next(p for p in params if p.name == "per_page")
+        assert per_page.location == "query"
+        assert per_page.schema_type == "integer"
+
+    def test_ref_and_inline_params_merge(self, spec):
+        """$ref and inline params merge into a single list."""
+        params = get_parameters(spec, "GET", "/repos/{owner}/{repo}/issues")
+        names = {p.name for p in params}
+        assert names == {"owner", "repo", "per_page"}
+
+    def test_ref_to_missing_component_skips_gracefully(self):
+        """A $ref pointing to a nonexistent component is skipped, not crashed."""
+        raw = {
+            "openapi": "3.0.3",
+            "info": {"title": "Minimal", "version": "0.0.1"},
+            "paths": {
+                "/test": {
+                    "get": {
+                        "operationId": "testOp",
+                        "parameters": [{"$ref": "#/components/parameters/nonexistent"}],
+                        "responses": {"200": {"description": "OK"}},
+                    }
+                }
+            },
+            "components": {"parameters": {}},
+        }
+        with tempfile.NamedTemporaryFile(suffix=".yaml", mode="w", delete=False) as f:
+            yaml.dump(raw, f)
+            tmp_path = f.name
+
+        spec = load_openapi_spec(Path(tmp_path))
+        params = get_parameters(spec, "GET", "/test")
+        # The unresolvable ref should be skipped, not cause a crash.
+        assert all(isinstance(p, ExtractedParameter) for p in params)
+        assert not any(p.name == "nonexistent" for p in params)
 
 
 # ---------------------------------------------------------------------------

@@ -32,12 +32,14 @@ from openapi_pydantic.v3.v3_0 import Operation as Op30
 from openapi_pydantic.v3.v3_0 import Parameter as OAParam30
 from openapi_pydantic.v3.v3_0 import PathItem as PathItem30
 from openapi_pydantic.v3.v3_0 import Reference as Ref30
+from openapi_pydantic.v3.v3_0 import RequestBody as ReqBody30
 from openapi_pydantic.v3.v3_0 import Schema as Schema30
 from openapi_pydantic.v3.v3_1 import OpenAPI as OpenAPI31
 from openapi_pydantic.v3.v3_1 import Operation as Op31
 from openapi_pydantic.v3.v3_1 import Parameter as OAParam31
 from openapi_pydantic.v3.v3_1 import PathItem as PathItem31
 from openapi_pydantic.v3.v3_1 import Reference as Ref31
+from openapi_pydantic.v3.v3_1 import RequestBody as ReqBody31
 from openapi_pydantic.v3.v3_1 import Schema as Schema31
 from pydantic import BaseModel
 
@@ -238,23 +240,20 @@ def get_parameters(
     # Merge path-level and operation-level params. Operation wins on conflict.
     merged: dict[tuple[str, str], OAParam30 | OAParam31] = {}
 
-    # NOTE: $ref parameters (e.g., $ref: "#/components/parameters/fileId") are
-    # not yet resolved. Real-world specs like Google Drive and GitHub use these
-    # heavily. See https://github.com/StacklokLabs/mcp-builder/issues/19
     for param in path_item.parameters or []:
         if isinstance(param, Ref30 | Ref31):
-            raise NotImplementedError(
-                f"$ref parameter '{param.ref}' in path '{path}' is not yet supported. "
-                "See https://github.com/StacklokLabs/mcp-builder/issues/19"
-            )
+            resolved = _resolve_parameter_ref(spec, param.ref)
+            if resolved is None:
+                continue
+            param = resolved
         merged[(param.name, param.param_in.value)] = param
 
     for param in operation.parameters or []:
         if isinstance(param, Ref30 | Ref31):
-            raise NotImplementedError(
-                f"$ref parameter '{param.ref}' in {method} {path} is not yet supported. "
-                "See https://github.com/StacklokLabs/mcp-builder/issues/19"
-            )
+            resolved = _resolve_parameter_ref(spec, param.ref)
+            if resolved is None:
+                continue
+            param = resolved
         merged[(param.name, param.param_in.value)] = param
 
     path_level_count = len(path_item.parameters or [])
@@ -335,14 +334,12 @@ def get_body_fields(
         logger.debug("no request body", method=method, path=path)
         return []
 
-    # NOTE: $ref on requestBody (e.g., $ref: "#/components/requestBodies/CreateItem")
-    # is not yet resolved. See https://github.com/StacklokLabs/mcp-builder/issues/19
     req_body = operation.requestBody
     if isinstance(req_body, Ref30 | Ref31):
-        raise NotImplementedError(
-            f"$ref requestBody '{req_body.ref}' in {method} {path} is not yet supported. "
-            "See https://github.com/StacklokLabs/mcp-builder/issues/19"
-        )
+        resolved = _resolve_request_body_ref(spec, req_body.ref)
+        if resolved is None:
+            return []
+        req_body = resolved
 
     json_media = (req_body.content or {}).get("application/json")
     if json_media is None:
@@ -466,6 +463,56 @@ def _schema_to_type(schema: OpenAPISchema) -> SchemaType:
     # We've verified type_str is in OPENAPI_TYPE_MAP, which only contains valid
     # SchemaType values, so this cast is safe.
     return cast(SchemaType, type_str)
+
+
+def _resolve_parameter_ref(spec: OpenAPISpec, ref: str) -> OAParam30 | OAParam31 | None:
+    """Resolve a $ref like '#/components/parameters/owner' to the parameter object."""
+    if not ref.startswith("#/components/parameters/"):
+        logger.warning("cannot resolve non-component parameter $ref", ref=ref)
+        return None
+    param_name = ref.rsplit("/", 1)[-1]
+    logger.debug("resolving parameter $ref", ref=ref, component=param_name)
+    if spec.components is None:
+        logger.warning(
+            "spec has no components section, cannot resolve parameter $ref", ref=ref
+        )
+        return None
+    params = spec.components.parameters or {}
+    param = params.get(param_name)
+    if param is None or isinstance(param, Ref30 | Ref31):
+        logger.warning(
+            "parameter not found in components (or is a nested $ref)",
+            param_name=param_name,
+        )
+        return None
+    logger.debug("resolved parameter $ref", param_name=param_name)
+    return param
+
+
+def _resolve_request_body_ref(
+    spec: OpenAPISpec, ref: str
+) -> ReqBody30 | ReqBody31 | None:
+    """Resolve a $ref like '#/components/requestBodies/Foo' to the request body object."""
+    if not ref.startswith("#/components/requestBodies/"):
+        logger.warning("cannot resolve non-component requestBody $ref", ref=ref)
+        return None
+    body_name = ref.rsplit("/", 1)[-1]
+    logger.debug("resolving requestBody $ref", ref=ref, component=body_name)
+    if spec.components is None:
+        logger.warning(
+            "spec has no components section, cannot resolve requestBody $ref", ref=ref
+        )
+        return None
+    bodies = getattr(spec.components, "requestBodies", None) or {}
+    body = bodies.get(body_name)
+    if body is None or isinstance(body, Ref30 | Ref31):
+        logger.warning(
+            "requestBody not found in components (or is a nested $ref)",
+            body_name=body_name,
+        )
+        return None
+    logger.debug("resolved requestBody $ref", body_name=body_name)
+    return body
 
 
 def _resolve_schema_ref(spec: OpenAPISpec, ref: str) -> OpenAPISchema | None:
