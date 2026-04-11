@@ -1,0 +1,32 @@
+"""Generated tool methods for the {{ server_name }} MCP server.
+
+Each method wraps an upstream API endpoint. FastMCP introspects the
+method signature to build the tool's input schema automatically.
+"""
+
+from {{ module_name }}.client import APIClient
+
+
+class Tools:
+    """MCP tool implementations backed by the upstream API."""
+
+    def __init__(self, client: APIClient) -> None:
+        self._client = client
+{% for tool in tools %}
+
+    async def {{ tool.method_name }}(self{{ tool.signature }}) -> dict:
+        """{{ tool.description | py_string }}"""
+{% for hint in tool.hints %}
+        # Hint: {{ hint | py_string }}
+{% endfor %}
+        return await self._client.request(
+            "{{ tool.http_method }}",
+            {{ tool.path_expr }},
+{% if tool.params_expr %}
+            params={{ tool.params_expr }},
+{% endif %}
+{% if tool.body_expr %}
+            json_body={{ tool.body_expr }},
+{% endif %}
+        )
+{% endfor %}
