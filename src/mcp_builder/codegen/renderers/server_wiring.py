@@ -36,18 +36,21 @@ def patch_mcp_builder(source: str, plan: ServerPlan) -> str:
         Patched source text.
     """
     # 1. Add APIClient import before Settings import.
+    # Source: mcp-template-py src/mcp_template_py/api/mcp_builder.py (copied at scaffold.py:46)
     settings_import = f"from {plan.module_name}.settings import Settings"
     client_import = f"from {plan.module_name}.client import APIClient\n"
     source = source.replace(settings_import, client_import + settings_import)
 
     # 2. Fix FastMCP server name from template placeholder.
+    # Source: mcp-template-py src/mcp_template_py/api/mcp_builder.py (copied at scaffold.py:46)
     source = re.sub(r'FastMCP\("[^"]*"', f'FastMCP("{plan.server_name}"', source)
 
     # 3. Inject client into Tools constructor.
-    # APIClient() uses the default base_url baked into the generated client module.
+    # Source: mcp-template-py src/mcp_template_py/api/mcp_builder.py (copied at scaffold.py:46)
     source = source.replace("tools = Tools()", "tools = Tools(APIClient())")
 
     # 4. Replace template tool registrations with generated ones.
+    # Source: mcp-template-py src/mcp_template_py/api/mcp_builder.py (copied at scaffold.py:46)
     source = re.sub(r"^ *mcp\.add_tool\(tools\.\w+\)\n", "", source, flags=re.MULTILINE)
     registrations = "".join(
         f"        mcp.add_tool(tools.{t.tool_name})\n" for t in plan.tools
