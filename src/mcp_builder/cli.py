@@ -1,13 +1,15 @@
 """CLI entry point and pipeline orchestrator for mcp-builder.
 
 Pipeline stage: orchestration (ties all stages together).
-This module is the top-level entry point that chains: load scope → load spec
-→ build plan → scaffold project → render source files → patch wiring →
-write deployment manifests.
+Each subcommand is a thin wrapper that calls one domain function:
+    - generate: run_pipeline() → scaffold a complete MCP server project
+    - analyze:  analyze_spec() → summarize an OpenAPI spec
+    - validate: validate_scope() → check a scope against an optional spec
 
 Usage:
-    uv run mcp-builder scope.yaml openapi.yaml /path/to/mcp-template-py
-    uv run mcp-builder scope.yaml openapi.yaml /path/to/mcp-template-py -o ./out
+    uv run mcp-builder generate scope.yaml openapi.yaml /path/to/mcp-template-py
+    uv run mcp-builder analyze openapi.yaml
+    uv run mcp-builder validate scope.yaml --openapi-spec openapi.yaml
 """
 
 from __future__ import annotations
@@ -20,6 +22,7 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
+from mcp_builder.codegen.analyzer import analyze_spec
 from mcp_builder.codegen.plan import ServerPlan, build_server_plan
 from mcp_builder.codegen.renderers.client import render_client_module
 from mcp_builder.codegen.renderers.manifests import render_manifests
@@ -30,8 +33,9 @@ from mcp_builder.codegen.renderers.server_wiring import (
     patch_mcp_builder,
 )
 from mcp_builder.codegen.renderers.tools import render_tools_module
-from mcp_builder.spec import load_openapi_spec
+from mcp_builder.codegen.validator import validate_scope
 from mcp_builder.schema.models import load_scope
+from mcp_builder.spec import load_openapi_spec
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +49,7 @@ def run_pipeline(
     """Run the full MCP server generation pipeline.
 
     Pipeline stage: orchestration (this is the top-level function).
-    Called by: main() and e2e tests.
+    Called by: _cmd_generate() and e2e tests.
 
     Steps:
         1. Load and validate the mcp-scope.yaml and OpenAPI spec.
@@ -115,29 +119,77 @@ def _patch_file(
     logger.debug("Patched %s", path)
 
 
+def _cmd_generate(args: argparse.Namespace) -> None:
+    """Subcommand: generate a complete MCP server project."""
+    project_dir = run_pipeline(
+        args.scope_yaml, args.openapi_spec, args.template_dir, args.output_dir
+    )
+    print(project_dir)
+
+
+def _cmd_analyze(args: argparse.Namespace) -> None:
+    """Subcommand: analyze an OpenAPI spec."""
+    spec = load_openapi_spec(args.openapi_spec)
+    print(analyze_spec(spec).model_dump_json(indent=2, by_alias=True))
+
+
+def _cmd_validate(args: argparse.Namespace) -> None:
+    """Subcommand: validate a scope against an optional spec."""
+    scope = load_scope(args.scope_yaml)
+    spec = load_openapi_spec(args.openapi_spec) if args.openapi_spec else None
+    result = validate_scope(scope, spec)
+    print(result.model_dump_json(indent=2))
+    if result.errors:
+        sys.exit(1)
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build the argument parser for the mcp-builder CLI."""
     parser = argparse.ArgumentParser(
         prog="mcp-builder",
         description="Generate a ToolHive-ready MCP server from an OpenAPI spec.",
     )
-    parser.add_argument("scope_yaml", type=Path, help="Path to mcp-scope.yaml")
     parser.add_argument(
+        "-v", "--verbose", action="store_true", help="Enable debug logging"
+    )
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    # generate
+    gen = subparsers.add_parser("generate", help="Generate an MCP server project")
+    gen.add_argument("scope_yaml", type=Path, help="Path to mcp-scope.yaml")
+    gen.add_argument(
         "openapi_spec", type=Path, help="Path to the OpenAPI spec (YAML or JSON)"
     )
-    parser.add_argument(
-        "template_dir", type=Path, help="Path to mcp-template-py checkout"
-    )
-    parser.add_argument(
+    gen.add_argument("template_dir", type=Path, help="Path to mcp-template-py checkout")
+    gen.add_argument(
         "-o",
         "--output-dir",
         type=Path,
         default=Path("."),
         help="Output directory (default: current directory)",
     )
-    parser.add_argument(
-        "-v", "--verbose", action="store_true", help="Enable debug logging"
+    gen.set_defaults(func=_cmd_generate)
+
+    # analyze
+    anl = subparsers.add_parser("analyze", help="Analyze an OpenAPI spec")
+    anl.add_argument(
+        "openapi_spec", type=Path, help="Path to the OpenAPI spec (YAML or JSON)"
     )
+    anl.set_defaults(func=_cmd_analyze)
+
+    # validate
+    val = subparsers.add_parser(
+        "validate", help="Validate a scope against an optional spec"
+    )
+    val.add_argument("scope_yaml", type=Path, help="Path to mcp-scope.yaml")
+    val.add_argument(
+        "--openapi-spec",
+        type=Path,
+        default=None,
+        help="Optional OpenAPI spec to cross-reference",
+    )
+    val.set_defaults(func=_cmd_validate)
+
     return parser
 
 
@@ -152,12 +204,7 @@ def main() -> None:
     )
 
     try:
-        project_dir = run_pipeline(
-            scope_yaml=args.scope_yaml,
-            openapi_spec=args.openapi_spec,
-            template_dir=args.template_dir,
-            output_dir=args.output_dir,
-        )
+        args.func(args)
     except FileNotFoundError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         sys.exit(1)
@@ -167,5 +214,3 @@ def main() -> None:
     except ValueError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         sys.exit(1)
-
-    print(project_dir)
