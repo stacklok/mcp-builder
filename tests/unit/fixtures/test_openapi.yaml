@@ -73,6 +73,27 @@ paths:
       responses:
         "201":
           description: Created
+  /items-with-ref-property:
+    post:
+      operationId: createItemWithRefProperty
+      summary: Create an item whose body has a $ref property
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - item
+              properties:
+                item:
+                  $ref: "#/components/schemas/Item"
+                note:
+                  type: string
+                  description: "An optional note."
+      responses:
+        "201":
+          description: Created
 components:
   parameters:
     owner:
