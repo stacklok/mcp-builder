@@ -362,16 +362,7 @@ def get_body_fields(
         logger.debug(
             "resolving body schema $ref", ref=ref_str, method=method, path=path
         )
-        resolved = _resolve_schema_ref(spec, ref_str)
-        if resolved is None:
-            logger.warning(
-                "failed to resolve body schema $ref",
-                ref=ref_str,
-                method=method,
-                path=path,
-            )
-            return []
-        schema = resolved
+        schema = _resolve_schema_ref(spec, ref_str)
 
     required_names = set(schema.required or [])
     fields = []
@@ -390,14 +381,16 @@ def get_body_fields(
         logger.warning("body schema has no properties", method=method, path=path)
 
     for name, prop in (schema.properties or {}).items():
-        # NOTE: $ref on individual body properties is not yet resolved.
-        # See https://github.com/StacklokLabs/mcp-builder/issues/19
+        # Resolve $ref properties to their underlying schema
         if isinstance(prop, Ref30 | Ref31):
-            raise NotImplementedError(
-                f"$ref property '{prop.ref}' in {method} {path} body "
-                "is not yet supported. "
-                "See https://github.com/StacklokLabs/mcp-builder/issues/19"
+            logger.debug(
+                "resolving body property $ref",
+                property_name=name,
+                ref=prop.ref,
+                method=method,
+                path=path,
             )
+            prop = _resolve_schema_ref(spec, prop.ref)
         prop_type = _schema_to_type(prop)
         fields.append(
             ExtractedBodyField(
@@ -553,23 +546,36 @@ def _resolve_request_body_ref(spec: OpenAPISpec, ref: str) -> ReqBody30 | ReqBod
     return body
 
 
-def _resolve_schema_ref(spec: OpenAPISpec, ref: str) -> OpenAPISchema | None:
-    """Resolve a $ref string like '#/components/schemas/Foo' to the schema object."""
+def _resolve_schema_ref(spec: OpenAPISpec, ref: str) -> OpenAPISchema:
+    """Resolve a $ref string like '#/components/schemas/Foo' to the schema object.
+
+    Raises:
+        ValueError: If the ref is external/non-component, the components
+            section is missing, the named schema doesn't exist, or it
+            is itself a nested ``$ref``.
+    """
     if not ref.startswith("#/components/schemas/"):
-        logger.warning("cannot resolve non-component $ref", ref=ref)
-        return None
+        raise ValueError(
+            f"Cannot resolve schema $ref '{ref}': "
+            "only local '#/components/schemas/...' refs are supported."
+        )
     schema_name = ref.rsplit("/", 1)[-1]
     logger.debug("resolving schema $ref", ref=ref, component=schema_name)
     if spec.components is None:
-        logger.warning("spec has no components section, cannot resolve $ref", ref=ref)
-        return None
+        raise ValueError(
+            f"Cannot resolve schema $ref '{ref}': spec has no 'components' section."
+        )
     schemas = spec.components.schemas or {}
     schema = schemas.get(schema_name)
-    if schema is None or isinstance(schema, Ref30 | Ref31):
-        logger.warning(
-            "schema not found in components (or is a nested $ref)",
-            schema_name=schema_name,
+    if schema is None:
+        raise ValueError(
+            f"Cannot resolve schema $ref '{ref}': "
+            f"'{schema_name}' not found in components.schemas."
         )
-        return None  # nested $ref not supported
+    if isinstance(schema, Ref30 | Ref31):
+        raise ValueError(
+            f"Cannot resolve schema $ref '{ref}': "
+            f"'{schema_name}' is itself a nested $ref, which is not supported."
+        )
     logger.debug("resolved schema $ref", schema_name=schema_name)
     return schema

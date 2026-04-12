@@ -453,8 +453,8 @@ def _sanitize_name(name: str) -> str:
     sanitized = re.sub(r"_+", "_", sanitized).strip("_")
     if not sanitized or sanitized[0].isdigit():
         sanitized = "param_" + sanitized
-    # Avoid Python keywords: from -> from_, class -> class_
-    if keyword.iskeyword(sanitized):
+    # Avoid Python keywords and method-reserved names: from -> from_, self -> self_
+    if keyword.iskeyword(sanitized) or sanitized in ("self", "cls"):
         sanitized += "_"
     if sanitized != name:
         logger.debug("sanitized name", original=name, sanitized=sanitized)

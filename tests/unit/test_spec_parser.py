@@ -228,6 +228,54 @@ class TestGetBodyFields:
         assert name_field.required is True
         assert name_field.description == "The name of the item."
 
+    def test_resolves_ref_body_property(self, spec):
+        """A $ref on an individual body property is resolved to its schema."""
+        fields = get_body_fields(spec, "POST", "/items-with-ref-property")
+        names = {f.name for f in fields}
+        assert "item" in names
+        assert "note" in names
+        item_field = next(f for f in fields if f.name == "item")
+        assert item_field.schema_type == "object"
+        assert item_field.required is True
+        note_field = next(f for f in fields if f.name == "note")
+        assert note_field.schema_type == "string"
+
+    def test_ref_body_property_missing_schema_raises(self, tmp_path):
+        """A $ref body property pointing to a nonexistent schema raises ValueError."""
+        raw = {
+            "openapi": "3.0.3",
+            "info": {"title": "Minimal", "version": "0.0.1"},
+            "paths": {
+                "/things": {
+                    "post": {
+                        "operationId": "createThing",
+                        "requestBody": {
+                            "required": True,
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {
+                                            "widget": {
+                                                "$ref": "#/components/schemas/Nonexistent"
+                                            }
+                                        },
+                                    }
+                                }
+                            },
+                        },
+                        "responses": {"201": {"description": "Created"}},
+                    }
+                }
+            },
+            "components": {"schemas": {}},
+        }
+        spec_file = tmp_path / "minimal.yaml"
+        spec_file.write_text(yaml.dump(raw))
+        spec = load_openapi_spec(spec_file)
+        with pytest.raises(ValueError, match="Nonexistent.*not found"):
+            get_body_fields(spec, "POST", "/things")
+
     def test_ref_request_body_missing_component_raises(self, tmp_path):
         """A $ref requestBody pointing to a nonexistent component raises ValueError."""
         raw = {

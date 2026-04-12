@@ -213,6 +213,12 @@ class TestParamNameSanitization:
         assert _sanitize_name("class") == "class_"
         assert _sanitize_name("import") == "import_"
 
+    def test_method_reserved_names(self):
+        from mcp_builder.codegen.plan import _sanitize_name
+
+        assert _sanitize_name("self") == "self_"
+        assert _sanitize_name("cls") == "cls_"
+
 
 # ---------------------------------------------------------------------------
 # Name collision resolution
