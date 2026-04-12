@@ -30,7 +30,7 @@ from mcp_builder.codegen.renderers.server_wiring import (
     patch_mcp_builder,
 )
 from mcp_builder.codegen.renderers.tools import render_tools_module
-from mcp_builder.codegen.spec_parser import load_openapi_spec
+from mcp_builder.spec import load_openapi_spec
 from mcp_builder.schema.models import load_scope
 
 logger = logging.getLogger(__name__)

@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from mcp_builder.codegen.spec_parser import load_openapi_spec
+from mcp_builder.spec import load_openapi_spec
 from mcp_builder.schema.models import load_scope
 
 FIXTURES = Path(__file__).parent / "fixtures"

@@ -1,7 +1,7 @@
 """Tests for the parameter models renderer."""
 
 from mcp_builder.codegen.plan import AuthPlan, ParamPlan, ServerPlan, ToolPlan
-from mcp_builder.codegen.spec_parser import PythonType
+from mcp_builder.spec import PythonType
 from mcp_builder.codegen.renderers.models import render_parameter_models
 
 
