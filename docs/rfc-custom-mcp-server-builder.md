@@ -122,6 +122,16 @@ The skill file guides the AI through the following steps. Each step produces int
    - Parse the OpenAPI spec and extract all endpoints, parameters, request/response schemas, and security schemes.
    - Produce a quality report: count of endpoints, percentage with descriptions, parameter documentation coverage, schema completeness.
    - Flag spec quality issues that will require human attention (e.g., missing descriptions on >50% of parameters, inconsistent naming, undocumented auth flows).
+   - **Path validation**: Verify that every endpoint path in the
+     generated scope exists in the spec's `paths` object. Paths must
+     match the spec exactly -- do not prepend the server base path
+     (e.g., if the spec has
+     `servers[0].url: "https://api.example.com/v3"` and
+     `paths: {"/files": ...}`, the endpoint is `GET /files`,
+     not `GET /v3/files`).
+   - **Base URL derivation**: Set `spec.base_url` from
+     `servers[0].url`, which may include a path prefix
+     (e.g., `https://www.googleapis.com/drive/v3`).
 
 2. **Semantic Endpoint Grouping**
    - Cluster all endpoints into meaningful semantic groups based on the API's domain (e.g., "File Operations", "Permissions", "Comments", "Revisions"). This is similar to how [GitHub's remote MCP server](https://api.githubcopilot.com/mcp/) organizes endpoints into toolsets — users can include or exclude entire groups rather than picking endpoints one by one.
@@ -190,7 +200,7 @@ server:
 spec:
   source: "https://www.googleapis.com/discovery/v1/apis/drive/v3/rest"
   format: openapi3  # openapi3 | openapi3.1
-  base_url: "https://www.googleapis.com"
+  base_url: "https://www.googleapis.com/drive/v3"
   total_endpoints: 38
   scoped_endpoints: 6
 
@@ -203,7 +213,7 @@ groups:
     description: "Core file CRUD and search"
     tools:
       - tool_name: list_files
-        endpoint: GET /drive/v3/files
+        endpoint: GET /files
         description: >
           List files in the user's Drive or a specific folder. Returns file
           names, IDs, MIME types, and modification times. Use this to browse
@@ -230,7 +240,7 @@ groups:
           - "response is large — consider extracting only id, name, mimeType, modifiedTime"
 
       - tool_name: get_file
-        endpoint: GET /drive/v3/files/{fileId}
+        endpoint: GET /files/{fileId}
         description: >
           Get metadata for a single file by ID. Returns the full file resource
           including name, size, MIME type, permissions, and parent folders.
@@ -247,7 +257,7 @@ groups:
     description: "Sharing and access control"
     tools:
       - tool_name: list_permissions
-        endpoint: GET /drive/v3/files/{fileId}/permissions
+        endpoint: GET /files/{fileId}/permissions
         description: >
           List all permissions on a file or folder. Returns who has access
           and their role (reader, writer, owner).

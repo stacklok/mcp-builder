@@ -7,7 +7,7 @@ server:
 spec:
   source: "https://www.googleapis.com/discovery/v1/apis/drive/v3/rest"
   format: openapi3
-  base_url: "https://www.googleapis.com"
+  base_url: "https://www.googleapis.com/drive/v3"
   total_endpoints: 60
   scoped_endpoints: 5
 
@@ -20,7 +20,7 @@ groups:
     description: "File search, lookup, and creation"
     tools:
       - tool_name: list_files
-        endpoint: GET /drive/v3/files
+        endpoint: GET /files
         description: >
           List files in the user's Drive or a specific folder. Returns file
           names, IDs, MIME types, and modification times. Supports query
@@ -50,7 +50,7 @@ groups:
           - "response is large — use fields param to limit returned data"
 
       - tool_name: get_file
-        endpoint: GET /drive/v3/files/{fileId}
+        endpoint: GET /files/{fileId}
         description: >
           Get metadata for a single file by ID. Returns the full file
           resource including name, size, MIME type, and parent folders.
@@ -67,7 +67,7 @@ groups:
           - "response has 50+ fields — consider field selection"
 
       - tool_name: create_file
-        endpoint: POST /drive/v3/files
+        endpoint: POST /files
         description: >
           Create a new file or folder. For folders, set mimeType to
           "application/vnd.google-apps.folder". This creates metadata only;
@@ -92,7 +92,7 @@ groups:
     description: "File comments for collaboration and review"
     tools:
       - tool_name: list_comments
-        endpoint: GET /drive/v3/files/{fileId}/comments
+        endpoint: GET /files/{fileId}/comments
         description: >
           List all comments on a file. Returns comment text, author, and
           timestamps. Use this to review feedback and discussion on a
@@ -108,7 +108,7 @@ groups:
           - "paginated: uses pageToken/nextPageToken cursor pattern"
 
       - tool_name: create_comment
-        endpoint: POST /drive/v3/files/{fileId}/comments
+        endpoint: POST /files/{fileId}/comments
         description: >
           Add a comment to a file. Use this to leave feedback or start a
           discussion thread on a document.

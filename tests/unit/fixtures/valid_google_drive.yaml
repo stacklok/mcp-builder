@@ -7,7 +7,7 @@ server:
 spec:
   source: "https://www.googleapis.com/discovery/v1/apis/drive/v3/rest"
   format: openapi3
-  base_url: "https://www.googleapis.com"
+  base_url: "https://www.googleapis.com/drive/v3"
   total_endpoints: 38
   scoped_endpoints: 6
 
@@ -20,7 +20,7 @@ groups:
     description: "Core file CRUD and search"
     tools:
       - tool_name: list_files
-        endpoint: GET /drive/v3/files
+        endpoint: GET /files
         description: >
           List files in the user's Drive or a specific folder. Returns file
           names, IDs, MIME types, and modification times. Use this to browse
@@ -47,7 +47,7 @@ groups:
           - "response is large — consider extracting only id, name, mimeType, modifiedTime"
 
       - tool_name: get_file
-        endpoint: GET /drive/v3/files/{fileId}
+        endpoint: GET /files/{fileId}
         description: >
           Get metadata for a single file by ID. Returns the full file resource
           including name, size, MIME type, permissions, and parent folders.
@@ -62,7 +62,7 @@ groups:
     description: "Sharing and access control"
     tools:
       - tool_name: list_permissions
-        endpoint: GET /drive/v3/files/{fileId}/permissions
+        endpoint: GET /files/{fileId}/permissions
         description: >
           List all permissions on a file or folder. Returns who has access
           and their role (reader, writer, owner).

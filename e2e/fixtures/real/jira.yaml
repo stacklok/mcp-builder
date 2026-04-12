@@ -20,7 +20,7 @@ groups:
     description: "Full issue lifecycle — search, create, read, update, comment, transition, and delete"
     tools:
       - tool_name: search_issues
-        endpoint: GET /rest/api/3/issue/search
+        endpoint: GET /rest/api/3/search/jql
         description: >
           Search for issues using JQL (Jira Query Language). Returns issue
           keys, summaries, statuses, assignees, and any requested fields.
