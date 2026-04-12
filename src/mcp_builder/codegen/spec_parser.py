@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Literal, cast
+from typing import Any, Literal, cast
 
 import structlog
 import yaml
@@ -488,3 +488,173 @@ def _resolve_schema_ref(spec: OpenAPISpec, ref: str) -> OpenAPISchema | None:
         return None  # nested $ref not supported
     logger.debug("resolved schema $ref", schema_name=schema_name)
     return schema
+
+
+# ---------------------------------------------------------------------------
+# Spec analysis (used by `mcp-builder analyze`)
+# ---------------------------------------------------------------------------
+
+HTTP_METHODS = ("get", "put", "post", "delete", "options", "head", "patch", "trace")
+
+
+def _extract_security_schemes(spec: OpenAPISpec) -> list[dict[str, Any]]:
+    """Extract security scheme definitions from the spec's components."""
+    if spec.components is None:
+        return []
+    raw_schemes = spec.components.securitySchemes or {}
+    results: list[dict[str, Any]] = []
+    for name, scheme in raw_schemes.items():
+        if isinstance(scheme, Ref30 | Ref31):
+            results.append({"name": name, "ref": scheme.ref})
+            continue
+        entry: dict[str, Any] = {
+            "name": name,
+            "type": scheme.type,
+        }
+        if scheme.scheme:
+            entry["scheme"] = scheme.scheme
+        if scheme.name:
+            entry["parameter_name"] = scheme.name
+        if scheme.security_scheme_in:
+            entry["in"] = scheme.security_scheme_in
+        if scheme.openIdConnectUrl:
+            entry["openid_connect_url"] = scheme.openIdConnectUrl
+        if scheme.flows:
+            flows: dict[str, Any] = {}
+            for flow_name in (
+                "implicit",
+                "password",
+                "clientCredentials",
+                "authorizationCode",
+            ):
+                flow = getattr(scheme.flows, flow_name, None)
+                if flow is not None:
+                    flow_info: dict[str, Any] = {}
+                    if flow.authorizationUrl:
+                        flow_info["authorization_url"] = flow.authorizationUrl
+                    if flow.tokenUrl:
+                        flow_info["token_url"] = flow.tokenUrl
+                    if flow.scopes:
+                        flow_info["scopes"] = dict(flow.scopes)
+                    flows[flow_name] = flow_info
+            if flows:
+                entry["flows"] = flows
+        results.append(entry)
+    return results
+
+
+def _extract_endpoint_params(
+    spec: OpenAPISpec,
+    path_item: PathItem30 | PathItem31,
+    operation: Op30 | Op31,
+    method: str,
+    path: str,
+) -> list[dict[str, Any]]:
+    """Extract parameter info for a single operation, best-effort (no errors on $ref)."""
+    merged: dict[tuple[str, str], OAParam30 | OAParam31] = {}
+    for param in path_item.parameters or []:
+        if isinstance(param, Ref30 | Ref31):
+            continue
+        merged[(param.name, param.param_in.value)] = param
+    for param in operation.parameters or []:
+        if isinstance(param, Ref30 | Ref31):
+            continue
+        merged[(param.name, param.param_in.value)] = param
+
+    results: list[dict[str, Any]] = []
+    for param in merged.values():
+        schema_type = "string"
+        try:
+            schema_type = _extract_schema_type(param)
+        except (ValueError, AttributeError):
+            pass
+        entry: dict[str, Any] = {
+            "name": param.name,
+            "in": param.param_in.value,
+            "required": param.required,
+            "type": schema_type,
+        }
+        if param.description:
+            entry["description"] = param.description
+        results.append(entry)
+    return results
+
+
+def analyze_spec(spec: OpenAPISpec) -> dict[str, Any]:
+    """Produce a structured analysis of an OpenAPI spec.
+
+    Returns a dict suitable for JSON serialization containing:
+    - endpoints: all operations with method, path, metadata, and parameters
+    - security_schemes: authentication definitions
+    - quality: metrics on documentation coverage
+
+    This is the backing function for `mcp-builder analyze`.
+    """
+    endpoints: list[dict[str, Any]] = []
+    total_params = 0
+    params_with_desc = 0
+    endpoints_with_desc = 0
+
+    for path, path_item in (spec.paths or {}).items():
+        if path_item is None:
+            continue
+        for method in HTTP_METHODS:
+            operation: Op30 | Op31 | None = getattr(path_item, method, None)
+            if operation is None:
+                continue
+
+            params = _extract_endpoint_params(spec, path_item, operation, method, path)
+            for p in params:
+                total_params += 1
+                if p.get("description"):
+                    params_with_desc += 1
+
+            has_desc = bool(operation.description or operation.summary)
+            if has_desc:
+                endpoints_with_desc += 1
+
+            entry: dict[str, Any] = {
+                "method": method.upper(),
+                "path": path,
+            }
+            if operation.operationId:
+                entry["operation_id"] = operation.operationId
+            if operation.summary:
+                entry["summary"] = operation.summary
+            if operation.description:
+                entry["description"] = operation.description
+            if operation.tags:
+                entry["tags"] = operation.tags
+            if operation.deprecated:
+                entry["deprecated"] = True
+            if params:
+                entry["parameters"] = params
+            if operation.security:
+                entry["security"] = operation.security
+
+            endpoints.append(entry)
+
+    endpoint_count = len(endpoints)
+    security_schemes = _extract_security_schemes(spec)
+
+    quality: dict[str, Any] = {
+        "endpoint_count": endpoint_count,
+        "endpoints_with_description_pct": (
+            round(100 * endpoints_with_desc / endpoint_count) if endpoint_count else 0
+        ),
+        "total_parameters": total_params,
+        "parameters_with_description_pct": (
+            round(100 * params_with_desc / total_params) if total_params else 0
+        ),
+    }
+
+    return {
+        "info": {
+            "title": spec.info.title,
+            "version": spec.info.version,
+            "description": spec.info.description or "",
+        },
+        "endpoints": endpoints,
+        "security_schemes": security_schemes,
+        "quality": quality,
+    }

@@ -1,18 +1,20 @@
 """CLI entry point and pipeline orchestrator for mcp-builder.
 
-Pipeline stage: orchestration (ties all stages together).
-This module is the top-level entry point that chains: load scope → load spec
-→ build plan → scaffold project → render source files → patch wiring →
-write deployment manifests.
+Subcommands:
+    generate  — Run the full MCP server generation pipeline.
+    analyze   — Parse an OpenAPI spec and output structured analysis as JSON.
+    validate  — Validate an mcp-scope.yaml against the schema.
 
 Usage:
-    uv run mcp-builder scope.yaml openapi.yaml /path/to/mcp-template-py
-    uv run mcp-builder scope.yaml openapi.yaml /path/to/mcp-template-py -o ./out
+    uv run mcp-builder generate scope.yaml openapi.yaml /path/to/mcp-template-py
+    uv run mcp-builder analyze openapi.yaml
+    uv run mcp-builder validate scope.yaml
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import sys
 from collections.abc import Callable
@@ -30,7 +32,7 @@ from mcp_builder.codegen.renderers.server_wiring import (
     patch_mcp_builder,
 )
 from mcp_builder.codegen.renderers.tools import render_tools_module
-from mcp_builder.codegen.spec_parser import load_openapi_spec
+from mcp_builder.codegen.spec_parser import analyze_spec, load_openapi_spec
 from mcp_builder.schema.models import load_scope
 
 logger = logging.getLogger(__name__)
@@ -115,42 +117,13 @@ def _patch_file(
     logger.debug("Patched %s", path)
 
 
-def build_parser() -> argparse.ArgumentParser:
-    """Build the argument parser for the mcp-builder CLI."""
-    parser = argparse.ArgumentParser(
-        prog="mcp-builder",
-        description="Generate a ToolHive-ready MCP server from an OpenAPI spec.",
-    )
-    parser.add_argument("scope_yaml", type=Path, help="Path to mcp-scope.yaml")
-    parser.add_argument(
-        "openapi_spec", type=Path, help="Path to the OpenAPI spec (YAML or JSON)"
-    )
-    parser.add_argument(
-        "template_dir", type=Path, help="Path to mcp-template-py checkout"
-    )
-    parser.add_argument(
-        "-o",
-        "--output-dir",
-        type=Path,
-        default=Path("."),
-        help="Output directory (default: current directory)",
-    )
-    parser.add_argument(
-        "-v", "--verbose", action="store_true", help="Enable debug logging"
-    )
-    return parser
+# ---------------------------------------------------------------------------
+# Subcommand handlers
+# ---------------------------------------------------------------------------
 
 
-def main() -> None:
-    """CLI entry point for mcp-builder."""
-    parser = build_parser()
-    args = parser.parse_args()
-
-    logging.basicConfig(
-        level=logging.DEBUG if args.verbose else logging.INFO,
-        format="%(levelname)s: %(message)s",
-    )
-
+def _cmd_generate(args: argparse.Namespace) -> None:
+    """Handle the ``generate`` subcommand."""
     try:
         project_dir = run_pipeline(
             scope_yaml=args.scope_yaml,
@@ -169,3 +142,118 @@ def main() -> None:
         sys.exit(1)
 
     print(project_dir)
+
+
+def _cmd_analyze(args: argparse.Namespace) -> None:
+    """Handle the ``analyze`` subcommand."""
+    try:
+        spec = load_openapi_spec(args.openapi_spec)
+    except FileNotFoundError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+    except ValueError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    analysis = analyze_spec(spec)
+    print(json.dumps(analysis, indent=2))
+
+
+def _cmd_validate(args: argparse.Namespace) -> None:
+    """Handle the ``validate`` subcommand."""
+    try:
+        scope = load_scope(args.scope_yaml)
+    except FileNotFoundError as exc:
+        print(json.dumps({"valid": False, "error": str(exc)}))
+        sys.exit(1)
+    except (ValidationError, ValueError, Exception) as exc:
+        print(json.dumps({"valid": False, "error": str(exc)}, indent=2))
+        sys.exit(1)
+
+    tool_count = sum(len(g.tools) for g in scope.groups)
+    print(
+        json.dumps(
+            {
+                "valid": True,
+                "server_name": scope.server.name,
+                "group_count": len(scope.groups),
+                "tool_count": tool_count,
+                "auth_type": scope.auth.type,
+            },
+            indent=2,
+        )
+    )
+
+
+# ---------------------------------------------------------------------------
+# Argument parser
+# ---------------------------------------------------------------------------
+
+
+def build_parser() -> argparse.ArgumentParser:
+    """Build the argument parser for the mcp-builder CLI."""
+    parser = argparse.ArgumentParser(
+        prog="mcp-builder",
+        description="Generate a ToolHive-ready MCP server from an OpenAPI spec.",
+    )
+    parser.add_argument(
+        "-v", "--verbose", action="store_true", help="Enable debug logging"
+    )
+
+    subparsers = parser.add_subparsers(dest="command")
+
+    # --- generate ---
+    gen = subparsers.add_parser(
+        "generate",
+        help="Run the full MCP server generation pipeline.",
+    )
+    gen.add_argument("scope_yaml", type=Path, help="Path to mcp-scope.yaml")
+    gen.add_argument(
+        "openapi_spec", type=Path, help="Path to the OpenAPI spec (YAML or JSON)"
+    )
+    gen.add_argument("template_dir", type=Path, help="Path to mcp-template-py checkout")
+    gen.add_argument(
+        "-o",
+        "--output-dir",
+        type=Path,
+        default=Path("."),
+        help="Output directory (default: current directory)",
+    )
+    gen.set_defaults(func=_cmd_generate)
+
+    # --- analyze ---
+    analyze = subparsers.add_parser(
+        "analyze",
+        help="Parse an OpenAPI spec and output structured analysis as JSON.",
+    )
+    analyze.add_argument(
+        "openapi_spec", type=Path, help="Path to the OpenAPI spec (YAML or JSON)"
+    )
+    analyze.set_defaults(func=_cmd_analyze)
+
+    # --- validate ---
+    validate = subparsers.add_parser(
+        "validate",
+        help="Validate an mcp-scope.yaml against the schema.",
+    )
+    validate.add_argument("scope_yaml", type=Path, help="Path to mcp-scope.yaml")
+    validate.set_defaults(func=_cmd_validate)
+
+    return parser
+
+
+def main() -> None:
+    """CLI entry point for mcp-builder."""
+    parser = build_parser()
+    args = parser.parse_args()
+
+    logging.basicConfig(
+        level=logging.DEBUG if args.verbose else logging.INFO,
+        format="%(levelname)s: %(message)s",
+    )
+
+    if not hasattr(args, "func"):
+        parser.print_help()
+        sys.exit(1)
+
+    args.func(args)
