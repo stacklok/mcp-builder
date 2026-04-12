@@ -143,8 +143,8 @@ class TestGetParameters:
         assert owner.schema_type == "string"
         assert owner.description == "The account owner of the repository."
 
-    def test_ref_to_missing_component_skips_gracefully(self, tmp_path):
-        """A $ref pointing to a nonexistent component is skipped, not crashed."""
+    def test_ref_to_missing_component_raises(self, tmp_path):
+        """A $ref pointing to a nonexistent component raises ValueError."""
         raw = {
             "openapi": "3.0.3",
             "info": {"title": "Minimal", "version": "0.0.1"},
@@ -162,8 +162,8 @@ class TestGetParameters:
         spec_file = tmp_path / "minimal.yaml"
         spec_file.write_text(yaml.dump(raw))
         spec = load_openapi_spec(spec_file)
-        params = get_parameters(spec, "GET", "/things")
-        assert params == []
+        with pytest.raises(ValueError, match="nonexistent.*not found"):
+            get_parameters(spec, "GET", "/things")
 
 
 # ---------------------------------------------------------------------------
@@ -211,8 +211,8 @@ class TestGetBodyFields:
         assert name_field.required is True
         assert name_field.description == "The name of the item."
 
-    def test_ref_request_body_missing_component_returns_empty(self, tmp_path):
-        """A $ref requestBody pointing to a nonexistent component returns empty list."""
+    def test_ref_request_body_missing_component_raises(self, tmp_path):
+        """A $ref requestBody pointing to a nonexistent component raises ValueError."""
         raw = {
             "openapi": "3.0.3",
             "info": {"title": "Minimal", "version": "0.0.1"},
@@ -232,8 +232,8 @@ class TestGetBodyFields:
         spec_file = tmp_path / "minimal.yaml"
         spec_file.write_text(yaml.dump(raw))
         spec = load_openapi_spec(spec_file)
-        fields = get_body_fields(spec, "POST", "/things")
-        assert fields == []
+        with pytest.raises(ValueError, match="Nonexistent.*not found"):
+            get_body_fields(spec, "POST", "/things")
 
     def test_missing_path_raises(self, spec):
         with pytest.raises(KeyError, match="not found in spec"):

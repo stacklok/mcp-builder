@@ -242,21 +242,12 @@ def get_parameters(
 
     for param in path_item.parameters or []:
         if isinstance(param, Ref30 | Ref31):
-            resolved = _resolve_parameter_ref(spec, param.ref)
-            if resolved is None:
-                # Unresolvable ref (missing component, external ref, etc.) —
-                # skip so one bad ref doesn't block the whole operation.
-                continue
-            param = resolved
+            param = _resolve_parameter_ref(spec, param.ref)
         merged[(param.name, param.param_in.value)] = param
 
     for param in operation.parameters or []:
         if isinstance(param, Ref30 | Ref31):
-            resolved = _resolve_parameter_ref(spec, param.ref)
-            if resolved is None:
-                # Unresolvable ref — skip gracefully (see comment above).
-                continue
-            param = resolved
+            param = _resolve_parameter_ref(spec, param.ref)
         merged[(param.name, param.param_in.value)] = param
 
     path_level_count = len(path_item.parameters or [])
@@ -339,10 +330,7 @@ def get_body_fields(
 
     req_body = operation.requestBody
     if isinstance(req_body, Ref30 | Ref31):
-        resolved = _resolve_request_body_ref(spec, req_body.ref)
-        if resolved is None:
-            return []
-        req_body = resolved
+        req_body = _resolve_request_body_ref(spec, req_body.ref)
 
     json_media = (req_body.content or {}).get("application/json")
     if json_media is None:
@@ -468,7 +456,7 @@ def _schema_to_type(schema: OpenAPISchema) -> SchemaType:
     return cast(SchemaType, type_str)
 
 
-def _resolve_parameter_ref(spec: OpenAPISpec, ref: str) -> OAParam30 | OAParam31 | None:
+def _resolve_parameter_ref(spec: OpenAPISpec, ref: str) -> OAParam30 | OAParam31:
     """Look up an OpenAPI ``$ref`` string in ``spec.components.parameters``.
 
     OpenAPI specs use JSON Reference pointers like
@@ -477,35 +465,42 @@ def _resolve_parameter_ref(spec: OpenAPISpec, ref: str) -> OAParam30 | OAParam31
     finds the matching entry in ``spec.components.parameters``, and returns
     the resolved parameter object.
 
-    Returns ``None`` when resolution fails — the ref points outside
-    ``#/components/parameters/``, the components section is missing, or the
-    named parameter doesn't exist (or is itself a nested ``$ref``).
+    Raises:
+        ValueError: If the ref is external/non-component, the components
+            section is missing, the named parameter doesn't exist, or it
+            is itself a nested ``$ref``.
     """
     if not ref.startswith("#/components/parameters/"):
-        logger.warning("cannot resolve non-component parameter $ref", ref=ref)
-        return None
+        raise ValueError(
+            f"Cannot resolve parameter $ref '{ref}': "
+            "only local '#/components/parameters/...' refs are supported."
+        )
     param_name = ref.rsplit("/", 1)[-1]
     logger.debug("resolving parameter $ref", ref=ref, component=param_name)
     if spec.components is None:
-        logger.warning(
-            "spec has no components section, cannot resolve parameter $ref", ref=ref
+        raise ValueError(
+            f"Cannot resolve parameter $ref '{ref}': "
+            "spec has no 'components' section."
         )
-        return None
     params = spec.components.parameters or {}
     param = params.get(param_name)
-    if param is None or isinstance(param, Ref30 | Ref31):
-        logger.warning(
-            "parameter not found in components (or is a nested $ref)",
-            param_name=param_name,
+    if param is None:
+        raise ValueError(
+            f"Cannot resolve parameter $ref '{ref}': "
+            f"'{param_name}' not found in components.parameters."
         )
-        return None
+    if isinstance(param, Ref30 | Ref31):
+        raise ValueError(
+            f"Cannot resolve parameter $ref '{ref}': "
+            f"'{param_name}' is itself a nested $ref, which is not supported."
+        )
     logger.debug("resolved parameter $ref", param_name=param_name)
     return param
 
 
 def _resolve_request_body_ref(
     spec: OpenAPISpec, ref: str
-) -> ReqBody30 | ReqBody31 | None:
+) -> ReqBody30 | ReqBody31:
     """Look up an OpenAPI ``$ref`` string in ``spec.components.requestBodies``.
 
     OpenAPI specs use JSON Reference pointers like
@@ -514,28 +509,35 @@ def _resolve_request_body_ref(
     pointer, finds the matching entry in ``spec.components.requestBodies``,
     and returns the resolved request body object.
 
-    Returns ``None`` when resolution fails — the ref points outside
-    ``#/components/requestBodies/``, the components section is missing, or the
-    named request body doesn't exist (or is itself a nested ``$ref``).
+    Raises:
+        ValueError: If the ref is external/non-component, the components
+            section is missing, the named request body doesn't exist, or it
+            is itself a nested ``$ref``.
     """
     if not ref.startswith("#/components/requestBodies/"):
-        logger.warning("cannot resolve non-component requestBody $ref", ref=ref)
-        return None
+        raise ValueError(
+            f"Cannot resolve requestBody $ref '{ref}': "
+            "only local '#/components/requestBodies/...' refs are supported."
+        )
     body_name = ref.rsplit("/", 1)[-1]
     logger.debug("resolving requestBody $ref", ref=ref, component=body_name)
     if spec.components is None:
-        logger.warning(
-            "spec has no components section, cannot resolve requestBody $ref", ref=ref
+        raise ValueError(
+            f"Cannot resolve requestBody $ref '{ref}': "
+            "spec has no 'components' section."
         )
-        return None
     bodies = spec.components.requestBodies or {}
     body = bodies.get(body_name)
-    if body is None or isinstance(body, Ref30 | Ref31):
-        logger.warning(
-            "requestBody not found in components (or is a nested $ref)",
-            body_name=body_name,
+    if body is None:
+        raise ValueError(
+            f"Cannot resolve requestBody $ref '{ref}': "
+            f"'{body_name}' not found in components.requestBodies."
         )
-        return None
+    if isinstance(body, Ref30 | Ref31):
+        raise ValueError(
+            f"Cannot resolve requestBody $ref '{ref}': "
+            f"'{body_name}' is itself a nested $ref, which is not supported."
+        )
     logger.debug("resolved requestBody $ref", body_name=body_name)
     return body
 
