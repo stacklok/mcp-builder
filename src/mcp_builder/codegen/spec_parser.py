@@ -479,8 +479,7 @@ def _resolve_parameter_ref(spec: OpenAPISpec, ref: str) -> OAParam30 | OAParam31
     logger.debug("resolving parameter $ref", ref=ref, component=param_name)
     if spec.components is None:
         raise ValueError(
-            f"Cannot resolve parameter $ref '{ref}': "
-            "spec has no 'components' section."
+            f"Cannot resolve parameter $ref '{ref}': spec has no 'components' section."
         )
     params = spec.components.parameters or {}
     param = params.get(param_name)
@@ -498,9 +497,7 @@ def _resolve_parameter_ref(spec: OpenAPISpec, ref: str) -> OAParam30 | OAParam31
     return param
 
 
-def _resolve_request_body_ref(
-    spec: OpenAPISpec, ref: str
-) -> ReqBody30 | ReqBody31:
+def _resolve_request_body_ref(spec: OpenAPISpec, ref: str) -> ReqBody30 | ReqBody31:
     """Look up an OpenAPI ``$ref`` string in ``spec.components.requestBodies``.
 
     OpenAPI specs use JSON Reference pointers like
