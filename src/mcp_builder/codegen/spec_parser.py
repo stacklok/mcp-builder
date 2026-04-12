@@ -244,6 +244,8 @@ def get_parameters(
         if isinstance(param, Ref30 | Ref31):
             resolved = _resolve_parameter_ref(spec, param.ref)
             if resolved is None:
+                # Unresolvable ref (missing component, external ref, etc.) —
+                # skip so one bad ref doesn't block the whole operation.
                 continue
             param = resolved
         merged[(param.name, param.param_in.value)] = param
@@ -252,6 +254,7 @@ def get_parameters(
         if isinstance(param, Ref30 | Ref31):
             resolved = _resolve_parameter_ref(spec, param.ref)
             if resolved is None:
+                # Unresolvable ref — skip gracefully (see comment above).
                 continue
             param = resolved
         merged[(param.name, param.param_in.value)] = param
@@ -466,7 +469,18 @@ def _schema_to_type(schema: OpenAPISchema) -> SchemaType:
 
 
 def _resolve_parameter_ref(spec: OpenAPISpec, ref: str) -> OAParam30 | OAParam31 | None:
-    """Resolve a $ref like '#/components/parameters/owner' to the parameter object."""
+    """Look up an OpenAPI ``$ref`` string in ``spec.components.parameters``.
+
+    OpenAPI specs use JSON Reference pointers like
+    ``#/components/parameters/owner`` instead of inlining a parameter object.
+    This function extracts the component name from the pointer (``owner``),
+    finds the matching entry in ``spec.components.parameters``, and returns
+    the resolved parameter object.
+
+    Returns ``None`` when resolution fails — the ref points outside
+    ``#/components/parameters/``, the components section is missing, or the
+    named parameter doesn't exist (or is itself a nested ``$ref``).
+    """
     if not ref.startswith("#/components/parameters/"):
         logger.warning("cannot resolve non-component parameter $ref", ref=ref)
         return None
@@ -492,7 +506,18 @@ def _resolve_parameter_ref(spec: OpenAPISpec, ref: str) -> OAParam30 | OAParam31
 def _resolve_request_body_ref(
     spec: OpenAPISpec, ref: str
 ) -> ReqBody30 | ReqBody31 | None:
-    """Resolve a $ref like '#/components/requestBodies/Foo' to the request body object."""
+    """Look up an OpenAPI ``$ref`` string in ``spec.components.requestBodies``.
+
+    OpenAPI specs use JSON Reference pointers like
+    ``#/components/requestBodies/CreateUserRequest`` instead of inlining a
+    request body object. This function extracts the component name from the
+    pointer, finds the matching entry in ``spec.components.requestBodies``,
+    and returns the resolved request body object.
+
+    Returns ``None`` when resolution fails — the ref points outside
+    ``#/components/requestBodies/``, the components section is missing, or the
+    named request body doesn't exist (or is itself a nested ``$ref``).
+    """
     if not ref.startswith("#/components/requestBodies/"):
         logger.warning("cannot resolve non-component requestBody $ref", ref=ref)
         return None
