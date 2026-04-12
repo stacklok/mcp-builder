@@ -5,6 +5,13 @@ This is the first step in the codegen pipeline. It loads an OpenAPI spec
 file into a fully typed model (via openapi-pydantic) and provides helper
 functions to extract parameters and request body fields from operations.
 
+Error policy: STRICT. This module feeds the code generation pipeline, so
+bad input must fail fast with a clear error — never silently default or
+skip. Every $ref resolution, schema type extraction, and parameter lookup
+either succeeds or raises (ValueError/KeyError). The analysis path
+(spec_analyzer.py) has the opposite policy: it captures errors per-endpoint
+so one bad endpoint doesn't block the whole survey.
+
 Downstream consumers (codegen.plan) call these helpers to build a
 ServerPlan. Renderers never call this module directly.
 
@@ -277,7 +284,7 @@ def get_parameters(
 
     result = []
     for param in merged.values():
-        schema_type = _extract_schema_type(param)
+        schema_type = extract_schema_type(param)
         result.append(
             ExtractedParameter(
                 name=param.name,
@@ -381,17 +388,15 @@ def get_body_fields(
         logger.warning("body schema has no properties", method=method, path=path)
 
     for name, prop in (schema.properties or {}).items():
-        # Resolve $ref properties to their underlying schema
+        # NOTE: $ref on individual body properties is not yet resolved.
+        # See https://github.com/StacklokLabs/mcp-builder/issues/19
         if isinstance(prop, Ref30 | Ref31):
-            logger.debug(
-                "resolving body property $ref",
-                property_name=name,
-                ref=prop.ref,
-                method=method,
-                path=path,
+            raise NotImplementedError(
+                f"$ref property '{prop.ref}' in {method} {path} body "
+                "is not yet supported. "
+                "See https://github.com/StacklokLabs/mcp-builder/issues/19"
             )
-            prop = _resolve_schema_ref(spec, prop.ref)
-        prop_type = _schema_to_type(prop)
+        prop_type = schema_to_type(prop)
         fields.append(
             ExtractedBodyField(
                 name=name,
@@ -417,30 +422,34 @@ def get_body_fields(
     return fields
 
 
-def _extract_schema_type(param: OAParam30 | OAParam31) -> SchemaType:
+def extract_schema_type(param: OAParam30 | OAParam31) -> SchemaType:
     """Extract the schema type string from a parameter's schema.
 
-    Raises ValueError for unknown types rather than silently defaulting.
+    Raises:
+        ValueError: If the parameter has no inline schema (None or $ref),
+            or the schema type is missing, null-only, or unknown.
     """
     if param.param_schema is None or isinstance(param.param_schema, Ref30 | Ref31):
         schema_kind = (
             type(param.param_schema).__name__ if param.param_schema else "None"
         )
-        logger.debug(
-            "no inline schema for parameter, defaulting to string",
-            param_name=param.name,
-            schema_kind=schema_kind,
+        raise ValueError(
+            f"Parameter '{param.name}' has no inline schema "
+            f"(schema_kind={schema_kind}). Cannot determine type."
         )
-        return "string"
-    return _schema_to_type(param.param_schema)
+    return schema_to_type(param.param_schema)
 
 
-def _schema_to_type(schema: OpenAPISchema) -> SchemaType:
-    """Extract the type string from an inline schema object."""
+def schema_to_type(schema: OpenAPISchema) -> SchemaType:
+    """Extract the type string from an inline schema object.
+
+    Raises:
+        ValueError: If the schema has no type field, the type list contains
+            only nulls, or the type is not in OPENAPI_TYPE_MAP.
+    """
     raw_type = schema.type
     if raw_type is None:
-        logger.debug("schema has no type field, defaulting to string")
-        return "string"
+        raise ValueError("Schema has no 'type' field.")
     # v3.1 can return a list of types; take the first non-null one
     if isinstance(raw_type, list):
         for t in raw_type:
@@ -448,10 +457,7 @@ def _schema_to_type(schema: OpenAPISchema) -> SchemaType:
                 raw_type = t
                 break
         else:
-            logger.warning(
-                "schema type list contains only null types, defaulting to string"
-            )
-            return "string"
+            raise ValueError("Schema type list contains only null types.")
     type_str: str = raw_type.value if hasattr(raw_type, "value") else str(raw_type)
     if type_str not in OPENAPI_TYPE_MAP:
         raise ValueError(
@@ -547,7 +553,13 @@ def _resolve_request_body_ref(spec: OpenAPISpec, ref: str) -> ReqBody30 | ReqBod
 
 
 def _resolve_schema_ref(spec: OpenAPISpec, ref: str) -> OpenAPISchema:
-    """Resolve a $ref string like '#/components/schemas/Foo' to the schema object.
+    """Look up an OpenAPI ``$ref`` string in ``spec.components.schemas``.
+
+    OpenAPI specs use JSON Reference pointers like
+    ``#/components/schemas/CreateItemRequest`` instead of inlining a schema
+    object. This function extracts the component name from the pointer,
+    finds the matching entry in ``spec.components.schemas``, and returns
+    the resolved schema object.
 
     Raises:
         ValueError: If the ref is external/non-component, the components
