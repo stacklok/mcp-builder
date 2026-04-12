@@ -47,7 +47,55 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Item"
+  /repos/{owner}/{repo}/issues:
+    parameters:
+      - $ref: "#/components/parameters/owner"
+    get:
+      operationId: listIssues
+      summary: List issues for a repository
+      parameters:
+        - name: repo
+          in: path
+          required: true
+          schema:
+            type: string
+          description: "The name of the repository."
+        - $ref: "#/components/parameters/per-page"
+      responses:
+        "200":
+          description: Successful response
+  /items-with-ref-body:
+    post:
+      operationId: createItemWithRefBody
+      summary: Create an item using a $ref request body
+      requestBody:
+        $ref: "#/components/requestBodies/CreateItem"
+      responses:
+        "201":
+          description: Created
 components:
+  parameters:
+    owner:
+      name: owner
+      in: path
+      required: true
+      schema:
+        type: string
+      description: "The account owner of the repository."
+    per-page:
+      name: per_page
+      in: query
+      required: false
+      schema:
+        type: integer
+      description: "Number of results per page."
+  requestBodies:
+    CreateItem:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/CreateItemRequest"
   schemas:
     Item:
       type: object
