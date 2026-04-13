@@ -138,7 +138,7 @@ class TestAnalyzeSpecWithErrors:
         """A parameter with no schema captures the error, not raises."""
         import yaml
 
-        from mcp_builder.codegen.spec_parser import load_openapi_spec
+        from mcp_builder.spec import load_openapi_spec
 
         raw = {
             "openapi": "3.0.3",
@@ -174,7 +174,7 @@ class TestAnalyzeSpecSecuritySchemes:
     def test_extracts_api_key_scheme(self, tmp_path):
         import yaml
 
-        from mcp_builder.codegen.spec_parser import load_openapi_spec
+        from mcp_builder.spec import load_openapi_spec
 
         raw = {
             "openapi": "3.0.3",
@@ -204,7 +204,7 @@ class TestAnalyzeSpecSecuritySchemes:
     def test_extracts_oauth2_flows(self, tmp_path):
         import yaml
 
-        from mcp_builder.codegen.spec_parser import load_openapi_spec
+        from mcp_builder.spec import load_openapi_spec
 
         raw = {
             "openapi": "3.0.3",

@@ -33,7 +33,7 @@ import structlog
 
 from pydantic import BaseModel
 
-from mcp_builder.codegen.spec_parser import (
+from mcp_builder.spec import (
     OPENAPI_TYPE_MAP,
     ExtractedBodyField,
     ExtractedParameter,

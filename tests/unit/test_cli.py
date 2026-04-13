@@ -2,9 +2,10 @@
 
 import json
 
+import pytest
 import structlog.testing
 
-from mcp_builder.cli import ValidationResult, build_parser
+from mcp_builder.cli import build_parser
 
 
 class TestBuildParser:
@@ -37,7 +38,9 @@ class TestBuildParser:
 
     def test_validate_with_spec_flag(self):
         parser = build_parser()
-        args = parser.parse_args(["validate", "scope.yaml", "--spec", "spec.yaml"])
+        args = parser.parse_args(
+            ["validate", "scope.yaml", "--openapi-spec", "spec.yaml"]
+        )
         assert args.command == "validate"
         assert str(args.openapi_spec) == "spec.yaml"
 
@@ -46,10 +49,10 @@ class TestBuildParser:
         args = parser.parse_args(["-v", "analyze", "spec.yaml"])
         assert args.verbose is True
 
-    def test_no_subcommand(self):
+    def test_no_subcommand_exits(self):
         parser = build_parser()
-        args = parser.parse_args([])
-        assert not hasattr(args, "func")
+        with pytest.raises(SystemExit):
+            parser.parse_args([])
 
 
 class TestCmdAnalyze:
@@ -186,7 +189,7 @@ class TestCmdValidate:
         spec_file.write_text(yaml.dump(raw))
         return spec_file
 
-    def test_validate_prints_json(self, tmp_path, capsys):
+    def test_validate_no_spec(self, tmp_path, capsys):
         from mcp_builder.cli import _cmd_validate
 
         scope_file = self._make_scope(tmp_path)
@@ -198,11 +201,8 @@ class TestCmdValidate:
 
         captured = capsys.readouterr()
         data = json.loads(captured.out)
-        assert data["valid"] is True
-        assert data["server_name"] == "test-svc"
-        assert data["tool_count"] == 1
-        assert data["auth_type"] == "none"
         assert data["errors"] == []
+        assert data["warnings"] == []
 
     def test_cross_validate_passes(self, tmp_path, capsys):
         from mcp_builder.cli import _cmd_validate
@@ -212,19 +212,16 @@ class TestCmdValidate:
 
         parser = build_parser()
         args = parser.parse_args(
-            ["validate", str(scope_file), "--spec", str(spec_file)]
+            ["validate", str(scope_file), "--openapi-spec", str(spec_file)]
         )
         with structlog.testing.capture_logs():
             _cmd_validate(args)
 
         captured = capsys.readouterr()
         data = json.loads(captured.out)
-        assert data["valid"] is True
         assert data["errors"] == []
 
     def test_cross_validate_catches_bad_path(self, tmp_path, capsys):
-        import pytest
-
         from mcp_builder.cli import _cmd_validate
 
         scope_file = self._make_scope(tmp_path)
@@ -243,7 +240,7 @@ class TestCmdValidate:
 
         parser = build_parser()
         args = parser.parse_args(
-            ["validate", str(scope_file), "--spec", str(spec_file)]
+            ["validate", str(scope_file), "--openapi-spec", str(spec_file)]
         )
         with structlog.testing.capture_logs(), pytest.raises(SystemExit) as exc_info:
             _cmd_validate(args)
@@ -251,33 +248,5 @@ class TestCmdValidate:
         assert exc_info.value.code == 1
         captured = capsys.readouterr()
         data = json.loads(captured.out)
-        assert data["valid"] is False
         assert len(data["errors"]) == 1
         assert "/things" in data["errors"][0]
-        assert "get_thing" in data["errors"][0]
-
-
-class TestValidationResult:
-    def test_model_fields(self):
-        r = ValidationResult(
-            valid=True,
-            server_name="foo",
-            group_count=2,
-            tool_count=5,
-            auth_type="api_key",
-        )
-        assert r.valid is True
-        assert r.server_name == "foo"
-        assert r.errors == []
-
-    def test_model_with_errors(self):
-        r = ValidationResult(
-            valid=False,
-            server_name="foo",
-            group_count=1,
-            tool_count=1,
-            auth_type="none",
-            errors=["path '/bad' not found"],
-        )
-        assert r.valid is False
-        assert len(r.errors) == 1

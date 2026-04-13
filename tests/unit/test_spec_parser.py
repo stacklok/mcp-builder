@@ -1,11 +1,11 @@
-"""Tests for codegen.spec_parser — OpenAPI spec loading and parameter extraction."""
+"""Tests for spec package — OpenAPI spec loading and parameter extraction."""
 
 import json
 
 import pytest
 import yaml
 
-from mcp_builder.codegen.spec_parser import (
+from mcp_builder.spec import (
     ExtractedBodyField,
     ExtractedParameter,
     get_body_fields,

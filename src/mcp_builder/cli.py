@@ -1,14 +1,15 @@
 """CLI entry point and pipeline orchestrator for mcp-builder.
 
-Subcommands:
-    generate  — run the full codegen pipeline (scope + spec + template → project)
-    analyze   — parse an OpenAPI spec and dump structured JSON
-    validate  — check an mcp-scope.yaml against the Pydantic schema
+Pipeline stage: orchestration (ties all stages together).
+Each subcommand is a thin wrapper that calls one domain function:
+    - generate: run_pipeline() → scaffold a complete MCP server project
+    - analyze:  analyze_spec() → summarize an OpenAPI spec
+    - validate: validate_scope() → check a scope against an optional spec
 
 Usage:
-    uv run mcp-builder generate scope.yaml openapi.yaml /path/to/template
+    uv run mcp-builder generate scope.yaml openapi.yaml /path/to/mcp-template-py
     uv run mcp-builder analyze openapi.yaml
-    uv run mcp-builder validate scope.yaml
+    uv run mcp-builder validate scope.yaml --openapi-spec openapi.yaml
 """
 
 from __future__ import annotations
@@ -19,7 +20,7 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 
-from pydantic import BaseModel, ValidationError
+from pydantic import ValidationError
 
 from mcp_builder.codegen.plan import ServerPlan, build_server_plan
 from mcp_builder.codegen.renderers.client import render_client_module
@@ -32,15 +33,11 @@ from mcp_builder.codegen.renderers.server_wiring import (
 )
 from mcp_builder.codegen.renderers.tools import render_tools_module
 from mcp_builder.codegen.spec_analyzer import analyze_spec
-from mcp_builder.codegen.spec_parser import load_openapi_spec, parse_endpoint
+from mcp_builder.codegen.validator import validate_scope
 from mcp_builder.schema.models import load_scope
+from mcp_builder.spec import load_openapi_spec
 
 logger = logging.getLogger(__name__)
-
-
-# ---------------------------------------------------------------------------
-# Pipeline orchestrator (used by the ``generate`` subcommand)
-# ---------------------------------------------------------------------------
 
 
 def run_pipeline(
@@ -122,71 +119,28 @@ def _patch_file(
     logger.debug("Patched %s", path)
 
 
-# ---------------------------------------------------------------------------
-# Subcommand handlers
-# ---------------------------------------------------------------------------
-
-
 def _cmd_generate(args: argparse.Namespace) -> None:
+    """Subcommand: generate a complete MCP server project."""
     project_dir = run_pipeline(
-        scope_yaml=args.scope_yaml,
-        openapi_spec=args.openapi_spec,
-        template_dir=args.template_dir,
-        output_dir=args.output_dir,
+        args.scope_yaml, args.openapi_spec, args.template_dir, args.output_dir
     )
     print(project_dir)
 
 
 def _cmd_analyze(args: argparse.Namespace) -> None:
+    """Subcommand: analyze an OpenAPI spec."""
     spec = load_openapi_spec(args.openapi_spec)
-    analysis = analyze_spec(spec)
-    print(analysis.model_dump_json(indent=2, by_alias=True))
-
-
-class ValidationResult(BaseModel):
-    """Typed output for the ``validate`` subcommand."""
-
-    valid: bool
-    server_name: str
-    group_count: int
-    tool_count: int
-    auth_type: str
-    errors: list[str] = []
+    print(analyze_spec(spec).model_dump_json(indent=2, by_alias=True))
 
 
 def _cmd_validate(args: argparse.Namespace) -> None:
+    """Subcommand: validate a scope against an optional spec."""
     scope = load_scope(args.scope_yaml)
-    errors: list[str] = []
-
-    # Cross-validate scope endpoints against the spec if --spec provided
-    if hasattr(args, "openapi_spec") and args.openapi_spec is not None:
-        spec = load_openapi_spec(args.openapi_spec)
-        spec_paths = set(spec.paths or {})
-        for group in scope.groups:
-            for tool in group.tools:
-                _method, path = parse_endpoint(tool.endpoint)
-                if path not in spec_paths:
-                    errors.append(
-                        f"Tool '{tool.tool_name}': path '{path}' "
-                        f"not found in spec (endpoint: {tool.endpoint})"
-                    )
-
-    result = ValidationResult(
-        valid=len(errors) == 0,
-        server_name=scope.server.name,
-        group_count=len(scope.groups),
-        tool_count=sum(len(g.tools) for g in scope.groups),
-        auth_type=scope.auth.type,
-        errors=errors,
-    )
+    spec = load_openapi_spec(args.openapi_spec) if args.openapi_spec else None
+    result = validate_scope(scope, spec)
     print(result.model_dump_json(indent=2))
-    if errors:
+    if result.errors:
         sys.exit(1)
-
-
-# ---------------------------------------------------------------------------
-# Argument parser
-# ---------------------------------------------------------------------------
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -198,10 +152,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "-v", "--verbose", action="store_true", help="Enable debug logging"
     )
-    subparsers = parser.add_subparsers(dest="command")
+    subparsers = parser.add_subparsers(dest="command", required=True)
 
-    # --- generate ---
-    gen = subparsers.add_parser("generate", help="Run the codegen pipeline")
+    # generate
+    gen = subparsers.add_parser("generate", help="Generate an MCP server project")
     gen.add_argument("scope_yaml", type=Path, help="Path to mcp-scope.yaml")
     gen.add_argument(
         "openapi_spec", type=Path, help="Path to the OpenAPI spec (YAML or JSON)"
@@ -216,26 +170,23 @@ def build_parser() -> argparse.ArgumentParser:
     )
     gen.set_defaults(func=_cmd_generate)
 
-    # --- analyze ---
-    ana = subparsers.add_parser(
-        "analyze", help="Analyze an OpenAPI spec and print structured JSON"
-    )
-    ana.add_argument(
+    # analyze
+    anl = subparsers.add_parser("analyze", help="Analyze an OpenAPI spec")
+    anl.add_argument(
         "openapi_spec", type=Path, help="Path to the OpenAPI spec (YAML or JSON)"
     )
-    ana.set_defaults(func=_cmd_analyze)
+    anl.set_defaults(func=_cmd_analyze)
 
-    # --- validate ---
+    # validate
     val = subparsers.add_parser(
-        "validate", help="Validate an mcp-scope.yaml and print typed JSON"
+        "validate", help="Validate a scope against an optional spec"
     )
     val.add_argument("scope_yaml", type=Path, help="Path to mcp-scope.yaml")
     val.add_argument(
-        "--spec",
-        dest="openapi_spec",
+        "--openapi-spec",
         type=Path,
         default=None,
-        help="OpenAPI spec to cross-validate scope endpoints against",
+        help="Optional OpenAPI spec to cross-reference",
     )
     val.set_defaults(func=_cmd_validate)
 
@@ -251,10 +202,6 @@ def main() -> None:
         level=logging.DEBUG if args.verbose else logging.INFO,
         format="%(levelname)s: %(message)s",
     )
-
-    if not hasattr(args, "func"):
-        parser.print_help()
-        sys.exit(1)
 
     try:
         args.func(args)

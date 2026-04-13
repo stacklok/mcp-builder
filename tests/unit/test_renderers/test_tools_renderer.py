@@ -4,7 +4,7 @@ from typing import Literal
 
 from mcp_builder.codegen.plan import ParamPlan, ToolPlan
 from mcp_builder.codegen.renderers.tools import render_tools_module
-from mcp_builder.codegen.spec_parser import PythonType
+from mcp_builder.spec import PythonType
 from tests.unit.test_renderers.conftest import make_plan
 
 

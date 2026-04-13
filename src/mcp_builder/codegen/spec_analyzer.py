@@ -7,10 +7,10 @@ Error policy: SOFT. This module serves the ``analyze`` CLI command, which
 produces a structured survey for humans and AI agents. One bad endpoint
 must not block the whole analysis, so extraction errors are captured
 per-endpoint in the ``errors`` list rather than raised. This is the
-opposite of spec_parser.py, which feeds code generation and must fail
-fast on any unresolvable input.
+opposite of the spec package (mcp_builder.spec), which feeds code
+generation and must fail fast on any unresolvable input.
 
-One-directional dependency: spec_analyzer -> spec_parser.
+One-directional dependency: spec_analyzer -> mcp_builder.spec.
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ from openapi_pydantic.v3.v3_1 import Reference as Ref31
 from openapi_pydantic.v3.v3_1 import SecurityScheme as SecScheme31
 from pydantic import BaseModel, Field
 
-from mcp_builder.codegen.spec_parser import (
+from mcp_builder.spec import (
     OpenAPISpec,
     extract_schema_type,
 )
