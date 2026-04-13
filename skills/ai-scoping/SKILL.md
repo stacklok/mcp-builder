@@ -10,7 +10,15 @@ This skill orchestrates Phase 1 of the mcp-builder pipeline: transforming an Ope
 
 ## Startup
 
-Before beginning the workflow, determine the base directory for this skill (the absolute path to the directory containing this SKILL.md). Agent directories are at `{skill_base_dir}/agents/{agent-name}`. You will need these paths when spawning sub-agents. Do not share these with the user.
+Before beginning the workflow:
+
+1. Determine the base directory for this skill (the absolute path to the directory containing this SKILL.md). Agent files are at `{skill_base_dir}/agents/{agent-name}.md`. You will need these paths when spawning sub-agents. Do not share these with the user.
+
+2. Ensure the JSON schema is current by running:
+   ```bash
+   task generate-schema
+   ```
+   This writes `skills/ai-scoping/assets/mcp-scope-schema.json` from the Pydantic models.
 
 ## Workflow
 
@@ -74,13 +82,13 @@ Spawn a **spec-analyzer** sub-agent using the Agent tool:
 
 ```
 Agent tool parameters:
-- subagent_type: [path to spec-analyzer agent]
+- subagent_type: [path to spec-analyzer agent: {skill_base_dir}/agents/spec-analyzer.md]
 - description: "Analyze OpenAPI spec"
 - prompt: |
     Analyze the following OpenAPI spec data and propose semantic endpoint groups.
 
     CONTEXT:
-    Base directory: [absolute path to the spec-analyzer agent's directory]
+    Pipeline context path: [absolute path to {skill_base_dir}/assets/pipeline-context.md]
     Working directory: [absolute path to scoping-output/]
 
     WORKFLOWS:
@@ -128,16 +136,17 @@ Spawn an **endpoint-scoper** sub-agent using the Agent tool:
 
 ```
 Agent tool parameters:
-- subagent_type: [path to endpoint-scoper agent]
+- subagent_type: [path to endpoint-scoper agent: {skill_base_dir}/agents/endpoint-scoper.md]
 - description: "Scope tools for selected groups"
 - prompt: |
     Perform tool scoping for the selected endpoint groups: naming, descriptions, hints.
 
     CONTEXT:
-    Base directory: [absolute path to the endpoint-scoper agent's directory]
+    Pipeline context path: [absolute path to {skill_base_dir}/assets/pipeline-context.md]
     Working directory: [absolute path to scoping-output/]
     Server name: [derived from API — e.g., "google-drive"]
     Base URL: [from analyze JSON — e.g., "https://www.googleapis.com/drive/v3"]
+    OpenAPI spec file path: [absolute path to the downloaded OpenAPI spec file]
 
     WORKFLOWS:
     1. [workflow 1]
@@ -154,9 +163,9 @@ Agent tool parameters:
 ```
 
 The endpoint-scoper agent will:
-- Filter out unnecessary endpoints within selected groups
-- Assign tool names following `verb_noun` convention (snake_case, unique, <=40 chars)
-- Write LLM-optimized descriptions for tools and parameters
+- Flag questionable endpoints for user review (does NOT auto-remove anything)
+- Assign tool names — keeping originals when possible, renaming only bad ones
+- Write LLM-optimized descriptions focused on separability between tools
 - Add hints for pagination, large responses, quirks
 - Write `tool-scoping.md` to the working directory
 
@@ -168,11 +177,10 @@ Once the endpoint-scoper agent completes:
 
 1. Read `{working_dir}/tool-scoping.md`
 2. Present to the user:
-   - **Dropped endpoints**: which endpoints were filtered out and why
+   - **Flagged endpoints**: which endpoints are flagged for potential exclusion and why — the user decides whether to remove them
    - **Tool list**: for each tool, show the tool name, endpoint, description, parameters, and hints
    - **Renamed tools**: highlight any tools where the name was changed from the original operationId
-   - **Inferred descriptions**: flag any descriptions that were inferred (not from the spec)
-3. Ask the user to approve the tool list or request changes
+3. Ask the user to approve the tool list or request changes (including which flagged endpoints to remove, if any)
 
 **Do NOT proceed to Step 6 until the user approves.**
 
@@ -218,7 +226,7 @@ Derive the following from the analyze JSON and user context:
 
 #### 6.3: Assemble `mcp-scope.yaml`
 
-Build the YAML following the MCPScope schema exactly. Reference the structure in `e2e/fixtures/real/google_drive.yaml` for formatting conventions:
+Build the YAML following the MCPScope schema exactly. The formal JSON schema is at `{skill_base_dir}/assets/mcp-scope-schema.json`. Reference `e2e/fixtures/real/google_drive.yaml` for formatting conventions:
 
 ```yaml
 version: "1"
@@ -264,14 +272,14 @@ auth:
     {auth notes — how the auth works, any caveats}
 ```
 
-Write the YAML to `{cwd}/mcp-scope.yaml`.
+Write the YAML to `{working_dir}/mcp-scope.yaml`.
 
 #### 6.4: Validate
 
-Run validation:
+Run validation from the working directory:
 
 ```bash
-uv run mcp-builder validate mcp-scope.yaml --spec <openapi-spec-path>
+uv run mcp-builder validate {working_dir}/mcp-scope.yaml --spec <openapi-spec-path>
 ```
 
 This checks:
@@ -294,7 +302,7 @@ Read the template at `{skill_base_dir}/assets/scoping-summary-template.md` and f
 - Auth detection reasoning
 - Any flagged issues for Phase 2 human review
 
-Write the filled template to `{cwd}/scoping-summary.md`.
+Write the filled template to `{working_dir}/scoping-summary.md`.
 
 #### 6.6: Present Results
 
@@ -325,11 +333,11 @@ Present the user with:
 - Pass all context in the prompt CONTEXT section — agents do not share memory with the orchestrator
 
 ### Working Directory
-- All intermediate files go in `{cwd}/scoping-output/`
-- Final outputs (`mcp-scope.yaml`, `scoping-summary.md`) go in `{cwd}/`
-- The working directory can be cleaned up after successful completion
+- All files (intermediate and final) go in `{cwd}/scoping-output/`
+- This includes `analyze.json`, `spec-analysis.md`, `tool-scoping.md`, `mcp-scope.yaml`, and `scoping-summary.md`
 
 ### Reference Examples
 - `e2e/fixtures/real/google_drive.yaml` — 5 tools, 2 groups, OAuth bearer auth
 - `e2e/fixtures/real/github.yaml` — 8 tools, 3 groups, OAuth bearer auth
 - These show the target quality and format for the generated YAML
+- Formal JSON schema: `skills/ai-scoping/assets/mcp-scope-schema.json` (auto-generated via `task generate-schema`)

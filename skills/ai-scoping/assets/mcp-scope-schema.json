@@ -1,0 +1,302 @@
+{
+  "$defs": {
+    "AuthConfig": {
+      "additionalProperties": false,
+      "description": "Authentication configuration.",
+      "properties": {
+        "type": {
+          "enum": [
+            "oauth_bearer",
+            "api_key",
+            "none"
+          ],
+          "title": "Type",
+          "type": "string"
+        },
+        "oauth": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/OAuthConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "notes": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Notes"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "title": "AuthConfig",
+      "type": "object"
+    },
+    "Group": {
+      "additionalProperties": false,
+      "description": "A semantic grouping of related tools.",
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "description": {
+          "title": "Description",
+          "type": "string"
+        },
+        "tools": {
+          "items": {
+            "$ref": "#/$defs/Tool"
+          },
+          "minItems": 1,
+          "title": "Tools",
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "description",
+        "tools"
+      ],
+      "title": "Group",
+      "type": "object"
+    },
+    "OAuthConfig": {
+      "additionalProperties": false,
+      "description": "OAuth configuration for oauth_bearer auth type.",
+      "properties": {
+        "issuer": {
+          "title": "Issuer",
+          "type": "string"
+        },
+        "scopes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Scopes",
+          "type": "array"
+        }
+      },
+      "required": [
+        "issuer",
+        "scopes"
+      ],
+      "title": "OAuthConfig",
+      "type": "object"
+    },
+    "Parameter": {
+      "additionalProperties": false,
+      "description": "A parameter override for a tool.",
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "description": {
+          "title": "Description",
+          "type": "string"
+        },
+        "required": {
+          "title": "Required",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name",
+        "description",
+        "required"
+      ],
+      "title": "Parameter",
+      "type": "object"
+    },
+    "ServerConfig": {
+      "additionalProperties": false,
+      "description": "Server identity metadata.",
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "description": {
+          "title": "Description",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "description"
+      ],
+      "title": "ServerConfig",
+      "type": "object"
+    },
+    "SpecConfig": {
+      "additionalProperties": false,
+      "description": "OpenAPI spec metadata.",
+      "properties": {
+        "source": {
+          "title": "Source",
+          "type": "string"
+        },
+        "format": {
+          "enum": [
+            "openapi3",
+            "openapi3.1"
+          ],
+          "title": "Format",
+          "type": "string"
+        },
+        "base_url": {
+          "title": "Base Url",
+          "type": "string"
+        },
+        "total_endpoints": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Total Endpoints"
+        },
+        "scoped_endpoints": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Scoped Endpoints"
+        }
+      },
+      "required": [
+        "source",
+        "format",
+        "base_url"
+      ],
+      "title": "SpecConfig",
+      "type": "object"
+    },
+    "Tool": {
+      "additionalProperties": false,
+      "description": "A single tool definition within a group.",
+      "properties": {
+        "tool_name": {
+          "title": "Tool Name",
+          "type": "string"
+        },
+        "endpoint": {
+          "title": "Endpoint",
+          "type": "string"
+        },
+        "description": {
+          "title": "Description",
+          "type": "string"
+        },
+        "parameters": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/Parameter"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Parameters"
+        },
+        "hints": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Hints"
+        }
+      },
+      "required": [
+        "tool_name",
+        "endpoint",
+        "description"
+      ],
+      "title": "Tool",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Root model for mcp-scope.yaml.",
+  "properties": {
+    "version": {
+      "const": "1",
+      "title": "Version",
+      "type": "string"
+    },
+    "server": {
+      "$ref": "#/$defs/ServerConfig"
+    },
+    "spec": {
+      "$ref": "#/$defs/SpecConfig"
+    },
+    "workflows": {
+      "anyOf": [
+        {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Workflows"
+    },
+    "groups": {
+      "items": {
+        "$ref": "#/$defs/Group"
+      },
+      "minItems": 1,
+      "title": "Groups",
+      "type": "array"
+    },
+    "auth": {
+      "$ref": "#/$defs/AuthConfig"
+    }
+  },
+  "required": [
+    "version",
+    "server",
+    "spec",
+    "groups",
+    "auth"
+  ],
+  "title": "MCPScope",
+  "type": "object"
+}

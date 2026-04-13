@@ -64,3 +64,10 @@ tasks:
       - uv run cyclonedx-py environment --output-format json --output-file sbom.json
     deps:
       - install
+
+  generate-schema:
+    desc: Export mcp-scope.yaml JSON schema from Pydantic models
+    cmds:
+      - uv run python -c "from mcp_builder.schema.models import MCPScope; import json, pathlib; pathlib.Path('skills/ai-scoping/assets/mcp-scope-schema.json').write_text(json.dumps(MCPScope.model_json_schema(), indent=2) + '\n')"
+    deps:
+      - install
