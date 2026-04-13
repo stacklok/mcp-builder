@@ -3,11 +3,26 @@
 This module contains only type aliases, pydantic models, and constants.
 No functions — it serves as the shared vocabulary for the spec package.
 
-OpenAPI terminology:
-    - Parameter: a named value passed via URL path, query string, header,
-      or cookie (e.g., ``itemId`` in /items/{itemId}).
-    - Body field: a property of the JSON request body schema
-      (e.g., ``name`` in {"name": "foo"}).
+OpenAPI terminology for newcomers:
+
+    **Parameter** — a named input that travels in the URL, not in the
+    request body. In ``GET /items/{itemId}?fields=name``:
+
+        * ``itemId`` is a **path parameter** (embedded in the URL path).
+        * ``fields`` is a **query parameter** (after the ``?``).
+
+    Parameters can also arrive in HTTP headers or cookies, though those are
+    less common.
+
+    **Body field** — a property of the JSON object sent as the HTTP request
+    body, typically for POST/PUT/PATCH requests. In a request like
+    ``POST /items`` with body ``{"name": "Widget", "price": 9.99}``:
+
+        * ``name`` and ``price`` are body fields.
+
+    Body fields and parameters are separate concepts in OpenAPI — they live
+    in different parts of the spec and arrive at different places in the HTTP
+    request.
 """
 
 from __future__ import annotations

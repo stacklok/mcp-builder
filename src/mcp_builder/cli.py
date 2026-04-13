@@ -22,7 +22,6 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from mcp_builder.codegen.analyzer import analyze_spec
 from mcp_builder.codegen.plan import ServerPlan, build_server_plan
 from mcp_builder.codegen.renderers.client import render_client_module
 from mcp_builder.codegen.renderers.manifests import render_manifests
@@ -33,6 +32,7 @@ from mcp_builder.codegen.renderers.server_wiring import (
     patch_mcp_builder,
 )
 from mcp_builder.codegen.renderers.tools import render_tools_module
+from mcp_builder.codegen.spec_analyzer import analyze_spec
 from mcp_builder.codegen.validator import validate_scope
 from mcp_builder.schema.models import load_scope
 from mcp_builder.spec import load_openapi_spec

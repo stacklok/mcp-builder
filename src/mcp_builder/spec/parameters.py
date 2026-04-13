@@ -1,6 +1,22 @@
 """Parameter and body field extraction from OpenAPI operations.
 
-Extracts typed parameter and body field lists from OpenAPI operations.
+Given an HTTP method and URL path (e.g. ``GET /items/{itemId}``), the
+functions in this module look up the matching operation in the OpenAPI spec
+and extract its inputs as typed Python objects:
+
+    - **get_parameters()** returns URL parameters — values the caller passes
+      in the URL path (like ``{itemId}``) or query string (like ``?fields=name``).
+
+      Example: for ``GET /items/{itemId}?fields=name``, this returns two
+      ``ExtractedParameter`` objects: one for ``itemId`` (path, required) and
+      one for ``fields`` (query, optional).
+
+    - **get_body_fields()** returns request body fields — properties of the
+      JSON object sent in the request body (typically POST/PUT/PATCH).
+
+      Example: for ``POST /items`` with body ``{"name": "Widget"}``, this
+      returns one ``ExtractedBodyField`` for ``name`` (string, required).
+
 Uses the resolver module for $ref resolution and the types module for
 data models.
 """
@@ -218,16 +234,14 @@ def get_body_fields(
         logger.warning("body schema has no properties", method=method, path=path)
 
     for name, prop in (schema.properties or {}).items():
-        # Resolve $ref properties to their underlying schema
+        # NOTE: $ref on individual body properties is not yet resolved.
+        # See https://github.com/StacklokLabs/mcp-builder/issues/19
         if isinstance(prop, Ref30 | Ref31):
-            logger.debug(
-                "resolving body property $ref",
-                property_name=name,
-                ref=prop.ref,
-                method=method,
-                path=path,
+            raise NotImplementedError(
+                f"$ref property '{prop.ref}' in {method} {path} body "
+                "is not yet supported. "
+                "See https://github.com/StacklokLabs/mcp-builder/issues/19"
             )
-            prop = resolve_schema_ref(spec, prop.ref)
         prop_type = schema_to_type(prop)
         fields.append(
             ExtractedBodyField(

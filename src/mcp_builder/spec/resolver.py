@@ -1,8 +1,16 @@
 """$ref resolution and schema-level type utilities.
 
-Resolves JSON Reference pointers (``$ref``) in OpenAPI specs to their
-target objects in ``spec.components``. Also provides schema-to-type
-extraction since that's a schema-level utility used by parameter extraction.
+OpenAPI specs avoid repetition by using **$ref pointers** — instead of
+writing out the same parameter or schema definition in every endpoint,
+the spec says ``$ref: '#/components/parameters/owner'`` and defines
+``owner`` once under ``components``. Think of it like a symbolic link:
+the pointer says "go look over there for the real definition."
+
+This module resolves those pointers: given a ``$ref`` string, it finds
+the matching object in ``spec.components`` and returns it as a typed
+Python object. It also provides schema-to-type extraction, which maps
+OpenAPI schema types (``string``, ``integer``, ...) to the type names
+used in code generation.
 """
 
 from __future__ import annotations
@@ -148,27 +156,31 @@ def resolve_schema_ref(spec: OpenAPISpec, ref: str) -> OpenAPISchema:
 def extract_schema_type(param: OAParam30 | OAParam31) -> SchemaType:
     """Extract the schema type string from a parameter's schema.
 
-    Raises ValueError for unknown types rather than silently defaulting.
+    Raises:
+        ValueError: If the parameter has no inline schema (None or $ref),
+            or the schema type is missing, null-only, or unknown.
     """
     if param.param_schema is None or isinstance(param.param_schema, Ref30 | Ref31):
         schema_kind = (
             type(param.param_schema).__name__ if param.param_schema else "None"
         )
-        logger.debug(
-            "no inline schema for parameter, defaulting to string",
-            param_name=param.name,
-            schema_kind=schema_kind,
+        raise ValueError(
+            f"Parameter '{param.name}' has no inline schema "
+            f"(schema_kind={schema_kind}). Cannot determine type."
         )
-        return "string"
     return schema_to_type(param.param_schema)
 
 
 def schema_to_type(schema: OpenAPISchema) -> SchemaType:
-    """Extract the type string from an inline schema object."""
+    """Extract the type string from an inline schema object.
+
+    Raises:
+        ValueError: If the schema has no type field, the type list contains
+            only nulls, or the type is not in OPENAPI_TYPE_MAP.
+    """
     raw_type = schema.type
     if raw_type is None:
-        logger.debug("schema has no type field, defaulting to string")
-        return "string"
+        raise ValueError("Schema has no 'type' field.")
     # v3.1 can return a list of types; take the first non-null one
     if isinstance(raw_type, list):
         for t in raw_type:
@@ -176,10 +188,7 @@ def schema_to_type(schema: OpenAPISchema) -> SchemaType:
                 raw_type = t
                 break
         else:
-            logger.warning(
-                "schema type list contains only null types, defaulting to string"
-            )
-            return "string"
+            raise ValueError("Schema type list contains only null types.")
     type_str: str = raw_type.value if hasattr(raw_type, "value") else str(raw_type)
     if type_str not in OPENAPI_TYPE_MAP:
         raise ValueError(

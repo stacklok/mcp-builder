@@ -1,5 +1,10 @@
 """OpenAPI spec file loading.
 
+An OpenAPI spec is a YAML or JSON file that describes a REST API: its URL
+paths, HTTP methods, expected inputs, and responses. Loading one gives you
+a fully typed Python object you can inspect programmatically instead of
+manually parsing YAML.
+
 File I/O only — reads JSON/YAML, parses via openapi-pydantic, rejects
 Swagger 2.0 specs with a clear conversion hint.
 """
