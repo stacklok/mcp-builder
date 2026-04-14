@@ -234,14 +234,16 @@ def get_body_fields(
         logger.warning("body schema has no properties", method=method, path=path)
 
     for name, prop in (schema.properties or {}).items():
-        # NOTE: $ref on individual body properties is not yet resolved.
-        # See https://github.com/StacklokLabs/mcp-builder/issues/19
+        # Resolve $ref properties to their underlying schema
         if isinstance(prop, Ref30 | Ref31):
-            raise NotImplementedError(
-                f"$ref property '{prop.ref}' in {method} {path} body "
-                "is not yet supported. "
-                "See https://github.com/StacklokLabs/mcp-builder/issues/19"
+            logger.debug(
+                "resolving body property $ref",
+                property_name=name,
+                ref=prop.ref,
+                method=method,
+                path=path,
             )
+            prop = resolve_schema_ref(spec, prop.ref)
         prop_type = schema_to_type(prop)
         fields.append(
             ExtractedBodyField(
