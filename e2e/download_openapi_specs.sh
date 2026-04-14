@@ -47,12 +47,10 @@ echo "  google_drive..."
 curl -sL -o "$OUTDIR/google_drive_openapi.yaml" \
   "https://raw.githubusercontent.com/APIs-guru/openapi-directory/main/APIs/googleapis.com/drive/v3/openapi.yaml"
 
-# BambooHR — no public OpenAPI spec available.
-# https://documentation.bamboohr.com/reference describes the API but
-# doesn't serve a machine-readable spec. Options:
-#   1. Export from their developer portal if you have access
-#   2. Hand-curate a subset matching the scope YAML endpoints
-echo "  bamboohr... SKIPPED (no public OpenAPI spec)"
+# BambooHR API (OpenAPI 3.1)
+echo "  bamboohr..."
+curl -sL -o "$OUTDIR/bamboohr_openapi.yaml" \
+  "https://openapi.bamboohr.io/main/latest/docs/openapi/public-openapi.yaml"
 
 echo ""
-echo "Done. Missing: bamboohr_openapi.yaml (no public spec)"
+echo "Done."

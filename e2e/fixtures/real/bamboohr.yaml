@@ -5,10 +5,10 @@ server:
   description: "BambooHR MCP server for employee directory, time-off management, and benefits"
 
 spec:
-  source: "https://documentation.bamboohr.com/reference"
+  source: "https://openapi.bamboohr.io/main/latest/docs/openapi/public-openapi.yaml"
   format: openapi3
-  base_url: "https://api.bamboohr.com/api/gateway.php/{companyDomain}/v1"
-  total_endpoints: 65
+  base_url: "https://{companyDomain}.bamboohr.com"
+  total_endpoints: 135
   scoped_endpoints: 8
 
 workflows:
@@ -21,7 +21,7 @@ groups:
     description: "Employee lookup and directory browsing"
     tools:
       - tool_name: list_employees
-        endpoint: GET /v1/employees/directory
+        endpoint: GET /api/v1/employees/directory
         description: >
           List all employees in the company directory. Returns names, IDs,
           departments, job titles, and work emails. Use this to browse or
@@ -30,7 +30,7 @@ groups:
           - "response may be large for big orgs — consider extracting only needed fields"
 
       - tool_name: get_employee
-        endpoint: GET /v1/employees/{id}
+        endpoint: GET /api/v1/employees/{id}
         description: >
           Get detailed information for a single employee by their BambooHR ID.
           Supports selecting specific fields via a comma-separated list. The
@@ -50,7 +50,7 @@ groups:
     description: "Time-off requests, policies, and out-of-office visibility"
     tools:
       - tool_name: get_whos_out
-        endpoint: GET /v1/time_off/whos_out/
+        endpoint: GET /api/v1/time_off/whos_out
         description: >
           Get a list of employees who are currently out or will be out in a
           date range. Includes both time-off and company holidays. Defaults
@@ -64,7 +64,7 @@ groups:
             required: false
 
       - tool_name: list_time_off_requests
-        endpoint: GET /v1/time_off/requests
+        endpoint: GET /api/v1/time_off/requests
         description: >
           List time-off requests across the organization. Managers use this
           to review pending, approved, or denied requests for their reports.
@@ -85,14 +85,14 @@ groups:
           - "managers see all direct-report requests; employees see only their own"
 
       - tool_name: get_time_off_policies
-        endpoint: GET /v1/time_off/policies
+        endpoint: GET /api/v1/meta/time_off/policies
         description: >
           List available time-off policies for the company. Returns policy
           names, types, and accrual details. Use this to understand what
           types of time off are available before creating a request.
 
       - tool_name: request_time_off
-        endpoint: POST /v1/time_off/requests
+        endpoint: PUT /api/v1/employees/{employeeId}/time_off/request
         description: >
           Submit a new time-off request for the authenticated employee.
           Requires specifying the time-off type, start and end dates, and
@@ -116,14 +116,14 @@ groups:
     description: "Company benefits plans and employee enrollment"
     tools:
       - tool_name: list_company_benefits
-        endpoint: GET /v1/benefits/company_benefit
+        endpoint: GET /api/v1/benefit/company_benefit
         description: >
           List all benefits plans offered by the company. Returns plan names,
           types, and coverage details. Use this to understand what benefits
           are available for enrollment.
 
       - tool_name: get_member_benefits
-        endpoint: GET /v1/benefits/member-benefits
+        endpoint: GET /api/v1/benefits/member-benefits
         description: >
           Get the authenticated employee's enrolled benefits. Returns current
           plan selections, coverage levels, and enrollment status. Results
