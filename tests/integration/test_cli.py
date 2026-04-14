@@ -78,7 +78,7 @@ class TestRunPipeline:
         secret = project_dir / "deploy" / "secret.yaml"
         assert secret.exists()
         doc = yaml.safe_load(secret.read_text())
-        assert doc["stringData"]["api-key"] == "REPLACE_ME"
+        assert doc["stringData"]["token"] == "REPLACE_ME"
 
 
 class TestRunPipelineOAuth:
@@ -87,16 +87,14 @@ class TestRunPipelineOAuth:
         auth_config = project_dir / "deploy" / "mcpexternalauthconfig.yaml"
         doc = yaml.safe_load(auth_config.read_text())
         assert doc["spec"]["type"] == "embeddedAuthServer"
-        assert (
-            doc["spec"]["embeddedAuthServer"]["issuer"] == "https://accounts.google.com"
-        )
+        providers = doc["spec"]["embeddedAuthServer"]["upstreamProviders"]
+        assert len(providers) == 1
+        assert providers[0]["oidcConfig"]["issuerUrl"] == "https://accounts.google.com"
 
-    def test_creates_oauth_secret(self, tmp_path: Path) -> None:
+    def test_no_secret_for_oauth(self, tmp_path: Path) -> None:
         project_dir = run_pipeline(SCOPE_OAUTH, OPENAPI_SPEC, TEMPLATE_DIR, tmp_path)
         secret = project_dir / "deploy" / "secret.yaml"
-        doc = yaml.safe_load(secret.read_text())
-        assert doc["stringData"]["client-id"] == "REPLACE_ME"
-        assert doc["stringData"]["client-secret"] == "REPLACE_ME"
+        assert not secret.exists()
 
 
 class TestRunPipelineNoAuth:

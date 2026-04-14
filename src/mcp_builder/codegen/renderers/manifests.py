@@ -1,12 +1,12 @@
 """Render ToolHive deployment manifests from a ServerPlan.
 
 Pipeline stage: rendering (plan → YAML strings).
-Produces three Kubernetes-style manifests for deploying a generated MCP
-server on ToolHive:
+Produces Kubernetes-style manifests for deploying a generated MCP server
+on ToolHive:
 
     - MCPServer CRD — always generated
     - MCPExternalAuthConfig CRD — only when auth is configured
-    - Secret template — only when auth is configured
+    - Secret template — only when auth type is api_key (bearerToken)
 
 Each render_* function returns a YAML string. The convenience function
 render_manifests() returns a dict mapping filenames to content, handling
@@ -20,6 +20,8 @@ Reading guide:
 from __future__ import annotations
 
 import logging
+import re
+from urllib.parse import urlparse
 
 import yaml
 
@@ -27,7 +29,8 @@ from mcp_builder.codegen.plan import ServerPlan
 
 logger = logging.getLogger(__name__)
 
-TOOLHIVE_API_VERSION = "mcp.toolhive.stacklok.dev/v1alpha1"
+TOOLHIVE_API_VERSION = "toolhive.stacklok.dev/v1alpha1"
+DEFAULT_NAMESPACE = "toolhive-system"
 
 
 def render_manifests(plan: ServerPlan) -> dict[str, str]:
@@ -39,7 +42,7 @@ def render_manifests(plan: ServerPlan) -> dict[str, str]:
     Returns a dict with 1–3 entries depending on auth type:
         - "mcpserver.yaml" — always present
         - "mcpexternalauthconfig.yaml" — present when auth.type != "none"
-        - "secret.yaml" — present when auth.type != "none"
+        - "secret.yaml" — present only when auth.type == "api_key"
     """
     logger.info("Rendering deployment manifests for '%s'", plan.server_name)
 
@@ -49,6 +52,8 @@ def render_manifests(plan: ServerPlan) -> dict[str, str]:
 
     if plan.auth.type != "none":
         manifests["mcpexternalauthconfig.yaml"] = render_external_auth_config(plan)
+
+    if plan.auth.type == "api_key":
         manifests["secret.yaml"] = render_secret(plan)
 
     logger.info("Generated %d manifest(s)", len(manifests))
@@ -61,50 +66,51 @@ def render_manifests(plan: ServerPlan) -> dict[str, str]:
 
 
 def render_mcpserver(plan: ServerPlan) -> str:
-    """Render the MCPServer CRD manifest.
-
-    Pipeline stage: rendering (plan → YAML string).
-    Called by: render_manifests().
-
-    Always generated regardless of auth type. References the external auth
-    config by name when auth is configured.
-
-    Example output (server_name="google-drive", auth.type="oauth_bearer"):
-
-        apiVersion: mcp.toolhive.stacklok.dev/v1alpha1
-        kind: MCPServer
-        metadata:
-          name: google-drive
-        spec:
-          image: google-drive-mcp:latest
-          transport: streamablehttp
-          externalAuthConfig:
-            name: google-drive-auth
-    """
+    """Render the MCPServer CRD manifest."""
     spec: dict = {
         "image": f"{plan.server_name}-mcp:latest",
-        "transport": "streamablehttp",
+        "transport": "streamable-http",
+        "permissionProfile": {
+            "type": "builtin",
+            "name": "network",
+        },
     }
     if plan.auth.type != "none":
-        spec["externalAuthConfig"] = {"name": f"{plan.server_name}-auth"}
+        spec["externalAuthConfigRef"] = {"name": f"{plan.server_name}-auth"}
 
     doc = {
         "apiVersion": TOOLHIVE_API_VERSION,
         "kind": "MCPServer",
-        "metadata": {"name": plan.server_name},
+        "metadata": {
+            "name": plan.server_name,
+            "namespace": DEFAULT_NAMESPACE,
+        },
         "spec": spec,
     }
-    return yaml.dump(doc, default_flow_style=False, sort_keys=False)
+    body = yaml.dump(doc, default_flow_style=False, sort_keys=False)
+
+    header = (
+        f"# MCPServer — ToolHive managed MCP server for {plan.server_name}.\n"
+        "#\n"
+        "# Before applying:\n"
+        f"#   1. Build and push the container image ({plan.server_name}-mcp:latest)\n"
+        "#      to a registry your cluster can pull from, then update spec.image.\n"
+        "#   2. If using auth, ensure the MCPExternalAuthConfig is applied first.\n"
+        "#\n"
+        "# Namespace can be changed to match your ToolHive installation.\n"
+        "#\n"
+        "# Docs: https://docs.stacklok.com/toolhive/reference/crd-spec\n"
+        "# Examples: https://github.com/stacklok/toolhive/tree/main/examples/operator/mcp-servers\n"
+        "---\n"
+    )
+    return header + body
 
 
 def render_external_auth_config(plan: ServerPlan) -> str:
     """Render the MCPExternalAuthConfig CRD manifest.
 
-    Pipeline stage: rendering (plan → YAML string).
-    Called by: render_manifests() when auth.type != "none".
-
-    For oauth_bearer: type=embeddedAuthServer with issuer and scopes.
-    For api_key: type=bearerToken with a secretRef pointing to the K8s Secret.
+    For oauth_bearer: type=embeddedAuthServer with upstream OIDC provider.
+    For api_key: type=bearerToken with a tokenSecretRef pointing to a K8s Secret.
 
     Raises ValueError if called with auth.type == "none" (programming error).
     """
@@ -112,71 +118,215 @@ def render_external_auth_config(plan: ServerPlan) -> str:
         raise ValueError("No auth config to render when auth.type is 'none'")
 
     if plan.auth.type == "oauth_bearer":
-        spec: dict = {
-            "type": "embeddedAuthServer",
-            "embeddedAuthServer": {
-                "issuer": plan.auth.issuer,
-                "scopes": list(plan.auth.scopes or []),
-            },
-        }
-    elif plan.auth.type == "api_key":
-        spec = {
-            "type": "bearerToken",
-            "bearerToken": {
-                "secretRef": {
-                    "name": f"{plan.server_name}-secret",
-                    "key": "api-key",
-                },
-            },
-        }
-    else:
-        raise ValueError(f"Unexpected auth type: {plan.auth.type!r}")
+        return _render_embedded_auth_server(plan)
 
-    doc = {
-        "apiVersion": TOOLHIVE_API_VERSION,
-        "kind": "MCPExternalAuthConfig",
-        "metadata": {"name": f"{plan.server_name}-auth"},
-        "spec": spec,
-    }
-    return yaml.dump(doc, default_flow_style=False, sort_keys=False)
+    if plan.auth.type == "api_key":
+        return _render_bearer_token_auth(plan)
+
+    raise ValueError(f"Unexpected auth type: {plan.auth.type!r}")
 
 
 def render_secret(plan: ServerPlan) -> str:
-    """Render the K8s Secret template with placeholder values.
+    """Render the K8s Secret template for bearerToken auth.
 
-    Pipeline stage: rendering (plan → YAML string).
-    Called by: render_manifests() when auth.type != "none".
+    Only generated for api_key auth. OAuth auth does not need a
+    user-provided secret — signing keys are auto-generated by ToolHive
+    at runtime.
 
-    For oauth_bearer: placeholders for client-id and client-secret.
-    For api_key: placeholder for api-key.
-    All placeholder values are "REPLACE_ME" — operators fill these in at
-    deploy time.
-
-    Raises ValueError if called with auth.type == "none" (programming error).
-
-    Uses ``stringData`` (not ``data``) so operators can paste plaintext
-    values directly; Kubernetes base64-encodes them on create.
+    Raises ValueError if called with a non-api_key auth type.
     """
-    if plan.auth.type == "none":
-        raise ValueError("No secret to render when auth.type is 'none'")
-
-    if plan.auth.type == "oauth_bearer":
-        string_data = {
-            "client-id": "REPLACE_ME",
-            "client-secret": "REPLACE_ME",
-        }
-    elif plan.auth.type == "api_key":
-        string_data = {
-            "api-key": "REPLACE_ME",
-        }
-    else:
-        raise ValueError(f"Unexpected auth type: {plan.auth.type!r}")
+    if plan.auth.type != "api_key":
+        raise ValueError(
+            f"Secret template is only for api_key auth, got {plan.auth.type!r}"
+        )
 
     doc = {
         "apiVersion": "v1",
         "kind": "Secret",
-        "metadata": {"name": f"{plan.server_name}-secret"},
+        "metadata": {
+            "name": f"{plan.server_name}-secret",
+            "namespace": DEFAULT_NAMESPACE,
+        },
         "type": "Opaque",
-        "stringData": string_data,
+        "stringData": {
+            "token": "REPLACE_ME",  # nosec B105 — placeholder, not a real credential
+        },
     }
-    return yaml.dump(doc, default_flow_style=False, sort_keys=False)
+    body = yaml.dump(doc, default_flow_style=False, sort_keys=False)
+
+    header = (
+        f"# Secret — bearer token for {plan.server_name} upstream API.\n"
+        "#\n"
+        "# Replace the token value with your actual API key / bearer token.\n"
+        "# Namespace must match the MCPExternalAuthConfig and MCPServer.\n"
+        "#\n"
+        "---\n"
+    )
+    return header + body
+
+
+# ---------------------------------------------------------------------------
+# Auth-type-specific renderers
+# ---------------------------------------------------------------------------
+
+
+def _render_embedded_auth_server(plan: ServerPlan) -> str:
+    """Render MCPExternalAuthConfig for OAuth (embeddedAuthServer type).
+
+    Generates an OIDC upstream provider config using the issuer and scopes
+    from the plan. The user must fill in clientId before applying.
+    """
+    provider_name = _derive_provider_name(plan.auth.issuer or "upstream")
+    issuer_url = plan.auth.issuer or "https://REPLACE_ME"
+    scopes = list(plan.auth.scopes or [])
+
+    oidc_config: dict = {
+        "issuerUrl": issuer_url,
+        "clientId": "REPLACE_ME",
+    }
+    if scopes:
+        oidc_config["scopes"] = scopes
+
+    upstream_provider = {
+        "name": provider_name,
+        "type": "oidc",
+        "oidcConfig": oidc_config,
+    }
+
+    doc = {
+        "apiVersion": TOOLHIVE_API_VERSION,
+        "kind": "MCPExternalAuthConfig",
+        "metadata": {
+            "name": f"{plan.server_name}-auth",
+            "namespace": DEFAULT_NAMESPACE,
+        },
+        "spec": {
+            "type": "embeddedAuthServer",
+            "embeddedAuthServer": {
+                "issuer": f"https://mcp.REPLACE_ME_DOMAIN/{plan.server_name}",
+                "upstreamProviders": [upstream_provider],
+            },
+        },
+    }
+    body = yaml.dump(doc, default_flow_style=False, sort_keys=False)
+
+    header = (
+        f"# MCPExternalAuthConfig — embedded auth server for {plan.server_name}.\n"
+        "#\n"
+        "# This configures an embedded OAuth2/OIDC authorization server that\n"
+        "# delegates authentication to an upstream identity provider.\n"
+        "#\n"
+        "# REQUIRED — fill in before applying:\n"
+        f"#   1. Set spec.embeddedAuthServer.issuer to your ToolHive auth URL,\n"
+        f"#      typically: https://mcp.<your-domain>/{plan.server_name}\n"
+        "#   2. Set upstreamProviders[0].oidcConfig.clientId to the OAuth client ID\n"
+        "#      registered with the upstream identity provider.\n"
+        "#\n"
+        "# OPTIONAL:\n"
+        "#   - clientSecretRef: uncomment and add a Secret reference if your OAuth\n"
+        "#     app is a confidential client (not using PKCE). Example:\n"
+        f"#       clientSecretRef:\n"
+        f"#         name: {plan.server_name}-oauth-secret\n"
+        "#         key: client-secret\n"
+        "#   - signingKeySecretRefs / hmacSecretRefs: omitted here, so ToolHive will\n"
+        "#     auto-generate ephemeral keys at runtime. This works for development\n"
+        "#     and demos but tokens are lost on restart. For production, create\n"
+        "#     persistent K8s Secrets (ECDSA P-256 for signing, 32-byte random for\n"
+        "#     HMAC) and reference them here.\n"
+        "#   - If the upstream provider is OAuth2 (not OIDC), change the provider\n"
+        '#     type to "oauth2" and replace oidcConfig with oauth2Config containing\n'
+        "#     authorizationEndpoint, tokenEndpoint, and userInfo. See the ToolHive\n"
+        "#     docs link below.\n"
+        "#\n"
+        "# Namespace must match the MCPServer that references this config.\n"
+        "#\n"
+        "# Docs: https://docs.stacklok.com/toolhive/reference/crd-spec\n"
+        "# Examples: https://github.com/stacklok/toolhive/tree/main/examples/operator/external-auth\n"
+        "---\n"
+    )
+    return header + body
+
+
+def _render_bearer_token_auth(plan: ServerPlan) -> str:
+    """Render MCPExternalAuthConfig for API key (bearerToken type)."""
+    doc = {
+        "apiVersion": TOOLHIVE_API_VERSION,
+        "kind": "MCPExternalAuthConfig",
+        "metadata": {
+            "name": f"{plan.server_name}-auth",
+            "namespace": DEFAULT_NAMESPACE,
+        },
+        "spec": {
+            "type": "bearerToken",
+            "bearerToken": {
+                "tokenSecretRef": {
+                    "name": f"{plan.server_name}-secret",
+                    "key": "token",
+                },
+            },
+        },
+    }
+    body = yaml.dump(doc, default_flow_style=False, sort_keys=False)
+
+    header = (
+        f"# MCPExternalAuthConfig — bearer token auth for {plan.server_name}.\n"
+        "#\n"
+        "# Injects an API key from a K8s Secret into upstream requests.\n"
+        "# The Secret must be applied before this config. See secret.yaml.\n"
+        "#\n"
+        "# Namespace must match the MCPServer and Secret.\n"
+        "#\n"
+        "# Docs: https://docs.stacklok.com/toolhive/reference/crd-spec\n"
+        "# Examples: https://github.com/stacklok/toolhive/tree/main/examples/operator/external-auth\n"
+        "---\n"
+    )
+    return header + body
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _derive_provider_name(issuer: str) -> str:
+    """Derive a short provider name from an OAuth issuer URL.
+
+    Extracts the domain and picks a recognizable short name when possible.
+    Falls back to the second-level domain label.
+
+    Examples:
+        "https://accounts.google.com" → "google"
+        "https://login.microsoftonline.com/..." → "microsoft"
+        "https://auth.atlassian.com/..." → "atlassian"
+        "https://my-company.okta.com" → "okta"
+        "https://github.com/login/oauth" → "github"
+    """
+    try:
+        hostname = urlparse(issuer).hostname or issuer
+    except Exception:
+        hostname = issuer
+
+    # Known provider patterns
+    known: list[tuple[str, str]] = [
+        ("google", "google"),
+        ("microsoft", "microsoft"),
+        ("okta", "okta"),
+        ("auth0", "auth0"),
+        ("atlassian", "atlassian"),
+        ("github", "github"),
+        ("gitlab", "gitlab"),
+        ("slack", "slack"),
+        ("amazon", "amazon"),
+        ("apple", "apple"),
+    ]
+    hostname_lower = hostname.lower()
+    for pattern, name in known:
+        if pattern in hostname_lower:
+            return name
+
+    # Fall back to second-level domain (e.g., "example" from "sso.example.com")
+    parts = hostname_lower.split(".")
+    if len(parts) >= 2:
+        return re.sub(r"[^a-z0-9-]", "", parts[-2])
+
+    return "upstream"
