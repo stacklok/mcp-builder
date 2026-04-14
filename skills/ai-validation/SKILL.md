@@ -1,12 +1,12 @@
 ---
 name: ai-validation
-description: Review generated MCP server code for correctness against mcp-scope.yaml and OpenAPI spec, then suggest hint-driven polish improvements. Use when a user has generated an MCP server project (Phase 3) and wants to validate it before deployment.
+description: Validate a generated MCP server project against the mcp-scope.yaml and OpenAPI spec that drove its generation, then suggest hint-driven improvements. Part of the mcp-builder pipeline that transforms an OpenAPI 3.x spec into a ToolHive-ready MCP server across four phases — AI Scoping, Human Review, Deterministic Code Generation, and AI Validation & Polish (this skill). Use when a user has a generated MCP server project (Phase 3 output) and wants to validate it before deployment.
 argument-hint: <generated-project-dir> <mcp-scope-yaml> <openapi-spec-path>
 ---
 
 # AI Validation & Polish Skill
 
-This skill orchestrates Phase 4 of the mcp-builder pipeline: validating deterministically-generated MCP server code for correctness and suggesting hint-driven improvements. It reads the generated project, the `mcp-scope.yaml` that drove generation, and the original OpenAPI spec, then produces a structured validation report and optional polish suggestions with code diffs.
+This skill orchestrates Phase 4 of the mcp-builder pipeline: validating deterministically-generated MCP server code for correctness and suggesting hint-driven improvements. The pipeline transforms an OpenAPI spec into a ToolHive-ready MCP server across four phases — AI Scoping (Phase 1) produces a validated `mcp-scope.yaml`, Human Review (Phase 2) refines it, Deterministic Code Generation (Phase 3) scaffolds the server, and this skill (Phase 4) validates the generated code against the YAML and spec, then suggests improvements driven by hints from the scoping phase.
 
 ## Startup
 
@@ -16,18 +16,29 @@ Before beginning the workflow:
 
 2. All `uv` and `task` commands must run from `{repo_root}` (where `pyproject.toml` lives).
 
+3. Clone or locate the reference repos that agents need for grounding their checks:
+
+   - **ToolHive** (`stacklok/toolhive`) — CRD schemas, auth patterns. Check if a local clone exists nearby (e.g., sibling directory). If not, clone to a temp directory:
+     ```bash
+     gh repo clone stacklok/toolhive /tmp/toolhive-ref -- --depth 1
+     ```
+   - **mcp-template-py** (`stacklok/mcp-template-py`) — the base Python MCP server template. Same approach:
+     ```bash
+     gh repo clone stacklok/mcp-template-py /tmp/mcp-template-py-ref -- --depth 1
+     ```
+
+   Record the absolute paths to both repos. These will be passed to agents.
+
 ## Workflow
 
 Given a generated project directory, mcp-scope.yaml, and OpenAPI spec path ($ARGUMENTS), execute the following steps:
 
 1. Collect and verify inputs
-2. Pre-read inputs
-3. Code validation (agent)
-4. Build verification
-5. Validation gate (user gate)
-6. Polish suggestions (agent)
-7. Polish application gate (user gate)
-8. Present results
+2. Code validation (agent)
+3. Validation gate (user gate)
+4. Polish suggestions (agent)
+5. Polish application gate (user gate)
+6. Present results
 
 ---
 
@@ -44,7 +55,7 @@ Given a generated project directory, mcp-scope.yaml, and OpenAPI spec path ($ARG
 
 3. Read the `server.name` from `mcp-scope.yaml`. Derive the module name: replace hyphens with underscores, append `_mcp` (e.g., `google-drive` → `google_drive_mcp`).
 
-4. Verify the generated project has the expected structure by checking for these files:
+4. Verify the generated project has the expected structure by checking these files exist:
    - `src/{module_name}/api/tools.py`
    - `src/{module_name}/api/mcp_builder.py`
    - `src/{module_name}/client.py`
@@ -58,34 +69,9 @@ Given a generated project directory, mcp-scope.yaml, and OpenAPI spec path ($ARG
 
 ---
 
-### Step 2: Pre-read Inputs
+### Step 2: Code Validation (Agent)
 
-Read and collect all inputs that will be passed to agents:
-
-1. **Read mcp-scope.yaml** — capture the full content.
-
-2. **Read generated source files** — read the content of each file in the generated project:
-   - `src/{module_name}/api/tools.py`
-   - `src/{module_name}/api/mcp_builder.py`
-   - `src/{module_name}/client.py`
-   - `src/{module_name}/models.py` (may not exist if no tools have request bodies)
-   - `deploy/mcpserver.yaml`
-   - `deploy/mcpexternalauthconfig.yaml` (may not exist if auth.type is none)
-   - `deploy/secret.yaml` (may not exist if auth.type is none)
-   - `pyproject.toml`
-   - `Dockerfile`
-
-   For files that don't exist, note "NOT PRESENT" — the validator will check whether absence is correct.
-
-3. **Read the OpenAPI spec** — capture the full content for cross-referencing.
-
-No analysis happens in this step. This is purely data collection.
-
----
-
-### Step 3: Code Validation (Agent)
-
-Spawn a **code-validator** sub-agent using the Agent tool:
+Spawn a **code-validator** sub-agent using the Agent tool. Pass file paths — do NOT read or paste file contents into the prompt. The agent reads everything itself.
 
 ```
 Agent tool parameters:
@@ -102,67 +88,24 @@ Agent tool parameters:
     SERVER METADATA:
     Server name: [from YAML server.name]
     Module name: [derived module name]
+
+    FILE PATHS:
     Project directory: [absolute path to generated project]
+    MCP scope YAML: [absolute path to mcp-scope.yaml]
+    OpenAPI spec: [absolute path to spec file]
 
-    MCP SCOPE YAML:
-    [paste the full content of mcp-scope.yaml]
-
-    GENERATED FILES:
-    === src/{module_name}/api/tools.py ===
-    [file content]
-
-    === src/{module_name}/api/mcp_builder.py ===
-    [file content]
-
-    === src/{module_name}/client.py ===
-    [file content]
-
-    === src/{module_name}/models.py ===
-    [file content, or "NOT PRESENT"]
-
-    === deploy/mcpserver.yaml ===
-    [file content]
-
-    === deploy/mcpexternalauthconfig.yaml ===
-    [file content, or "NOT PRESENT (auth.type = none)"]
-
-    === deploy/secret.yaml ===
-    [file content, or "NOT PRESENT (auth.type = none)"]
-
-    === pyproject.toml ===
-    [file content]
-
-    === Dockerfile ===
-    [file content]
-
-    OPENAPI SPEC:
-    [paste the full content of the OpenAPI spec]
+    REFERENCE REPOS:
+    ToolHive repo: [absolute path to toolhive clone]
+    mcp-template-py repo: [absolute path to mcp-template-py clone]
 - mode: acceptEdits
 - run_in_background: false
 ```
 
-The code-validator agent will write `{working_dir}/validation-report.md`.
+The code-validator agent will read all files, run the Docker build check, and write `{working_dir}/validation-report.md`.
 
 ---
 
-### Step 4: Build Verification
-
-After the code-validator agent completes, run the Docker build check:
-
-```bash
-cd {project_dir} && docker build -t {server_name}-mcp:validation-test . 2>&1
-```
-
-Record the result:
-- **PASS** — build succeeded (exit code 0)
-- **FAIL** — build failed (capture the error output)
-- **SKIP** — Docker is not available (`command not found` or similar)
-
-Read `{working_dir}/validation-report.md` and append a "Build Verification" row to the report. If the build verification section already exists from the agent's template, update it with the actual result.
-
----
-
-### Step 5: Validation Gate (USER GATE)
+### Step 3: Validation Gate (USER GATE)
 
 1. Read `{working_dir}/validation-report.md`
 
@@ -178,9 +121,9 @@ Read `{working_dir}/validation-report.md` and append a "Build Verification" row 
    Validation found {N} error(s) that would cause runtime or deployment failures.
 
    Options:
-   1. Have AI fix the errors (recommended) — spawns an agent to edit the generated code
-   2. Fix manually — you fix the errors and re-run the skill later
-   3. Proceed to polish anyway — continue despite errors
+   1. Have AI fix the errors — spawns an agent to edit the generated code, then re-validates
+   2. Proceed to polish — continue to polish suggestions despite errors (all issues presented together)
+   3. Fix manually — you fix the errors and re-run the skill later
    ```
 
    **If all checks pass (no errors):**
@@ -196,29 +139,26 @@ Read `{working_dir}/validation-report.md` and append a "Build Verification" row 
 
 ---
 
-### Step 5b: AI Error Fixing (conditional)
+### Step 3b: AI Error Fixing (conditional)
 
 If the user chose "Have AI fix the errors":
 
-1. Spawn a sub-agent to fix the errors:
+1. Spawn a sub-agent to fix the errors. Pass file paths — do NOT paste file contents.
 
 ```
 Agent tool parameters:
 - description: "Fix validation errors in generated code"
 - prompt: |
-    Fix the following validation errors in the generated MCP server project.
+    Fix the validation errors in the generated MCP server project.
 
     PROJECT DIRECTORY: [absolute path]
     MODULE NAME: [module name]
 
-    VALIDATION REPORT:
-    [paste the full validation-report.md content]
-
-    MCP SCOPE YAML:
-    [paste the full mcp-scope.yaml content]
+    Read the validation report at: [absolute path to {working_dir}/validation-report.md]
+    Read the mcp-scope.yaml at: [absolute path to mcp-scope.yaml]
 
     For each FAIL item in the Detailed Findings section:
-    1. Read the file mentioned
+    1. Read the file mentioned in the finding
     2. Apply the fix described
     3. Verify the fix is consistent with the YAML and the rest of the codebase
 
@@ -227,15 +167,15 @@ Agent tool parameters:
 - run_in_background: false
 ```
 
-2. After the agent completes, re-run validation by looping back to Step 3 (re-read the updated files, re-spawn the code-validator agent).
+2. After the agent completes, re-run validation by looping back to Step 2 (re-spawn the code-validator agent).
 
 3. Present the updated results. If errors remain, ask the user again (same choices). Do not loop more than 2 fix attempts — if errors persist after 2 rounds, ask the user to fix manually.
 
 ---
 
-### Step 6: Polish Suggestions (Agent)
+### Step 4: Polish Suggestions (Agent)
 
-Spawn a **polish-suggester** sub-agent using the Agent tool:
+Spawn a **polish-suggester** sub-agent using the Agent tool. Pass file paths — do NOT read or paste file contents into the prompt.
 
 ```
 Agent tool parameters:
@@ -252,32 +192,31 @@ Agent tool parameters:
     SERVER METADATA:
     Server name: [from YAML]
     Module name: [derived module name]
-    Project directory: [absolute path]
 
-    MCP SCOPE YAML:
-    [paste the full content of mcp-scope.yaml]
+    FILE PATHS:
+    Project directory: [absolute path to generated project]
+    MCP scope YAML: [absolute path to mcp-scope.yaml]
+    OpenAPI spec: [absolute path to spec file]
 
-    GENERATED FILES:
-    [same file listing as Step 3, re-read if files were modified in Step 5b]
-
-    OPENAPI SPEC:
-    [paste the full content of the OpenAPI spec]
+    REFERENCE REPOS:
+    ToolHive repo: [absolute path to toolhive clone]
+    mcp-template-py repo: [absolute path to mcp-template-py clone]
 - mode: acceptEdits
 - run_in_background: false
 ```
 
-The polish-suggester agent will write `{working_dir}/polish-suggestions.md`.
+The polish-suggester agent will read all files and write `{working_dir}/polish-suggestions.md`.
 
 ---
 
-### Step 7: Polish Application Gate (USER GATE)
+### Step 5: Polish Application Gate (USER GATE)
 
 1. Read `{working_dir}/polish-suggestions.md`
 
 2. Present the suggestions to the user:
    - Summary: N suggestions across M categories
    - Each suggestion with its category, priority, affected tool(s), and the code diff
-   - If there are no suggestions, skip to Step 8
+   - If there are no suggestions, skip to Step 6
 
 3. Use AskUserQuestion to offer choices:
 
@@ -295,29 +234,28 @@ The polish-suggester agent will write `{working_dir}/polish-suggestions.md`.
 
 ---
 
-### Step 7b: AI Polish Application (conditional)
+### Step 5b: AI Polish Application (conditional)
 
 If the user chose to have AI apply suggestions (all or selected):
 
 1. If "selected", ask the user which suggestion IDs to apply (e.g., "P1, P3, P5").
 
-2. Spawn a sub-agent to apply the suggestions:
+2. Spawn a sub-agent to apply the suggestions. Pass file paths — do NOT paste suggestion contents.
 
 ```
 Agent tool parameters:
 - description: "Apply polish suggestions to generated code"
 - prompt: |
-    Apply the following polish suggestions to the generated MCP server project.
+    Apply polish suggestions to the generated MCP server project.
 
     PROJECT DIRECTORY: [absolute path]
     MODULE NAME: [module name]
 
-    SUGGESTIONS TO APPLY:
-    [paste the selected suggestions from polish-suggestions.md, each with its
-     Before/After code blocks and target file]
+    Read the suggestions at: [absolute path to {working_dir}/polish-suggestions.md]
+    [If selected: "Only apply suggestions: P1, P3, P5"]
 
-    For each suggestion:
-    1. Read the target file
+    For each suggestion to apply:
+    1. Read the target file listed in the suggestion
     2. Find the "Before" code pattern
     3. Replace it with the "After" code
     4. Verify the change is syntactically valid
@@ -329,7 +267,7 @@ Agent tool parameters:
 
 ---
 
-### Step 8: Present Results
+### Step 6: Present Results
 
 Present the user with:
 
@@ -350,8 +288,9 @@ Present the user with:
 | Project directory doesn't exist | Tell the user, exit |
 | Expected files missing from project | Note as missing, continue — validator reports as FAIL |
 | mcp-scope.yaml fails to parse | Tell the user, exit |
-| Docker not installed | Record build check as SKIP, continue |
-| Docker build fails | Record as FAIL, continue to user gate |
+| Reference repos can't be cloned | Warn the user, continue — agent checks will be less grounded but still functional |
+| Docker not installed | Agent records build check as SKIP, continues |
+| Docker build fails | Agent records as FAIL, continues to user gate |
 | Code-validator agent fails | Present error to user, ask if they want to proceed to manual review |
 | Polish-suggester agent fails | Present error to user, note that validation report is still valid |
 | Fix agent fails | Present error to user, ask them to fix manually |
@@ -362,7 +301,7 @@ Present the user with:
 - Use the Agent tool with the appropriate subagent_type for code-validator and polish-suggester
 - Fix/apply agents use inline prompts (no dedicated agent file) since they're straightforward edit tasks
 - Always set `run_in_background: false` and `mode: acceptEdits`
-- Pass all context in the prompt — agents do not share memory with the orchestrator
+- Pass file paths in the prompt — agents read files themselves. Never paste file contents into agent prompts.
 
 ### Working Directory
 - All output files go in `{cwd}/validation-output-{date}/`

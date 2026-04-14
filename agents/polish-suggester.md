@@ -23,9 +23,11 @@ When invoked, you will receive the following in your prompt:
 - **Working directory** — absolute path where `polish-suggestions.md` should be written
 - **Validation report path** — absolute path to `validation-report.md` (read this to understand any known issues)
 - **Server metadata** — server name, module name, project directory path
-- **MCP scope YAML** — full content of the mcp-scope.yaml (especially hints)
-- **Generated files** — content of each generated source file, labeled by relative path
-- **OpenAPI spec** — content of the original OpenAPI spec
+- **MCP scope YAML path** — absolute path to the mcp-scope.yaml (read it yourself, especially hints)
+- **Generated project directory** — absolute path to the generated project (read source files yourself)
+- **OpenAPI spec path** — absolute path to the original OpenAPI spec (read it yourself)
+- **ToolHive repo path** — absolute path to a local clone of `stacklok/toolhive` (for reference)
+- **mcp-template-py repo path** — absolute path to a local clone of `stacklok/mcp-template-py` (for reference)
 
 ---
 

@@ -60,6 +60,17 @@ Phase 3 produces a complete MCP server project with this structure:
 
 The module name is derived from the server name: hyphens become underscores, append `_mcp`. Example: `google-drive` → `google_drive_mcp`.
 
+## Source-of-truth repositories
+
+Validation checks should be grounded in the actual source code of these repos, not hardcoded assumptions. Agents receive local paths (or clone URLs) and should read the relevant files directly.
+
+| Repo | What it contains | Key paths to read |
+|------|-----------------|-------------------|
+| **stacklok/toolhive** | CRD schemas, auth patterns, runtime behavior | `pkg/api/v1alpha1/` (CRD Go types), `deploy/crds/` (CRD YAML schemas) |
+| **stacklok/mcp-template-py** | The base Python MCP server template that generated projects are built on | `src/` (module structure), `Dockerfile`, `pyproject.toml`, `deploy/` (manifest templates) |
+
+When checking CRD correctness (T1-T3), read the actual CRD definitions from `toolhive` rather than assuming `apiVersion`, `kind`, or field names. When checking generated code patterns (S1-S4, B1-B4), read `mcp-template-py` to understand the template structure the generator builds on.
+
 ## Generated code patterns
 
 ### tools.py
