@@ -79,6 +79,9 @@ dmypy.json
 pip-log.txt
 pip-delete-this-directory.txt
 
+# Generated schema (via task generate-schema)
+docs/mcp-scope-schema.json
+
 # Sphinx documentation
 docs/_build/
 

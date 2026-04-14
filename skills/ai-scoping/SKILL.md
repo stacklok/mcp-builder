@@ -1,24 +1,26 @@
 ---
 name: ai-scoping
-description: Transform an OpenAPI 3.x spec and workflow descriptions into a validated mcp-scope.yaml. Guides the AI through spec analysis, semantic grouping, tool naming, description writing, and auth detection with interactive user gates. Use when a user wants to scope an API for MCP server generation.
+description: Transform an OpenAPI 3.x spec and workflow descriptions into a validated mcp-scope.yaml that ultimately gets used to generate an MCP server. Guides the AI through spec analysis, semantic grouping, tool naming, description writing, and auth detection with interactive user gates. Use when a user wants to scope an API for MCP server generation.
 argument-hint: <openapi-spec-path>
 ---
 
 # AI Scoping Skill
 
-This skill orchestrates Phase 1 of the mcp-builder pipeline: transforming an OpenAPI spec and workflow descriptions into a validated `mcp-scope.yaml` and a `scoping-summary.md` documenting the AI's reasoning.
+This skill orchestrates Phase 1 of the mcp-builder pipeline: transforming an OpenAPI spec and workflow descriptions into a validated `mcp-scope.yaml` and a `scoping-summary.md` documenting the AI's reasoning. The `scoping-summary.md` provides a human-readable explanation of the AI's decisions used in Phase 2 for the human to approve the MCP scoping doc. Once approved, the `mcp-scope.yaml` serves as the contract for deterministic code generation in Phase 3 that generates an MCP server. 
 
 ## Startup
 
 Before beginning the workflow:
 
-1. Determine the base directory for this skill (the absolute path to the directory containing this SKILL.md). Agent files are at `{skill_base_dir}/agents/{agent-name}.md`. You will need these paths when spawning sub-agents. Do not share these with the user.
+1. Determine the base directory for this skill (the absolute path to the directory containing this SKILL.md). The repo root is two levels up: `{skill_base_dir}/../..`. Agent files are at `{repo_root}/agents/{agent-name}.md`. Assets are at `{skill_base_dir}/assets/`. Do not share these internal paths with the user.
 
-2. Ensure the JSON schema is current by running:
+2. All `uv` and `task` commands must run from `{repo_root}` (where `pyproject.toml` lives).
+
+3. Ensure the JSON schema is current by running from `{repo_root}`:
    ```bash
    task generate-schema
    ```
-   This writes `skills/ai-scoping/assets/mcp-scope-schema.json` from the Pydantic models.
+   This writes `mcp-scope-schema.json` and prints the absolute path. You will need this path for validation in Step 6.
 
 ## Workflow
 
@@ -37,7 +39,7 @@ Given an OpenAPI spec path ($ARGUMENTS), execute the following steps:
 
 1. Verify the OpenAPI spec file exists at the provided path. If it does not exist, tell the user and exit.
 
-2. Collect workflow descriptions from the user. **Minimum 3 workflows required.** Workflows describe what users need to accomplish with the API — they should capture different personas or use cases to ensure broad coverage of the API surface.
+2. Collect workflow descriptions from the user. **Minimum 3 workflows required.** Workflows describe what users need to accomplish with the API — they should capture different personas or use cases to ensure broad coverage of the API surface. Iterate with the user until you have at least 3 workflows.
 
    If the user provided workflows alongside the spec path, count them. If fewer than 3, use AskUserQuestion to ask for more:
 
@@ -54,9 +56,9 @@ Given an OpenAPI spec path ($ARGUMENTS), execute the following steps:
    Please provide your workflow descriptions (at least 3).
    ```
 
-3. Optionally accept an auth hint if the user mentions the spec's auth is unusual or incomplete.
+3. Ask the user about authentication requirements. Add an auth hint if the user talks about the spec's auth.
 
-4. Create a working directory for intermediate files: `{cwd}/scoping-output/`
+4. Create a working directory for intermediate files: `{cwd}/scoping-output-{date}/`
 
 ---
 
@@ -82,7 +84,7 @@ Spawn a **spec-analyzer** sub-agent using the Agent tool:
 
 ```
 Agent tool parameters:
-- subagent_type: [path to spec-analyzer agent: {skill_base_dir}/agents/spec-analyzer.md]
+- subagent_type: [path to spec-analyzer agent: {repo_root}/agents/spec-analyzer.md]
 - description: "Analyze OpenAPI spec"
 - prompt: |
     Analyze the following OpenAPI spec data and propose semantic endpoint groups.
@@ -136,7 +138,7 @@ Spawn an **endpoint-scoper** sub-agent using the Agent tool:
 
 ```
 Agent tool parameters:
-- subagent_type: [path to endpoint-scoper agent: {skill_base_dir}/agents/endpoint-scoper.md]
+- subagent_type: [path to endpoint-scoper agent: {repo_root}/agents/endpoint-scoper.md]
 - description: "Scope tools for selected groups"
 - prompt: |
     Perform tool scoping for the selected endpoint groups: naming, descriptions, hints.
@@ -192,8 +194,6 @@ If the user requests changes:
 
 ### Step 6: Output Assembly
 
-The orchestrator handles this step directly — no sub-agent needed.
-
 #### 6.1: Auth Detection
 
 Read the `security_schemes` from `{working_dir}/analyze.json` and map to MCPScope auth types:
@@ -226,7 +226,7 @@ Derive the following from the analyze JSON and user context:
 
 #### 6.3: Assemble `mcp-scope.yaml`
 
-Build the YAML following the MCPScope schema exactly. The formal JSON schema is at `{skill_base_dir}/assets/mcp-scope-schema.json`. Reference `e2e/fixtures/real/google_drive.yaml` for formatting conventions:
+Build the YAML following the MCPScope schema exactly. The formal JSON schema was generated when you ran `task generate-schema`.
 
 ```yaml
 version: "1"
@@ -339,5 +339,3 @@ Present the user with:
 ### Reference Examples
 - `e2e/fixtures/real/google_drive.yaml` — 5 tools, 2 groups, OAuth bearer auth
 - `e2e/fixtures/real/github.yaml` — 8 tools, 3 groups, OAuth bearer auth
-- These show the target quality and format for the generated YAML
-- Formal JSON schema: `skills/ai-scoping/assets/mcp-scope-schema.json` (auto-generated via `task generate-schema`)

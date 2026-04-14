@@ -22,7 +22,7 @@ mcp-builder is a pipeline that transforms an OpenAPI 3.x spec and plain-English 
 - **Tools**: individual API endpoints with LLM-optimized names, descriptions, parameter overrides, and hints
 - **Auth**: authentication type (oauth_bearer, api_key, none) with OAuth details if applicable
 
-The formal JSON schema is at `skills/ai-scoping/assets/mcp-scope-schema.json` (auto-generated from the Pydantic models via `task generate-schema`).
+The formal JSON schema is at `docs/mcp-scope-schema.json` (auto-generated from the Pydantic models via `task generate-schema`).
 
 ### Key constraints enforced by the schema
 

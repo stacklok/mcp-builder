@@ -1,6 +1,6 @@
 ---
 name: endpoint-scoper
-description: Performs endpoint flagging, tool naming (verb_noun, snake_case, <=40 chars), LLM-optimized description writing, and hint generation for selected endpoint groups. Called by the ai-scoping skill orchestrator.
+description: Performs endpoint flagging, tool naming, LLM-optimized description writing, and hint generation for selected endpoint groups. Called by the ai-scoping skill orchestrator.
 ---
 
 # Endpoint Scoper
@@ -54,7 +54,7 @@ Present ALL endpoints (both included and flagged) in the output. The user will m
 
 ### Step 2: Tool Naming
 
-For each endpoint, assign a tool name. **Default to keeping the original operationId** — only rename when genuinely necessary.
+For each endpoint, assign a tool name. **Default to keeping the original** — only rename when genuinely necessary.
 
 **When to keep the original name:**
 - It already follows `verb_noun` or similar clear convention
@@ -63,14 +63,12 @@ For each endpoint, assign a tool name. **Default to keeping the original operati
 
 **When to rename:**
 - The operationId is opaque: `drives_files_list_v2`, `api_v3_getResource`
-- It's too long (>40 chars)
 - It uses a convention that makes tool selection ambiguous among similar tools
 - It doesn't convey what the tool actually does
 
 **Naming constraints (hard requirements):**
 - `snake_case` only: lowercase letters, digits, underscores
 - Must start with a letter
-- Maximum 40 characters
 - Must be unique across ALL groups in the server
 - Regex: `[a-z][a-z0-9_]*`
 
