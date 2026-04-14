@@ -32,6 +32,7 @@ Public API (re-exported here for convenience):
     - resolve_parameter_ref() — resolve a $ref to a parameter component
     - resolve_request_body_ref() — resolve a $ref to a requestBody component
     - resolve_schema_ref() — resolve a $ref to a schema component
+    - resolve_composed_schema() — flatten allOf/oneOf/anyOf into merged properties
     - extract_schema_type() — get the schema type from a parameter
     - schema_to_type() — get the schema type from a schema object
     - Type aliases: OpenAPISpec, OpenAPISchema, ExtractedParameter,
@@ -43,6 +44,7 @@ from mcp_builder.spec.loader import load_openapi_spec
 from mcp_builder.spec.parameters import get_body_fields, get_parameters, parse_endpoint
 from mcp_builder.spec.resolver import (
     extract_schema_type,
+    resolve_composed_schema,
     resolve_parameter_ref,
     resolve_request_body_ref,
     resolve_schema_ref,
@@ -70,6 +72,7 @@ __all__ = [
     "SchemaType",
     "extract_schema_type",
     "get_body_fields",
+    "resolve_composed_schema",
     "get_parameters",
     "load_openapi_spec",
     "parse_endpoint",

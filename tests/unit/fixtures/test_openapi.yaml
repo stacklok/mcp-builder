@@ -94,6 +94,90 @@ paths:
       responses:
         "201":
           description: Created
+  /items-allof:
+    post:
+      operationId: createItemAllOf
+      summary: Create item using allOf ($ref + inline)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/BaseItem"
+                - type: object
+                  properties:
+                    priority:
+                      type: integer
+                      description: "Priority level"
+                  required:
+                    - priority
+      responses:
+        "201":
+          description: Created
+  /items-allof-refs:
+    post:
+      operationId: createItemAllOfRefs
+      summary: Create item with allOf using only $refs
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/BaseItem"
+                - $ref: "#/components/schemas/PriorityMixin"
+      responses:
+        "201":
+          description: Created
+  /items-oneof:
+    post:
+      operationId: createItemOneOf
+      summary: Create item with oneOf body
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - type: object
+                  properties:
+                    name:
+                      type: string
+                    color:
+                      type: string
+                - type: object
+                  properties:
+                    name:
+                      type: string
+                    size:
+                      type: integer
+      responses:
+        "201":
+          description: Created
+  /items-anyof:
+    post:
+      operationId: createItemAnyOf
+      summary: Create item with anyOf body
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              anyOf:
+                - type: object
+                  properties:
+                    text:
+                      type: string
+                      description: "Plain text input"
+                - type: object
+                  properties:
+                    html:
+                      type: string
+                      description: "HTML input"
+      responses:
+        "201":
+          description: Created
 components:
   parameters:
     owner:
@@ -141,3 +225,20 @@ components:
           description: "Optional description."
       required:
         - name
+    BaseItem:
+      type: object
+      properties:
+        id:
+          type: string
+          description: "Base item ID"
+        created_at:
+          type: string
+          description: "Creation timestamp"
+      required:
+        - id
+    PriorityMixin:
+      type: object
+      properties:
+        priority:
+          type: integer
+          description: "Priority level"

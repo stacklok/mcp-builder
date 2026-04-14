@@ -153,6 +153,78 @@ def resolve_schema_ref(spec: OpenAPISpec, ref: str) -> OpenAPISchema:
     return schema
 
 
+def resolve_composed_schema(
+    spec: OpenAPISpec,
+    schema: OpenAPISchema,
+    *,
+    _seen: frozenset[str] = frozenset(),
+) -> OpenAPISchema:
+    """Flatten ``allOf``/``oneOf``/``anyOf`` into a single schema with merged properties.
+
+    Resolves ``$ref`` sub-schemas and recurses into nested composition.
+    A ``_seen`` set guards against circular ``$ref`` chains.
+
+    For ``allOf``, required lists are unioned (all sub-schema requirements apply).
+    For ``oneOf``/``anyOf``, all properties are collected but none are marked
+    required — we cannot know which variant the caller will use.
+    """
+
+    merged_props: dict[str, Ref30 | Ref31 | OpenAPISchema] = {}
+    allof_required: set[str] = set()
+
+    def _collect(sub: OpenAPISchema, from_allof: bool) -> None:
+        """Merge a single sub-schema's properties and required list."""
+        nonlocal merged_props, allof_required
+        for name, prop in (sub.properties or {}).items():
+            merged_props[name] = prop
+        if from_allof:
+            allof_required.update(sub.required or [])
+
+    def _resolve_sub(sub: Ref30 | Ref31 | OpenAPISchema, from_allof: bool) -> None:
+        nonlocal _seen
+        # Resolve $ref pointers
+        if isinstance(sub, (Ref30, Ref31)):
+            if sub.ref in _seen:
+                logger.warning("circular $ref skipped", ref=sub.ref)
+                return
+            _seen = _seen | {sub.ref}
+            sub = resolve_schema_ref(spec, sub.ref)
+
+        # Recurse if the resolved schema itself has composition
+        if any(getattr(sub, k, None) for k in ("allOf", "oneOf", "anyOf")):
+            sub = resolve_composed_schema(spec, sub, _seen=_seen)
+
+        _collect(sub, from_allof)
+
+    for sub in schema.allOf or []:
+        _resolve_sub(sub, from_allof=True)
+    for sub in schema.oneOf or []:
+        _resolve_sub(sub, from_allof=False)
+    for sub in schema.anyOf or []:
+        _resolve_sub(sub, from_allof=False)
+
+    # Include the parent schema's own properties and required
+    for name, prop in (schema.properties or {}).items():
+        merged_props[name] = prop
+    allof_required.update(schema.required or [])
+
+    logger.debug(
+        "resolved schema composition",
+        property_count=len(merged_props),
+        required_count=len(allof_required),
+    )
+
+    return schema.model_copy(
+        update={
+            "properties": merged_props or None,
+            "required": sorted(allof_required) or None,
+            "allOf": None,
+            "oneOf": None,
+            "anyOf": None,
+        }
+    )
+
+
 def extract_schema_type(param: OAParam30 | OAParam31) -> SchemaType:
     """Extract the schema type string from a parameter's schema.
 
@@ -174,13 +246,17 @@ def extract_schema_type(param: OAParam30 | OAParam31) -> SchemaType:
 def schema_to_type(schema: OpenAPISchema) -> SchemaType:
     """Extract the type string from an inline schema object.
 
+    Schemas without an explicit ``type`` field default to ``"object"`` — this
+    is common in composed schemas where the type is implied by ``properties``.
+
     Raises:
-        ValueError: If the schema has no type field, the type list contains
-            only nulls, or the type is not in OPENAPI_TYPE_MAP.
+        ValueError: If the type list contains only nulls, or the type is
+            not in OPENAPI_TYPE_MAP.
     """
     raw_type = schema.type
     if raw_type is None:
-        raise ValueError("Schema has no 'type' field.")
+        logger.debug("schema has no type field, defaulting to object")
+        return cast(SchemaType, "object")
     # v3.1 can return a list of types; take the first non-null one
     if isinstance(raw_type, list):
         for t in raw_type:
