@@ -319,8 +319,8 @@ class TestExtractSchemaType:
 
 
 class TestSchemaToType:
-    def test_raises_on_no_type(self, tmp_path):
-        """Schema with no type field raises ValueError."""
+    def test_no_type_defaults_to_object(self, tmp_path):
+        """Schema with no type field defaults to object (dict)."""
         raw = {
             "openapi": "3.0.3",
             "info": {"title": "T", "version": "0.1"},
@@ -334,9 +334,9 @@ class TestSchemaToType:
                                     "schema": {
                                         "type": "object",
                                         "properties": {
-                                            "broken": {
-                                                # no type field
-                                                "description": "missing type"
+                                            "freeform": {
+                                                # no type at all
+                                                "description": "free-form field"
                                             }
                                         },
                                     }
@@ -351,5 +351,7 @@ class TestSchemaToType:
         spec_file = tmp_path / "no_type.yaml"
         spec_file.write_text(yaml.dump(raw))
         spec = load_openapi_spec(spec_file)
-        with pytest.raises(ValueError, match="no 'type' field"):
-            get_body_fields(spec, "POST", "/x")
+        fields = get_body_fields(spec, "POST", "/x")
+        assert len(fields) == 1
+        assert fields[0].name == "freeform"
+        assert fields[0].schema_type == "object"
