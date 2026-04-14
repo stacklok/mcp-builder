@@ -11,15 +11,24 @@ import logging
 import structlog
 
 
-def configure_logging(verbose: bool = False) -> None:
+def configure_logging(verbose: bool = False, level: str | None = None) -> None:
     """Configure structlog for console output.
 
     Args:
         verbose: If True, set log level to DEBUG. Otherwise INFO.
+            Ignored when *level* is provided.
+        level: Explicit log level name (debug, info, warning, error).
+            Takes precedence over *verbose*.
     """
+    if level:
+        log_level = getattr(logging, level.upper())
+    elif verbose:
+        log_level = logging.DEBUG
+    else:
+        log_level = logging.INFO
     logging.basicConfig(
         format="%(message)s",
-        level=logging.DEBUG if verbose else logging.INFO,
+        level=log_level,
     )
     structlog.configure(
         processors=[

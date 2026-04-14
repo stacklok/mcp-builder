@@ -255,7 +255,13 @@ def schema_to_type(schema: OpenAPISchema) -> SchemaType:
     """
     raw_type = schema.type
     if raw_type is None:
-        logger.debug("schema has no type field, defaulting to object")
+        # No explicit type: default to "object" (dict). OpenAPI specs
+        # commonly omit type on schemas that have properties, use
+        # composition (allOf/oneOf/anyOf), or are intentionally free-form.
+        logger.warning(
+            "schema has no 'type' field, defaulting to object",
+            description=schema.description[:80] if schema.description else None,
+        )
         return cast(SchemaType, "object")
     # v3.1 can return a list of types; take the first non-null one
     if isinstance(raw_type, list):

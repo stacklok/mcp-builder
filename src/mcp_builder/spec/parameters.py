@@ -237,6 +237,7 @@ def get_body_fields(
         logger.warning("body schema has no properties", method=method, path=path)
 
     for name, prop in (schema.properties or {}).items():
+        # Resolve $ref properties to their underlying schema
         if isinstance(prop, Ref30 | Ref31):
             logger.debug(
                 "resolving body property $ref",

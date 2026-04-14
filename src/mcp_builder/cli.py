@@ -150,7 +150,13 @@ def build_parser() -> argparse.ArgumentParser:
         description="Generate a ToolHive-ready MCP server from an OpenAPI spec.",
     )
     parser.add_argument(
-        "-v", "--verbose", action="store_true", help="Enable debug logging"
+        "-v", "--verbose", action="store_true", help="Shorthand for --log-level debug"
+    )
+    parser.add_argument(
+        "--log-level",
+        choices=["debug", "info", "warning", "error"],
+        default=None,
+        help="Set logging level (default: info, or debug if --verbose)",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -198,10 +204,13 @@ def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
 
-    logging.basicConfig(
-        level=logging.DEBUG if args.verbose else logging.INFO,
-        format="%(levelname)s: %(message)s",
-    )
+    if args.log_level:
+        level = getattr(logging, args.log_level.upper())
+    elif args.verbose:
+        level = logging.DEBUG
+    else:
+        level = logging.INFO
+    logging.basicConfig(level=level, format="%(levelname)s: %(message)s")
 
     try:
         args.func(args)

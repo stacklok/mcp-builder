@@ -319,8 +319,8 @@ class TestExtractSchemaType:
 
 
 class TestSchemaToType:
-    def test_typeless_schema_defaults_to_object(self, tmp_path):
-        """Schema with no type field defaults to 'object' instead of raising."""
+    def test_no_type_defaults_to_object(self, tmp_path):
+        """Schema with no type field defaults to object (dict)."""
         raw = {
             "openapi": "3.0.3",
             "info": {"title": "T", "version": "0.1"},
@@ -334,9 +334,9 @@ class TestSchemaToType:
                                     "schema": {
                                         "type": "object",
                                         "properties": {
-                                            "broken": {
-                                                # no type field
-                                                "description": "missing type"
+                                            "freeform": {
+                                                # no type at all
+                                                "description": "free-form field"
                                             }
                                         },
                                     }
@@ -352,8 +352,9 @@ class TestSchemaToType:
         spec_file.write_text(yaml.dump(raw))
         spec = load_openapi_spec(spec_file)
         fields = get_body_fields(spec, "POST", "/x")
-        broken = next(f for f in fields if f.name == "broken")
-        assert broken.schema_type == "object"
+        assert len(fields) == 1
+        assert fields[0].name == "freeform"
+        assert fields[0].schema_type == "object"
 
 
 # ---------------------------------------------------------------------------
