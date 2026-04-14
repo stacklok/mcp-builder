@@ -35,6 +35,7 @@ from openapi_pydantic.v3.v3_1 import Reference as Ref31
 
 from mcp_builder.spec.resolver import (
     extract_schema_type,
+    resolve_composed_schema,
     resolve_parameter_ref,
     resolve_request_body_ref,
     resolve_schema_ref,
@@ -219,16 +220,18 @@ def get_body_fields(
 
     required_names = set(schema.required or [])
     fields = []
-    # NOTE: allOf/oneOf/anyOf schema composition is not yet supported.
-    # Real-world specs use these for inheritance and union types.
-    # See https://github.com/StacklokLabs/mcp-builder/issues/19
-    for composed_key in ("allOf", "oneOf", "anyOf"):
-        if getattr(schema, composed_key, None):
-            raise NotImplementedError(
-                f"Schema composition '{composed_key}' in {method} {path} body "
-                "is not yet supported. "
-                "See https://github.com/StacklokLabs/mcp-builder/issues/19"
-            )
+    # Flatten allOf/oneOf/anyOf into merged properties before extraction
+    if any(getattr(schema, k, None) for k in ("allOf", "oneOf", "anyOf")):
+        logger.debug(
+            "resolving schema composition",
+            method=method,
+            path=path,
+            allOf=bool(schema.allOf),
+            oneOf=bool(schema.oneOf),
+            anyOf=bool(schema.anyOf),
+        )
+        schema = resolve_composed_schema(spec, schema)
+        required_names = set(schema.required or [])
 
     if not (schema.properties or {}):
         logger.warning("body schema has no properties", method=method, path=path)

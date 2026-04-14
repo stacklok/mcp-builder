@@ -355,3 +355,70 @@ class TestSchemaToType:
         assert len(fields) == 1
         assert fields[0].name == "freeform"
         assert fields[0].schema_type == "object"
+
+
+# ---------------------------------------------------------------------------
+# Composed body fields (allOf / oneOf / anyOf)
+# ---------------------------------------------------------------------------
+
+
+class TestComposedBodyFields:
+    def test_allof_merges_properties(self, spec):
+        """allOf merges properties from $ref and inline sub-schemas."""
+        fields = get_body_fields(spec, "POST", "/items-allof")
+        names = {f.name for f in fields}
+        assert "id" in names
+        assert "created_at" in names
+        assert "priority" in names
+
+    def test_allof_merges_required(self, spec):
+        """allOf unions required lists from all sub-schemas."""
+        fields = get_body_fields(spec, "POST", "/items-allof")
+        required = {f.name for f in fields if f.required}
+        assert "id" in required
+        assert "priority" in required
+
+    def test_allof_refs_only(self, spec):
+        """allOf with only $ref sub-schemas resolves all."""
+        fields = get_body_fields(spec, "POST", "/items-allof-refs")
+        names = {f.name for f in fields}
+        assert "id" in names
+        assert "created_at" in names
+        assert "priority" in names
+
+    def test_oneof_merges_all_variants(self, spec):
+        """oneOf merges properties from all variants."""
+        fields = get_body_fields(spec, "POST", "/items-oneof")
+        names = {f.name for f in fields}
+        assert "name" in names
+        assert "color" in names
+        assert "size" in names
+
+    def test_oneof_fields_not_required(self, spec):
+        """oneOf fields are not required — any variant may omit them."""
+        fields = get_body_fields(spec, "POST", "/items-oneof")
+        for f in fields:
+            assert f.required is False
+
+    def test_anyof_merges_variants(self, spec):
+        """anyOf merges all variant properties."""
+        fields = get_body_fields(spec, "POST", "/items-anyof")
+        names = {f.name for f in fields}
+        assert "text" in names
+        assert "html" in names
+
+    def test_anyof_fields_not_required(self, spec):
+        """anyOf fields are not required."""
+        fields = get_body_fields(spec, "POST", "/items-anyof")
+        for f in fields:
+            assert f.required is False
+
+    def test_ref_property_resolved(self, spec):
+        """$ref on an individual body property resolves to its type."""
+        fields = get_body_fields(spec, "POST", "/items-with-ref-property")
+        names = {f.name for f in fields}
+        assert "item" in names
+        assert "note" in names
+        item_field = next(f for f in fields if f.name == "item")
+        assert item_field.schema_type == "object"
+        assert item_field.required is True
