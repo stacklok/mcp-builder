@@ -1,0 +1,81 @@
+openapi: "3.0.3"
+info:
+  title: Collision Test API
+  version: "1.0"
+servers:
+  - url: "https://api.example.com"
+paths:
+  /resources/{id}:
+    get:
+      operationId: getResource
+      summary: Cross-location and same-location collisions
+      parameters:
+        # Cross-location collision: "id" in both path and query
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: "Resource ID (path)"
+        - name: id
+          in: query
+          required: false
+          schema:
+            type: string
+          description: "Alternate resource ID (query)"
+        # Same-location collision: foo-bar and foo.bar both sanitize to foo_bar
+        - name: foo-bar
+          in: query
+          required: false
+          schema:
+            type: string
+          description: "Hyphenated param"
+        - name: foo.bar
+          in: query
+          required: false
+          schema:
+            type: string
+          description: "Dotted param"
+      responses:
+        "200":
+          description: OK
+  /filters:
+    get:
+      operationId: listFilters
+      summary: Triple collision and keyword collision
+      parameters:
+        # Triple same-location collision: a.b, a-b, a[b] all sanitize to a_b
+        - name: a.b
+          in: query
+          required: false
+          schema:
+            type: string
+          description: "Dotted param"
+        - name: a-b
+          in: query
+          required: false
+          schema:
+            type: string
+          description: "Hyphenated param"
+        - name: "a[b]"
+          in: query
+          required: false
+          schema:
+            type: string
+          description: "Bracket param"
+        # Keyword collision: from (keyword -> from_) and literal from_
+        - name: from
+          in: query
+          required: false
+          schema:
+            type: string
+          description: "Python keyword param"
+        - name: from_
+          in: query
+          required: false
+          schema:
+            type: string
+          description: "Already-suffixed param"
+      responses:
+        "200":
+          description: OK

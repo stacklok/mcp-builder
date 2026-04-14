@@ -1,0 +1,68 @@
+version: "1"
+
+server:
+  name: stripe
+  description: "Stripe MCP server for payment and account data retrieval"
+
+spec:
+  source: "https://raw.githubusercontent.com/stripe/openapi/master/openapi/spec3.yaml"
+  format: openapi3
+  base_url: "https://api.stripe.com"
+  total_endpoints: 414
+  scoped_endpoints: 4
+
+workflows:
+  - "Finance teams check account balances and review recent charges"
+  - "Support agents look up individual charges and list external accounts"
+
+groups:
+  - name: balance
+    description: "Account balance retrieval"
+    tools:
+      - tool_name: get_balance
+        endpoint: GET /v1/balance
+        description: >
+          Retrieve the current account balance. Returns available and pending
+          amounts broken down by currency and source type.
+
+  - name: accounts
+    description: "Connected account and external account management"
+    tools:
+      - tool_name: get_account
+        endpoint: GET /v1/accounts/{account}
+        description: >
+          Retrieve a connected account by ID. Returns the account's business
+          profile, capabilities, settings, and verification status.
+        parameters:
+          - name: account
+            description: "The Stripe account ID (e.g., acct_1234)."
+            required: true
+
+      - tool_name: list_capabilities
+        endpoint: GET /v1/accounts/{account}/capabilities
+        description: >
+          List all capabilities for a connected account. Returns each
+          capability's status (active, pending, inactive) and requirements.
+        parameters:
+          - name: account
+            description: "The Stripe account ID."
+            required: true
+
+      - tool_name: get_capability
+        endpoint: GET /v1/accounts/{account}/capabilities/{capability}
+        description: >
+          Retrieve a specific capability for a connected account. Returns
+          the capability's status and any outstanding requirements.
+        parameters:
+          - name: account
+            description: "The Stripe account ID."
+            required: true
+          - name: capability
+            description: "The capability identifier (e.g., card_payments, transfers)."
+            required: true
+
+auth:
+  type: api_key
+  notes: >
+    Stripe uses Bearer token authentication with a secret API key. The key
+    is injected by ToolHive from a Kubernetes secret at deploy time.

@@ -1,0 +1,29 @@
+version: "1"
+
+server:
+  name: selective-api
+  description: "Selective scoping test — large spec, narrow scope"
+
+spec:
+  source: "selective_openapi.yaml"
+  format: openapi3
+  base_url: "https://api.example.com"
+  total_endpoints: 22
+  scoped_endpoints: 3
+
+groups:
+  - name: selected
+    description: "Only 3 of 22 endpoints scoped"
+    tools:
+      - tool_name: get_ep1
+        endpoint: GET /ep1
+        description: "First selected endpoint."
+      - tool_name: get_ep5
+        endpoint: GET /ep5
+        description: "Fifth endpoint — has two query params."
+      - tool_name: get_ep10
+        endpoint: GET /ep10
+        description: "Tenth endpoint — also has two query params."
+
+auth:
+  type: none

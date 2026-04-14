@@ -1,0 +1,21 @@
+version: "1"
+
+server:
+  name: type-matrix
+  description: "Type matrix test server"
+
+spec:
+  source: "type_matrix_openapi.yaml"
+  format: openapi3
+  base_url: "https://api.example.com"
+
+groups:
+  - name: types
+    description: "Type coverage tests"
+    tools:
+      - tool_name: test_all_types
+        endpoint: POST /types/{str_param}/{int_param}
+        description: "Exercise every supported type in every param location."
+
+auth:
+  type: none

@@ -1,0 +1,76 @@
+version: "1"
+
+server:
+  name: twilio
+  description: "Twilio MCP server for SMS messages and application management"
+
+spec:
+  source: "https://raw.githubusercontent.com/twilio/twilio-oai/main/spec/yaml/twilio_api_v2010.yaml"
+  format: openapi3
+  base_url: "https://api.twilio.com"
+  total_endpoints: 121
+  scoped_endpoints: 3
+
+workflows:
+  - "Support agents review message delivery history for a phone number"
+  - "Developers manage TwiML applications for voice and SMS routing"
+
+groups:
+  - name: messages
+    description: "SMS and MMS message history"
+    tools:
+      - tool_name: list_messages
+        endpoint: GET /2010-04-01/Accounts/{AccountSid}/Messages.json
+        description: >
+          List SMS/MMS messages for an account. Returns message SID, to/from
+          numbers, body preview, status, and timestamps. Supports filtering
+          by recipient, sender, and date range.
+        parameters:
+          - name: AccountSid
+            description: "The Twilio Account SID that owns the messages."
+            required: true
+          - name: To
+            description: "Filter by recipient phone number (E.164 format)."
+            required: false
+          - name: PageSize
+            description: "Number of messages per page. Default 50, max 1000."
+            required: false
+
+      - tool_name: get_message
+        endpoint: GET /2010-04-01/Accounts/{AccountSid}/Messages/{Sid}.json
+        description: >
+          Retrieve a single message by its SID. Returns the full message
+          record including body text, media URLs, price, and error details.
+        parameters:
+          - name: AccountSid
+            description: "The Twilio Account SID."
+            required: true
+          - name: Sid
+            description: "The message SID to retrieve."
+            required: true
+
+  - name: applications
+    description: "TwiML application management"
+    tools:
+      - tool_name: list_applications
+        endpoint: GET /2010-04-01/Accounts/{AccountSid}/Applications.json
+        description: >
+          List TwiML applications for an account. Returns application SID,
+          friendly name, voice/SMS URLs, and creation date. Supports
+          filtering by friendly name.
+        parameters:
+          - name: AccountSid
+            description: "The Twilio Account SID."
+            required: true
+          - name: FriendlyName
+            description: "Filter by application friendly name."
+            required: false
+          - name: PageSize
+            description: "Number of results per page. Default 50, max 1000."
+            required: false
+
+auth:
+  type: api_key
+  notes: >
+    Twilio uses HTTP Basic authentication with Account SID and Auth Token.
+    The MCP server maps this to a bearer token injected by ToolHive.
