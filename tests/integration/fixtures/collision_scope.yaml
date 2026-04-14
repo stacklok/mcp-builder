@@ -1,0 +1,24 @@
+version: "1"
+
+server:
+  name: collision-test
+  description: "Name collision stress test server"
+
+spec:
+  source: "collision_openapi.yaml"
+  format: openapi3
+  base_url: "https://api.example.com"
+
+groups:
+  - name: collision-tests
+    description: "Collision resolution tests"
+    tools:
+      - tool_name: get_resource
+        endpoint: GET /resources/{id}
+        description: "Cross-location and same-location collision test."
+      - tool_name: list_filters
+        endpoint: GET /filters
+        description: "Triple collision and keyword collision test."
+
+auth:
+  type: none

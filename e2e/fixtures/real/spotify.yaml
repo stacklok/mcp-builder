@@ -1,0 +1,103 @@
+version: "1"
+
+server:
+  name: spotify
+  description: "Spotify MCP server for music search, artist lookup, and playlist browsing"
+
+spec:
+  source: "https://raw.githubusercontent.com/APIs-guru/openapi-directory/main/APIs/spotify.com/1.0.0/openapi.yaml"
+  format: openapi3
+  base_url: "https://api.spotify.com/v1"
+  total_endpoints: 67
+  scoped_endpoints: 4
+
+workflows:
+  - "Users search for tracks, albums, and artists by keyword"
+  - "Users browse playlist contents and discover related artists"
+
+groups:
+  - name: search
+    description: "Music catalog search"
+    tools:
+      - tool_name: search_catalog
+        endpoint: GET /search
+        description: >
+          Search the Spotify catalog for tracks, albums, artists, or
+          playlists. Returns paginated results grouped by content type.
+        parameters:
+          - name: q
+            description: >
+              Search query. Supports field filters like artist:Radiohead,
+              album:OK Computer, track:Creep, year:1993, genre:rock.
+            required: true
+          - name: type
+            description: >
+              Comma-separated list of item types to search. Valid values:
+              album, artist, playlist, track, show, episode, audiobook.
+            required: true
+          - name: limit
+            description: "Maximum results per type. Default 20, range 1-50."
+            required: false
+          - name: offset
+            description: "Index of the first result to return. Default 0."
+            required: false
+
+  - name: artists
+    description: "Artist information"
+    tools:
+      - tool_name: get_artist
+        endpoint: GET /artists/{id}
+        description: >
+          Get detailed information about an artist by Spotify ID. Returns
+          name, genres, popularity score, follower count, and image URLs.
+        parameters:
+          - name: id
+            description: "The Spotify ID of the artist."
+            required: true
+
+  - name: playlists
+    description: "Playlist browsing"
+    tools:
+      - tool_name: get_playlist
+        endpoint: GET /playlists/{playlist_id}
+        description: >
+          Get a playlist by its Spotify ID. Returns the playlist name,
+          description, owner, follower count, track listing, and images.
+        parameters:
+          - name: playlist_id
+            description: "The Spotify ID of the playlist."
+            required: true
+          - name: fields
+            description: >
+              Comma-separated list of fields to return. Use to limit the
+              response size. Example: "name,tracks.items(track(name,artists))".
+            required: false
+
+      - tool_name: get_playlist_tracks
+        endpoint: GET /playlists/{playlist_id}/tracks
+        description: >
+          Get the tracks in a playlist. Returns paginated track objects with
+          artist, album, duration, and popularity.
+        parameters:
+          - name: playlist_id
+            description: "The Spotify ID of the playlist."
+            required: true
+          - name: limit
+            description: "Maximum number of tracks to return. Default 100, max 100."
+            required: false
+          - name: offset
+            description: "Index of the first track to return. Default 0."
+            required: false
+
+auth:
+  type: oauth_bearer
+  oauth:
+    issuer: "https://accounts.spotify.com"
+    scopes:
+      - user-read-private
+      - playlist-read-private
+      - playlist-read-collaborative
+  notes: >
+    Spotify uses OAuth2 authorization code flow. Register an app at
+    developer.spotify.com. The MCP server receives an access token via the
+    Authorization header and forwards it to the Spotify Web API.

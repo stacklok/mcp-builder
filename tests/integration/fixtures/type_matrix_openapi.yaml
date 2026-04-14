@@ -1,0 +1,83 @@
+openapi: "3.0.3"
+info:
+  title: Type Matrix API
+  version: "1.0"
+servers:
+  - url: "https://api.example.com"
+paths:
+  /types/{str_param}/{int_param}:
+    post:
+      operationId: testAllTypes
+      summary: Exercise every supported OpenAPI type in every param location
+      parameters:
+        - name: str_param
+          in: path
+          required: true
+          schema:
+            type: string
+          description: "String path param"
+        - name: int_param
+          in: path
+          required: true
+          schema:
+            type: integer
+          description: "Integer path param"
+        - name: num_query
+          in: query
+          required: false
+          schema:
+            type: number
+          description: "Number query param"
+        - name: bool_query
+          in: query
+          required: false
+          schema:
+            type: boolean
+          description: "Boolean query param"
+        - name: arr_query
+          in: query
+          required: false
+          schema:
+            type: array
+            items:
+              type: string
+          description: "Array query param"
+        - name: obj_query
+          in: query
+          required: false
+          schema:
+            type: object
+          description: "Object query param"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - field_string
+                - field_integer
+              properties:
+                field_string:
+                  type: string
+                  description: "String body field"
+                field_integer:
+                  type: integer
+                  description: "Integer body field"
+                field_number:
+                  type: number
+                  description: "Number body field"
+                field_boolean:
+                  type: boolean
+                  description: "Boolean body field"
+                field_array:
+                  type: array
+                  items:
+                    type: string
+                  description: "Array body field"
+                field_object:
+                  type: object
+                  description: "Object body field"
+      responses:
+        "200":
+          description: OK

@@ -1,0 +1,98 @@
+version: "1"
+
+server:
+  name: zoom
+  description: "Zoom MCP server for meeting management and user directory"
+
+spec:
+  source: "https://raw.githubusercontent.com/APIs-guru/openapi-directory/main/APIs/zoom.us/2.0.0/openapi.yaml"
+  format: openapi3
+  base_url: "https://api.zoom.us/v2"
+  total_endpoints: 265
+  scoped_endpoints: 4
+
+workflows:
+  - "Managers list and review upcoming meetings for their team"
+  - "Admins look up user accounts and check meeting details"
+
+groups:
+  - name: meetings
+    description: "Meeting listing and details"
+    tools:
+      - tool_name: list_meetings
+        endpoint: GET /users/{userId}/meetings
+        description: >
+          List meetings scheduled by a user. Returns meeting ID, topic,
+          start time, duration, timezone, and join URL. Supports filtering
+          by meeting type (scheduled, live, upcoming).
+        parameters:
+          - name: userId
+            description: >
+              The user ID or email address. Use "me" for the authenticated
+              user.
+            required: true
+          - name: type
+            description: >
+              Meeting type filter. One of "scheduled", "live", "upcoming",
+              "upcoming_meetings", "previous_meetings". Default "live".
+            required: false
+          - name: page_size
+            description: "Number of meetings per page. Default 30, max 300."
+            required: false
+
+      - tool_name: get_meeting
+        endpoint: GET /meetings/{meetingId}
+        description: >
+          Get details of a specific meeting by ID. Returns the full meeting
+          record including topic, agenda, settings, recurrence pattern, and
+          dial-in numbers.
+        parameters:
+          - name: meetingId
+            description: "The meeting ID."
+            required: true
+          - name: occurrence_id
+            description: "Occurrence ID for recurring meetings."
+            required: false
+
+  - name: users
+    description: "User directory"
+    tools:
+      - tool_name: list_users
+        endpoint: GET /users
+        description: >
+          List users in the Zoom account. Returns user ID, email, name,
+          type, and status. Supports filtering by status and role.
+        parameters:
+          - name: status
+            description: >
+              Filter by user status. One of "active", "inactive", "pending".
+              Default "active".
+            required: false
+          - name: page_size
+            description: "Number of users per page. Default 30, max 300."
+            required: false
+          - name: role_id
+            description: "Filter by role ID."
+            required: false
+
+      - tool_name: get_user
+        endpoint: GET /users/{userId}
+        description: >
+          Get a user's profile by ID or email. Returns full profile including
+          name, email, type, role, timezone, and department.
+        parameters:
+          - name: userId
+            description: "The user ID or email address."
+            required: true
+
+auth:
+  type: oauth_bearer
+  oauth:
+    issuer: "https://zoom.us"
+    scopes:
+      - meeting:read
+      - user:read
+  notes: >
+    Zoom uses OAuth2 authorization code or client credentials flow. Create
+    a Server-to-Server OAuth app in the Zoom Marketplace. The MCP server
+    receives an access token via the Authorization header.

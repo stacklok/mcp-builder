@@ -1,0 +1,235 @@
+openapi: "3.0.3"
+info:
+  title: Selective Scoping API
+  version: "1.0"
+servers:
+  - url: "https://api.example.com"
+paths:
+  /ep1:
+    get:
+      operationId: getEp1
+      parameters:
+        - name: q
+          in: query
+          schema: { type: string }
+      responses:
+        "200": { description: OK }
+  /ep2:
+    get:
+      operationId: getEp2
+      parameters:
+        - name: q
+          in: query
+          schema: { type: string }
+      responses:
+        "200": { description: OK }
+  /ep3:
+    get:
+      operationId: getEp3
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer }
+      responses:
+        "200": { description: OK }
+  /ep4:
+    get:
+      operationId: getEp4
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer }
+      responses:
+        "200": { description: OK }
+  /ep5:
+    get:
+      operationId: getEp5
+      parameters:
+        - name: q
+          in: query
+          schema: { type: string }
+        - name: limit
+          in: query
+          schema: { type: integer }
+      responses:
+        "200": { description: OK }
+  /ep6:
+    get:
+      operationId: getEp6
+      parameters:
+        - name: active
+          in: query
+          schema: { type: boolean }
+      responses:
+        "200": { description: OK }
+  /ep7:
+    get:
+      operationId: getEp7
+      parameters:
+        - name: q
+          in: query
+          schema: { type: string }
+      responses:
+        "200": { description: OK }
+  /ep8:
+    get:
+      operationId: getEp8
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer }
+      responses:
+        "200": { description: OK }
+  /ep9:
+    get:
+      operationId: getEp9
+      parameters:
+        - name: sort
+          in: query
+          schema: { type: string }
+      responses:
+        "200": { description: OK }
+  /ep10:
+    get:
+      operationId: getEp10
+      parameters:
+        - name: fields
+          in: query
+          schema: { type: string }
+        - name: limit
+          in: query
+          schema: { type: integer }
+      responses:
+        "200": { description: OK }
+  /ep11:
+    get:
+      operationId: getEp11
+      parameters:
+        - name: q
+          in: query
+          schema: { type: string }
+      responses:
+        "200": { description: OK }
+  /ep12:
+    get:
+      operationId: getEp12
+      parameters:
+        - name: q
+          in: query
+          schema: { type: string }
+      responses:
+        "200": { description: OK }
+  /ep13:
+    get:
+      operationId: getEp13
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer }
+      responses:
+        "200": { description: OK }
+  /ep14:
+    get:
+      operationId: getEp14
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer }
+      responses:
+        "200": { description: OK }
+  /ep15:
+    get:
+      operationId: getEp15
+      parameters:
+        - name: q
+          in: query
+          schema: { type: string }
+      responses:
+        "200": { description: OK }
+  /ep16:
+    get:
+      operationId: getEp16
+      parameters:
+        - name: active
+          in: query
+          schema: { type: boolean }
+      responses:
+        "200": { description: OK }
+  /ep17:
+    get:
+      operationId: getEp17
+      parameters:
+        - name: sort
+          in: query
+          schema: { type: string }
+      responses:
+        "200": { description: OK }
+  /ep18:
+    get:
+      operationId: getEp18
+      parameters:
+        - name: q
+          in: query
+          schema: { type: string }
+      responses:
+        "200": { description: OK }
+  /ep19:
+    get:
+      operationId: getEp19
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer }
+      responses:
+        "200": { description: OK }
+  /ep20:
+    get:
+      operationId: getEp20
+      parameters:
+        - name: q
+          in: query
+          schema: { type: string }
+      responses:
+        "200": { description: OK }
+  # Endpoints below would fail if scoped — they exist in the spec but
+  # are NOT included in the scope YAML.
+  /ep21:
+    post:
+      operationId: createEp21
+      requestBody:
+        content:
+          application/json:
+            schema:
+              allOf:
+                - type: object
+                  properties:
+                    base_field:
+                      type: string
+                - type: object
+                  properties:
+                    extra_field:
+                      type: integer
+      responses:
+        "201": { description: Created }
+  /ep22:
+    post:
+      operationId: createEp22
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                ref_prop:
+                  $ref: "#/components/schemas/Nested"
+                name:
+                  type: string
+      responses:
+        "201": { description: Created }
+components:
+  schemas:
+    Nested:
+      type: object
+      properties:
+        value:
+          type: string

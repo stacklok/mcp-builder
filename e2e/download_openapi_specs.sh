@@ -52,5 +52,30 @@ echo "  bamboohr..."
 curl -sL -o "$OUTDIR/bamboohr_openapi.yaml" \
   "https://openapi.bamboohr.io/main/latest/docs/openapi/public-openapi.yaml"
 
+# Petstore — the canonical OpenAPI 3.0 example (Swagger, ~3KB JSON)
+echo "  petstore..."
+curl -sL -o "$OUTDIR/petstore_openapi.json" \
+  "https://petstore3.swagger.io/api/v3/openapi.json"
+
+# Stripe API (OpenAPI 3.0, ~160K lines YAML)
+echo "  stripe..."
+curl -sL -o "$OUTDIR/stripe_openapi.yaml" \
+  "https://raw.githubusercontent.com/stripe/openapi/master/openapi/spec3.yaml"
+
+# Twilio API v2010 (OpenAPI 3.0, ~36K lines)
+echo "  twilio..."
+curl -sL -o "$OUTDIR/twilio_openapi.yaml" \
+  "https://raw.githubusercontent.com/twilio/twilio-oai/main/spec/yaml/twilio_api_v2010.yaml"
+
+# Spotify Web API — community-maintained OpenAPI conversion from APIs-guru
+echo "  spotify..."
+curl -sL -o "$OUTDIR/spotify_openapi.yaml" \
+  "https://raw.githubusercontent.com/APIs-guru/openapi-directory/main/APIs/spotify.com/1.0.0/openapi.yaml"
+
+# Zoom API — community-maintained OpenAPI conversion from APIs-guru
+echo "  zoom..."
+curl -sL -o "$OUTDIR/zoom_openapi.yaml" \
+  "https://raw.githubusercontent.com/APIs-guru/openapi-directory/main/APIs/zoom.us/2.0.0/openapi.yaml"
+
 echo ""
 echo "Done."
