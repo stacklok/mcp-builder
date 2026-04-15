@@ -6,9 +6,57 @@ argument-hint: <generated-project-dir> <cluster-repo-path>
 
 # Deploy Assist Skill
 
-This skill takes the deployment manifests from a generated MCP server project (Phase 3+ output) and places them into a cluster repo, configured for the target environment. It reads the cluster repo to understand its structure and infer values for placeholders, copies the manifests to the right location, and explains what the user still needs to do manually (fill in secrets, commit, etc.).
+This skill handles the last mile of the mcp-builder pipeline: placing configured deployment manifests into a cluster repo. The pipeline transforms an OpenAPI spec into a ToolHive-ready MCP server across four phases — AI Scoping (Phase 1) produces a validated `mcp-scope.yaml`, Human Review (Phase 2) refines it, Deterministic Code Generation (Phase 3) scaffolds the complete server project, and AI Validation & Polish (Phase 4) verifies the generated code. This skill sits after that pipeline: it takes the generated project's deployment manifests, reads a cluster repo to understand its structure and environment, copies the manifests into the right location with placeholders filled, and explains what the user still needs to do.
 
 The container image is assumed to already be built and pushed to a registry. This skill does not guide through docker build/push or run kubectl commands.
+
+## Pipeline Context
+
+### What does the generated project look like?
+
+Phase 3 produces a complete MCP server project with this structure:
+
+```
+{server_name}-mcp/
+├── src/{module_name}/          # Python MCP server code
+│   ├── api/
+│   │   ├── tools.py            # Tool methods (one per scoped endpoint)
+│   │   ├── mcp_builder.py      # FastMCP wiring
+│   │   └── models.py           # Pydantic request models
+│   ├── client.py               # HTTP client with auth forwarding
+│   ├── auth/                   # Token passthrough middleware
+│   └── settings.py             # Configuration from env vars
+├── deploy/                     # Kubernetes manifests (this skill's focus)
+│   ├── mcpserver.yaml          # ToolHive MCPServer CRD (always)
+│   ├── ingress.yaml            # K8s Ingress for external access (always)
+│   ├── mcpexternalauthconfig.yaml  # Auth config (if auth != none)
+│   └── secret.yaml             # K8s Secret template (if api_key auth)
+├── Dockerfile
+├── pyproject.toml
+└── ...
+```
+
+The module name is derived from the server name: hyphens become underscores, append `_mcp` (e.g., `google-drive` → `google_drive_mcp`).
+
+### What placeholders exist in the generated manifests?
+
+The manifests are valid YAML but contain placeholder values that must be replaced for a real deployment:
+
+| Placeholder | Files | What it needs |
+|---|---|---|
+| `REPLACE_ME_DOMAIN` | mcpserver.yaml, ingress.yaml, mcpexternalauthconfig.yaml | The domain for external access (e.g., `north.stacklok.dev`) |
+| `REPLACE_ME_OTEL_ENDPOINT` | mcpserver.yaml | OpenTelemetry collector endpoint |
+| `{server_name}-mcp:latest` | mcpserver.yaml (`spec.image`) | Needs a registry prefix (e.g., `123456789.dkr.ecr.us-east-1.amazonaws.com/`) |
+| `REPLACE_ME` (clientId) | mcpexternalauthconfig.yaml | OAuth client ID — **a secret, never auto-filled** |
+| `REPLACE_ME` (token) | secret.yaml | API key or bearer token — **a secret, never auto-filled** |
+
+### Auth types
+
+The generated manifests vary by auth type configured in `mcp-scope.yaml`:
+
+- **oauth_bearer**: Generates mcpexternalauthconfig.yaml with an embedded auth server that delegates to an upstream OIDC provider. The user must fill in the OAuth `clientId`.
+- **api_key**: Generates mcpexternalauthconfig.yaml (bearer token type) and secret.yaml. The user must fill in the API key `token`.
+- **none**: No auth config or secret manifests are generated.
 
 ## Startup
 
