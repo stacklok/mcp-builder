@@ -207,15 +207,15 @@ class TestParameterAllowlist:
 
 
 # ---------------------------------------------------------------------------
-# Body field fallback — YAML params synthesized for POST/PUT/PATCH
+# Explicit location — YAML params with location="body" or location="query"
 # ---------------------------------------------------------------------------
 
 
-class TestBodyFieldFallback:
-    """When spec has no requestBody, YAML params become body fields for POST/PUT/PATCH."""
+class TestExplicitLocation:
+    """When YAML params have location set, codegen routes them directly."""
 
-    def test_post_no_request_body_synthesizes_body_fields(self, spec):
-        """POST with no requestBody: YAML params become body fields."""
+    def test_body_location_routes_to_body_fields(self, spec):
+        """location="body" params become body fields even without spec requestBody."""
         from mcp_builder.codegen.plan import _build_tool_plan
         from mcp_builder.schema.models import Parameter, Tool
 
@@ -224,10 +224,23 @@ class TestBodyFieldFallback:
             endpoint="POST /files",
             description="Create a file.",
             parameters=[
-                Parameter(name="name", description="File name.", required=True),
-                Parameter(name="mimeType", description="MIME type.", required=True),
                 Parameter(
-                    name="parents", description="Parent folders.", required=False
+                    name="name",
+                    description="File name.",
+                    required=True,
+                    location="body",
+                ),
+                Parameter(
+                    name="mimeType",
+                    description="MIME type.",
+                    required=True,
+                    location="body",
+                ),
+                Parameter(
+                    name="parents",
+                    description="Parent folders.",
+                    required=False,
+                    location="body",
                 ),
             ],
         )
@@ -236,8 +249,8 @@ class TestBodyFieldFallback:
         names = {f.name for f in plan.body_fields}
         assert names == {"name", "mimeType", "parents"}
 
-    def test_synthesized_fields_have_correct_location(self, spec):
-        """Synthesized fields have location='body'."""
+    def test_body_fields_have_correct_location(self, spec):
+        """Explicit body params have location='body' in the plan."""
         from mcp_builder.codegen.plan import _build_tool_plan
         from mcp_builder.schema.models import Parameter, Tool
 
@@ -246,14 +259,19 @@ class TestBodyFieldFallback:
             endpoint="POST /files",
             description="Create a file.",
             parameters=[
-                Parameter(name="name", description="File name.", required=True),
+                Parameter(
+                    name="name",
+                    description="File name.",
+                    required=True,
+                    location="body",
+                ),
             ],
         )
         plan = _build_tool_plan(tool, spec, "test-group")
         assert plan.body_fields[0].location == "body"
 
-    def test_synthesized_fields_preserve_required(self, spec):
-        """Synthesized fields preserve YAML required flags."""
+    def test_body_fields_preserve_required(self, spec):
+        """Explicit body params preserve YAML required flags."""
         from mcp_builder.codegen.plan import _build_tool_plan
         from mcp_builder.schema.models import Parameter, Tool
 
@@ -262,9 +280,17 @@ class TestBodyFieldFallback:
             endpoint="POST /files",
             description="Create a file.",
             parameters=[
-                Parameter(name="name", description="File name.", required=True),
                 Parameter(
-                    name="parents", description="Parent folders.", required=False
+                    name="name",
+                    description="File name.",
+                    required=True,
+                    location="body",
+                ),
+                Parameter(
+                    name="parents",
+                    description="Parent folders.",
+                    required=False,
+                    location="body",
                 ),
             ],
         )
@@ -274,8 +300,8 @@ class TestBodyFieldFallback:
         assert name_field.required is True
         assert parents_field.required is False
 
-    def test_synthesized_fields_preserve_description(self, spec):
-        """Synthesized fields use YAML descriptions."""
+    def test_body_fields_preserve_description(self, spec):
+        """Explicit body params use YAML descriptions."""
         from mcp_builder.codegen.plan import _build_tool_plan
         from mcp_builder.schema.models import Parameter, Tool
 
@@ -284,14 +310,19 @@ class TestBodyFieldFallback:
             endpoint="POST /files",
             description="Create a file.",
             parameters=[
-                Parameter(name="name", description="The file name.", required=True),
+                Parameter(
+                    name="name",
+                    description="The file name.",
+                    required=True,
+                    location="body",
+                ),
             ],
         )
         plan = _build_tool_plan(tool, spec, "test-group")
         assert plan.body_fields[0].description == "The file name."
 
-    def test_synthesized_fields_default_to_str(self, spec):
-        """Synthesized fields default to str type (no spec type info)."""
+    def test_yaml_only_params_default_to_str(self, spec):
+        """Params not in spec default to str type."""
         from mcp_builder.codegen.plan import _build_tool_plan
         from mcp_builder.schema.models import Parameter, Tool
 
@@ -300,14 +331,19 @@ class TestBodyFieldFallback:
             endpoint="POST /files",
             description="Create a file.",
             parameters=[
-                Parameter(name="name", description="File name.", required=True),
+                Parameter(
+                    name="name",
+                    description="File name.",
+                    required=True,
+                    location="body",
+                ),
             ],
         )
         plan = _build_tool_plan(tool, spec, "test-group")
         assert plan.body_fields[0].py_type == "str"
 
-    def test_post_with_path_param_and_no_body(self, spec):
-        """POST with path param + YAML body params: path param matched, rest synthesized."""
+    def test_post_with_path_param_and_body_location(self, spec):
+        """POST with path param + explicit body params: path matched, body routed."""
         from mcp_builder.codegen.plan import _build_tool_plan
         from mcp_builder.schema.models import Parameter, Tool
 
@@ -317,7 +353,12 @@ class TestBodyFieldFallback:
             description="Create a comment.",
             parameters=[
                 Parameter(name="fileId", description="File ID.", required=True),
-                Parameter(name="content", description="Comment text.", required=True),
+                Parameter(
+                    name="content",
+                    description="Comment text.",
+                    required=True,
+                    location="body",
+                ),
             ],
         )
         plan = _build_tool_plan(tool, spec, "test-group")
@@ -327,8 +368,8 @@ class TestBodyFieldFallback:
         assert plan.body_fields[0].name == "content"
         assert plan.body_fields[0].location == "body"
 
-    def test_put_no_request_body_synthesizes_body_fields(self, spec):
-        """PUT with no requestBody: YAML params become body fields."""
+    def test_put_with_body_location(self, spec):
+        """PUT with explicit body params works."""
         from mcp_builder.codegen.plan import _build_tool_plan
         from mcp_builder.schema.models import Parameter, Tool
 
@@ -338,8 +379,15 @@ class TestBodyFieldFallback:
             description="Replace a file.",
             parameters=[
                 Parameter(name="fileId", description="File ID.", required=True),
-                Parameter(name="name", description="New name.", required=True),
-                Parameter(name="mimeType", description="MIME type.", required=False),
+                Parameter(
+                    name="name", description="New name.", required=True, location="body"
+                ),
+                Parameter(
+                    name="mimeType",
+                    description="MIME type.",
+                    required=False,
+                    location="body",
+                ),
             ],
         )
         plan = _build_tool_plan(tool, spec, "test-group")
@@ -349,8 +397,8 @@ class TestBodyFieldFallback:
         names = {f.name for f in plan.body_fields}
         assert names == {"name", "mimeType"}
 
-    def test_patch_no_request_body_synthesizes_body_fields(self, spec):
-        """PATCH with no requestBody: YAML params become body fields."""
+    def test_patch_with_body_location(self, spec):
+        """PATCH with explicit body params works."""
         from mcp_builder.codegen.plan import _build_tool_plan
         from mcp_builder.schema.models import Parameter, Tool
 
@@ -360,7 +408,12 @@ class TestBodyFieldFallback:
             description="Partially update a file.",
             parameters=[
                 Parameter(name="fileId", description="File ID.", required=True),
-                Parameter(name="name", description="New name.", required=False),
+                Parameter(
+                    name="name",
+                    description="New name.",
+                    required=False,
+                    location="body",
+                ),
             ],
         )
         plan = _build_tool_plan(tool, spec, "test-group")
@@ -370,8 +423,8 @@ class TestBodyFieldFallback:
         assert plan.body_fields[0].name == "name"
         assert plan.body_fields[0].location == "body"
 
-    def test_get_does_not_synthesize_body_fields(self, spec):
-        """GET with unmatched YAML params does NOT synthesize body fields."""
+    def test_no_location_unmatched_warns(self, spec):
+        """Params with no location that don't match spec are warned and dropped."""
         from unittest.mock import patch
 
         from mcp_builder.codegen.plan import _build_tool_plan
@@ -390,32 +443,88 @@ class TestBodyFieldFallback:
         with patch("mcp_builder.codegen.plan.logger") as mock_logger:
             plan = _build_tool_plan(tool, spec, "test-group")
         assert len(plan.body_fields) == 0
+        assert len(plan.query_params) == 0
         mock_logger.warning.assert_called_once()
         call_kwargs = mock_logger.warning.call_args
-        assert "not found in spec" in call_kwargs[0][0]
+        assert "dropped" in call_kwargs[0][0]
         assert call_kwargs[1]["unmatched"] == ["nonexistent"]
 
-    def test_mixed_spec_body_and_synthesized(self, spec):
-        """When spec has some body fields, only unmatched YAML params are synthesized."""
+    def test_mixed_spec_body_and_explicit_body(self, spec):
+        """Spec body fields + explicit body params coexist."""
         from mcp_builder.codegen.plan import _build_tool_plan
         from mcp_builder.schema.models import Parameter, Tool
 
         # POST /items has body fields [name, description] in the spec.
-        # YAML lists name (matched) + extra_field (unmatched => synthesized).
+        # YAML lists name (spec match) + extra_field (explicit body).
         tool = Tool(
             tool_name="create_item",
             endpoint="POST /items",
             description="Create an item.",
             parameters=[
                 Parameter(name="name", description="Item name.", required=True),
-                Parameter(name="extra_field", description="Extra.", required=False),
+                Parameter(
+                    name="extra_field",
+                    description="Extra.",
+                    required=False,
+                    location="body",
+                ),
             ],
         )
         plan = _build_tool_plan(tool, spec, "test-group")
         names = {f.name for f in plan.body_fields}
         assert "name" in names  # from spec body fields
-        assert "extra_field" in names  # synthesized
+        assert "extra_field" in names  # explicit body from YAML
         assert len(plan.body_fields) == 2
+
+    def test_explicit_query_location(self, spec):
+        """location="query" params not in spec are included as query params."""
+        from mcp_builder.codegen.plan import _build_tool_plan
+        from mcp_builder.schema.models import Parameter, Tool
+
+        tool = Tool(
+            tool_name="create_file",
+            endpoint="POST /files",
+            description="Create a file.",
+            parameters=[
+                Parameter(
+                    name="uploadType",
+                    description="Upload type.",
+                    required=True,
+                    location="query",
+                ),
+                Parameter(
+                    name="name",
+                    description="File name.",
+                    required=True,
+                    location="body",
+                ),
+            ],
+        )
+        plan = _build_tool_plan(tool, spec, "test-group")
+        assert len(plan.query_params) == 1
+        assert plan.query_params[0].name == "uploadType"
+        assert plan.query_params[0].location == "query"
+        assert len(plan.body_fields) == 1
+        assert plan.body_fields[0].name == "name"
+
+    def test_no_location_falls_back_to_spec(self, spec):
+        """Params without location are matched against spec (backward compat)."""
+        from mcp_builder.codegen.plan import _build_tool_plan
+        from mcp_builder.schema.models import Parameter, Tool
+
+        tool = Tool(
+            tool_name="list_items",
+            endpoint="GET /items",
+            description="List items.",
+            parameters=[
+                Parameter(name="fields", description="Fields.", required=False),
+                Parameter(name="status", description="Status.", required=False),
+            ],
+        )
+        plan = _build_tool_plan(tool, spec, "test-group")
+        assert len(plan.query_params) == 2
+        names = {p.name for p in plan.query_params}
+        assert names == {"fields", "status"}
 
 
 # ---------------------------------------------------------------------------

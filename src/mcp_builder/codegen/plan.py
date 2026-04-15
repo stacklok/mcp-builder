@@ -286,41 +286,73 @@ def _build_tool_plan(tool: Tool, spec: OpenAPISpec, group_name: str) -> ToolPlan
             allowlist_keys=list(yaml_param_map),
         )
 
+        # Separate YAML params that have an explicit location from those
+        # that need spec-based inference.
+        explicit_query = {p.name for p in tool.parameters if p.location == "query"}
+        explicit_body = {p.name for p in tool.parameters if p.location == "body"}
+
         # Path params: always include all (needed for URL construction),
         # apply overrides if present in the allowlist.
         path_params = _build_param_plans(spec_path_params, yaml_param_map, "path")
 
-        # Query params: only include those named in the allowlist.
-        allowed_query = [p for p in spec_query_params if p.name in yaml_param_map]
+        # Query params: include those named in the allowlist that either
+        # have explicit location="query" or exist in the spec's query params.
+        allowed_query = [
+            p
+            for p in spec_query_params
+            if p.name in yaml_param_map and p.name not in explicit_body
+        ]
         query_params = _build_param_plans(allowed_query, yaml_param_map, "query")
+        # Also build query params that are explicitly marked location="query"
+        # but missing from the spec (the YAML is authoritative).
+        spec_query_names = {p.name for p in spec_query_params}
+        yaml_only_query = [
+            p
+            for p in tool.parameters
+            if p.location == "query" and p.name not in spec_query_names
+        ]
+        if yaml_only_query:
+            query_params.extend(
+                _build_yaml_only_params(yaml_only_query, location="query")
+            )
 
-        # Body fields: only include those named in the allowlist.
-        allowed_body = [f for f in spec_body if f.name in yaml_param_map]
+        # Body fields: include those named in the allowlist that either
+        # have explicit location="body" or exist in the spec's body fields.
+        allowed_body = [
+            f
+            for f in spec_body
+            if f.name in yaml_param_map and f.name not in explicit_query
+        ]
         body_fields = _build_body_param_plans(allowed_body, yaml_param_map)
+        # Also build body fields that are explicitly marked location="body"
+        # but missing from the spec (the YAML is authoritative).
+        spec_body_names = {f.name for f in spec_body}
+        yaml_only_body = [
+            p
+            for p in tool.parameters
+            if p.location == "body" and p.name not in spec_body_names
+        ]
+        if yaml_only_body:
+            body_fields.extend(_build_yaml_only_params(yaml_only_body, location="body"))
 
-        # Fallback: YAML params not found in spec query params or body fields.
-        # For POST/PUT/PATCH, these are synthesized as body fields using the
-        # YAML definitions. This handles specs that omit requestBody (common
-        # in auto-generated specs like Google Discovery) while the scope YAML
-        # correctly defines what the endpoint accepts.
+        # Warn about YAML params with no location that don't match any spec
+        # param — these are silently dropped, which is likely a mistake.
         matched_names = (
             {p.name for p in spec_path_params}
             | {p.name for p in allowed_query}
             | {f.name for f in allowed_body}
+            | explicit_query
+            | explicit_body
         )
-        unmatched = [p for p in tool.parameters if p.name not in matched_names]
-        if unmatched and method.upper() in ("POST", "PUT", "PATCH"):
-            body_fields.extend(_build_yaml_only_body_params(unmatched))
-            logger.info(
-                "synthesized body fields from YAML (not in spec)",
-                tool_name=tool_name,
-                synthesized=[p.name for p in unmatched],
-            )
-        elif unmatched:
+        unmatched = [
+            p
+            for p in tool.parameters
+            if p.name not in matched_names and p.location is None
+        ]
+        if unmatched:
             logger.warning(
-                "YAML parameters not found in spec",
+                "YAML parameters have no location and don't match spec — dropped",
                 tool_name=tool_name,
-                method=method,
                 unmatched=[p.name for p in unmatched],
             )
 
@@ -450,15 +482,15 @@ def _build_body_param_plans(
     return plans
 
 
-def _build_yaml_only_body_params(
+def _build_yaml_only_params(
     params: list[Parameter],
+    location: Literal["query", "body"],
 ) -> list[ParamPlan]:
-    """Synthesize body ParamPlan objects from YAML-only parameter definitions.
+    """Build ParamPlan objects from YAML parameters that have no spec match.
 
-    Used when the scope YAML defines parameters for a POST/PUT/PATCH endpoint
-    but the OpenAPI spec has no matching requestBody fields. This happens with
-    auto-generated specs (e.g. Google Discovery) that omit requestBody while
-    the scope YAML correctly describes what the endpoint accepts.
+    Used when the scope YAML declares an explicit ``location`` for parameters
+    that don't appear in the OpenAPI spec (e.g. the spec omits requestBody
+    for a POST endpoint, or omits a query param).
 
     Since the spec provides no type information, all fields default to ``str``.
     """
@@ -466,9 +498,10 @@ def _build_yaml_only_body_params(
     for param in params:
         py_name = _sanitize_name(param.name)
         logger.debug(
-            "yaml-only body param",
+            "yaml-only param",
             name=param.name,
             py_name=py_name,
+            location=location,
             required=param.required,
         )
         plans.append(
@@ -478,7 +511,7 @@ def _build_yaml_only_body_params(
                 py_type="str",
                 description=param.description,
                 required=param.required,
-                location="body",
+                location=location,
                 original_name=param.name,
             )
         )

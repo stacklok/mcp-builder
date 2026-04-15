@@ -246,6 +246,7 @@ groups:
           - name: {param_name}
             description: "{param description}"
             required: {true|false}
+            location: {query|body}  # omit for path params
         hints:
           - "{hint}"
 

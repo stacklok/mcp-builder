@@ -104,6 +104,7 @@ For each tool, review ALL parameters from the spec and decide which to include. 
 - Rarely-used optional parameters that add noise without value for the described workflows
 
 **For each included parameter, also:**
+- Assign a **location** of `query` or `body`. Query parameters appear in the URL (`?key=value`), body parameters are sent as JSON in the request body. Path parameters do not need a location — they are always included automatically for URL construction.
 - Decide required vs. optional status. If the spec marks it as required, keep it required. If the spec marks it as optional but workflows always need it, flag this ambiguity for human review (do NOT change required to true — just note it).
 - Note any parameters that need description rewrites (covered in the next step).
 
@@ -191,8 +192,8 @@ The following endpoints are flagged for your review. They are included by defaul
 - **Original operationId:** {operationId} {(renamed: reason) | (kept)}
 - **Description:** {LLM-optimized description}
 - **Parameters:**
-  - {name} ({required|optional}): {description}
-  - {name} ({required|optional}): {description}
+  - {name} ({required|optional}, {query|body}): {description}
+  - {name} ({required|optional}, {query|body}): {description}
 - **Parameters excluded:**
   - {name}: {reason for exclusion}
   - (or "None — all spec parameters included" if nothing was excluded)

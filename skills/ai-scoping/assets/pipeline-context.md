@@ -41,6 +41,7 @@ When a tool in `mcp-scope.yaml` defines a `parameters` list, those parameters ac
 - **Path parameters are always included** regardless of the allowlist, because they are required for URL construction.
 - When `parameters` is omitted (null), ALL spec parameters are used (backward compatible).
 - The `description` and `required` fields in the YAML override the spec values for matching parameters.
+- Each parameter should include a `location` field (`query` or `body`) indicating where it belongs in the HTTP request. Path parameters don't need a location. When `location` is omitted, codegen infers it from the OpenAPI spec — but explicit is preferred.
 
 This means the endpoint-scoper agent should actively curate parameters — including only what's useful for the described workflows and excluding noise.
 

@@ -23,6 +23,10 @@ class Parameter(BaseModel):
     corresponding values from the OpenAPI spec.
 
     When a tool omits ``parameters`` (None), all spec parameters are used.
+
+    The ``location`` field ("query" or "body") tells codegen where this
+    parameter belongs in the HTTP request. When omitted, the location is
+    inferred by matching the parameter name against the OpenAPI spec.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -30,6 +34,7 @@ class Parameter(BaseModel):
     name: str
     description: str
     required: bool
+    location: Literal["query", "body"] | None = None
 
 
 class OAuthConfig(BaseModel):
