@@ -4,6 +4,10 @@ Each method wraps an upstream API endpoint. FastMCP introspects the
 method signature to build the tool's input schema automatically.
 """
 
+from typing import Annotated
+
+from pydantic import Field
+
 from {{ module_name }}.client import APIClient
 
 
