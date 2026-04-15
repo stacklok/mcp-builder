@@ -103,19 +103,26 @@ def _build_tool_context(tool: ToolPlan) -> dict:
 def _build_signature(params: list[ParamPlan]) -> str:
     """Build the method signature fragment after ``self``.
 
-    Required params appear as ``name: type``, optional as
-    ``name: type | None = None``. Returns empty string if no params.
+    Each parameter uses ``Annotated[type, Field(description=...)]`` so
+    FastMCP can expose per-parameter descriptions in the tool's input
+    schema. Required params appear first, optional params get
+    ``| None = None``.
 
     Example:
         >>> _build_signature([required_param, optional_param])
-        ", item_id: str, color: str | None = None"
+        ', item_id: Annotated[str, Field(description="...")], color: Annotated[str | None, Field(description="...")] = None'
     """
     parts: list[str] = []
     for p in params:
+        desc = escape_python_string(p.description) if p.description else ""
         if p.required:
-            parts.append(f", {p.py_name}: {p.py_type}")
+            parts.append(
+                f', {p.py_name}: Annotated[{p.py_type}, Field(description="{desc}")]'
+            )
         else:
-            parts.append(f", {p.py_name}: {p.py_type} | None = None")
+            parts.append(
+                f', {p.py_name}: Annotated[{p.py_type} | None, Field(description="{desc}")] = None'
+            )
     return "".join(parts)
 
 

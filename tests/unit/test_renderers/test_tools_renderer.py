@@ -176,8 +176,8 @@ class TestRenderToolsModuleParams:
         )
         source = render_tools_module(make_plan(tools=[tool]))
         # title (required) should appear before color (optional) in signature
-        title_pos = source.index("title: str")
-        color_pos = source.index("color: str | None = None")
+        title_pos = source.index("title: Annotated[str,")
+        color_pos = source.index("color: Annotated[str | None,")
         assert title_pos < color_pos
 
     def test_optional_params_have_none_default(self) -> None:
@@ -187,7 +187,20 @@ class TestRenderToolsModuleParams:
             ],
         )
         source = render_tools_module(make_plan(tools=[tool]))
-        assert "fields: str | None = None" in source
+        assert "fields: Annotated[str | None," in source
+        assert "= None" in source
+
+    def test_param_descriptions_in_annotated(self) -> None:
+        tool = _make_tool(
+            path="/items",
+            query_params=[
+                _make_param(
+                    "q", location="query", required=False, description="Search query."
+                ),
+            ],
+        )
+        source = render_tools_module(make_plan(tools=[tool]))
+        assert 'Annotated[str | None, Field(description="Search query.")]' in source
 
     def test_tool_with_no_params(self) -> None:
         tool = _make_tool(
@@ -254,6 +267,20 @@ class TestRenderToolsModuleEdgeCases:
 
     def test_hints_with_quotes_compiles(self) -> None:
         tool = _make_tool(hints=['response includes "metadata" field'])
+        source = render_tools_module(make_plan(tools=[tool]))
+        compile(source, "<test>", "exec")
+
+    def test_param_description_with_quotes_compiles(self) -> None:
+        tool = _make_tool(
+            path="/items",
+            query_params=[
+                _make_param(
+                    "q",
+                    location="query",
+                    description='Filter by "type" field.',
+                ),
+            ],
+        )
         source = render_tools_module(make_plan(tools=[tool]))
         compile(source, "<test>", "exec")
 
