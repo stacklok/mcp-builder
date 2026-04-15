@@ -21,6 +21,14 @@ Reading guide:
       into a ServerPlan.
     - Renderers in codegen.renderers/ consume the plan via their function
       signatures (e.g., render_client_module(plan: ServerPlan) -> str).
+
+Parameter semantics:
+    When a tool in mcp-scope.yaml defines a ``parameters`` list, those
+    parameters act as an **allowlist**: only the listed parameters (plus
+    all path parameters) are included in the generated tool. Parameters
+    present in the OpenAPI spec but absent from the YAML are excluded.
+    When ``parameters`` is omitted (None), all spec parameters are used
+    (backward-compatible legacy mode).
 """
 
 from __future__ import annotations
@@ -227,26 +235,23 @@ def build_server_plan(scope: MCPScope, spec: OpenAPISpec) -> ServerPlan:
 def _build_tool_plan(tool: Tool, spec: OpenAPISpec, group_name: str) -> ToolPlan:
     """Build a ToolPlan for a single tool definition.
 
-    Extracts parameters from the OpenAPI spec, applies YAML overrides,
-    sanitizes names, and detects collisions.
+    Operates in two modes based on the YAML ``parameters`` field:
+
+    - **Allowlist mode** (``tool.parameters is not None``): only parameters
+      listed in the YAML are included for query params and body fields.
+      Path parameters are always included because they are required for URL
+      construction. YAML descriptions and required flags override spec values.
+    - **Legacy mode** (``tool.parameters is None``): all spec parameters are
+      included with no overrides. This preserves backward compatibility for
+      tools that don't define explicit parameters.
     """
     tool_name = tool.tool_name
     endpoint = tool.endpoint
     description = tool.description
-    parameters = tool.parameters or []
     hints: list[str] = tool.hints or []
 
     method, path = parse_endpoint(endpoint)
     logger.debug("building tool plan", tool_name=tool_name, endpoint=endpoint)
-
-    # Build YAML override lookup: name → (description, required)
-    yaml_overrides: dict[str, tuple[str, bool]] = {
-        p.name: (p.description, p.required) for p in parameters
-    }
-    if yaml_overrides:
-        logger.debug(
-            "yaml overrides", tool_name=tool_name, override_keys=list(yaml_overrides)
-        )
 
     # OpenAPI splits parameters into three locations. For a request like
     #   POST /items/{itemId}?fields=name  { "color": "red" }
@@ -266,15 +271,50 @@ def _build_tool_plan(tool: Tool, spec: OpenAPISpec, group_name: str) -> ToolPlan
             tool_name=tool_name,
             skipped=[p.name for p in skipped],
         )
-    path_params = _build_param_plans(
-        [p for p in spec_params if p.location == "path"], yaml_overrides, "path"
-    )
-    query_params = _build_param_plans(
-        [p for p in spec_params if p.location == "query"], yaml_overrides, "query"
-    )
-
+    spec_path_params = [p for p in spec_params if p.location == "path"]
+    spec_query_params = [p for p in spec_params if p.location == "query"]
     spec_body = get_body_fields(spec, method, path)
-    body_fields = _build_body_param_plans(spec_body, yaml_overrides)
+
+    if tool.parameters is not None:
+        # Allowlist mode: YAML parameters define which params to include.
+        yaml_param_map: dict[str, tuple[str, bool]] = {
+            p.name: (p.description, p.required) for p in tool.parameters
+        }
+        logger.debug(
+            "allowlist mode",
+            tool_name=tool_name,
+            allowlist_keys=list(yaml_param_map),
+        )
+
+        # Path params: always include all (needed for URL construction),
+        # apply overrides if present in the allowlist.
+        path_params = _build_param_plans(spec_path_params, yaml_param_map, "path")
+
+        # Query params: only include those named in the allowlist.
+        allowed_query = [p for p in spec_query_params if p.name in yaml_param_map]
+        query_params = _build_param_plans(allowed_query, yaml_param_map, "query")
+
+        # Body fields: only include those named in the allowlist.
+        allowed_body = [f for f in spec_body if f.name in yaml_param_map]
+        body_fields = _build_body_param_plans(allowed_body, yaml_param_map)
+
+        excluded_query = [
+            p.name for p in spec_query_params if p.name not in yaml_param_map
+        ]
+        excluded_body = [f.name for f in spec_body if f.name not in yaml_param_map]
+        if excluded_query or excluded_body:
+            logger.info(
+                "allowlist filtered params",
+                tool_name=tool_name,
+                excluded_query=excluded_query,
+                excluded_body=excluded_body,
+            )
+    else:
+        # Legacy mode: no YAML parameters — include all spec params.
+        no_overrides: dict[str, tuple[str, bool]] = {}
+        path_params = _build_param_plans(spec_path_params, no_overrides, "path")
+        query_params = _build_param_plans(spec_query_params, no_overrides, "query")
+        body_fields = _build_body_param_plans(spec_body, no_overrides)
 
     # Detect and resolve name collisions across all param locations
     all_params = path_params + query_params + body_fields

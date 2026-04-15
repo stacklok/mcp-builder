@@ -25,7 +25,7 @@ class TestAnalyzeSpec:
 
     def test_endpoint_count(self, spec):
         result = analyze_spec(spec)
-        assert result.quality.endpoint_count == 9
+        assert result.quality.endpoint_count == 10
 
     def test_endpoints_have_method_and_path(self, spec):
         result = analyze_spec(spec)

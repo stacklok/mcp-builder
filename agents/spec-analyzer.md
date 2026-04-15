@@ -22,7 +22,7 @@ When invoked, you will receive the following in your prompt:
 - **Pipeline context path** — absolute path to `pipeline-context.md` (read this first)
 - **Working directory** — absolute path where `spec-analysis.md` should be written
 - **Workflows** — at least 3 user workflow descriptions
-- **Spec analysis JSON** — structured output from `mcp-builder analyze` containing:
+- **Spec analysis JSON path** — absolute path to `analyze.json` containing structured output from `mcp-builder analyze` with:
   - `spec_version`, `base_url`, `total_endpoints`
   - `security_schemes` — map of scheme names to their definitions
   - `quality` — `endpoints_with_descriptions`, `parameters_with_descriptions`, `total_parameters`
@@ -38,7 +38,11 @@ When invoked, you will receive the following in your prompt:
 
 Read `pipeline-context.md` at the provided path. Understand what mcp-scope.yaml is, the schema constraints, and your role in the pipeline.
 
-### Step 2: Quality Assessment
+### Step 2: Read Spec Analysis JSON
+
+Read the file at the path provided as `SPEC ANALYSIS JSON PATH` in your prompt. This is a JSON file produced by `mcp-builder analyze` containing all endpoints, security schemes, and quality metrics. Parse its contents — the remaining steps reference this data.
+
+### Step 3: Quality Assessment
 
 Using the `quality` metrics and `endpoints` from the JSON, assess:
 
@@ -54,7 +58,7 @@ Using the `quality` metrics and `endpoints` from the JSON, assess:
    - Missing or incomplete OAuth scopes
    - Very large endpoint count (500+) that may benefit from aggressive filtering
 
-### Step 3: Propose Semantic Groups
+### Step 4: Propose Semantic Groups
 
 Cluster all endpoints into semantic groups. Use a layered strategy:
 
@@ -74,7 +78,7 @@ Cluster all endpoints into semantic groups. Use a layered strategy:
 - Group descriptions should be one sentence explaining the domain area
 - Prefer fewer groups: 3-8 is ideal. More than 12 suggests the grouping is too granular.
 
-### Step 4: Annotate Workflow Relevance
+### Step 5: Annotate Workflow Relevance
 
 For each proposed group, assess its relevance to the provided workflows:
 
@@ -84,7 +88,7 @@ For each proposed group, assess its relevance to the provided workflows:
 
 Include a brief rationale (one sentence) explaining the rating. Be opinionated — clear ratings help the user make faster decisions.
 
-### Step 5: Write spec-analysis.md
+### Step 6: Write spec-analysis.md
 
 Write the analysis to `{working_dir}/spec-analysis.md` using this exact format:
 
@@ -132,7 +136,7 @@ Write the analysis to `{working_dir}/spec-analysis.md` using this exact format:
 - For endpoints missing a summary, use the description truncated to 60 chars, or "(no description)" if both are missing
 - Sort groups by workflow relevance: high groups first, then medium, then low
 
-### Step 6: Report Completion
+### Step 7: Report Completion
 
 Output confirmation:
 
