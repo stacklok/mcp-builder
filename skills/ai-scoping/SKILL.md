@@ -39,26 +39,11 @@ Given an OpenAPI spec path ($ARGUMENTS), execute the following steps:
 
 1. Verify the OpenAPI spec file exists at the provided path. If it does not exist, tell the user and exit.
 
-2. Collect workflow descriptions from the user. **Minimum 3 workflows required.** Workflows describe what users need to accomplish with the API — they should capture different personas or use cases to ensure broad coverage of the API surface. Iterate with the user until you have at least 3 workflows.
-
-   If the user provided workflows alongside the spec path, count them. If fewer than 3, use AskUserQuestion to ask for more:
-
-   ```
-   The scoping skill requires at least 3 workflow descriptions to ensure good
-   API surface coverage. Each workflow should describe a specific task a user
-   performs with this API, from a specific persona's perspective.
-
-   Example workflows for Google Drive:
-   - "Engineers search for and read design docs and specs"
-   - "Team members create shared documents and leave review comments"
-   - "Managers organize files into project folders and manage access"
-
-   Please provide your workflow descriptions (at least 3).
-   ```
+2. Then ask the user for workflow descriptions. **Minimum 1 workflows required.** Workflows describe what users need to accomplish with the API — they should capture different personas or use cases to ensure broad coverage of the API surface. Encourage the user to provide as many distinct workflows as possible (3 is a good target) to improve the quality of the scoping results. But you can proceed with fewer if needed.
 
 3. Ask the user about authentication requirements. Add an auth hint if the user talks about the spec's auth.
 
-4. Create a working directory for intermediate files: `{cwd}/scoping-output-{date}/`
+4. Create a working directory for intermediate files: `{cwd}/scoping-output-{date_timestamp}/`
 
 ---
 
@@ -115,7 +100,7 @@ The spec-analyzer agent will:
 
 ### Step 3: Group Selection (USER GATE)
 
-Once the spec-analyzer agent completes:
+Once the spec-analyzer agent completes, explain to the user that you need help downscoping tool groups, and they can scope individual tools later.
 
 1. Read `{working_dir}/spec-analysis.md`
 2. Present the quality report to the user
@@ -124,7 +109,7 @@ Once the spec-analyzer agent completes:
    - Number of endpoints in the group
    - Workflow relevance rating (high/medium/low) with brief reason
 4. Recommend which groups to include based on workflow alignment (suggest all high-relevance groups, optionally medium)
-5. Ask the user which groups to include using AskUserQuestion
+5. Ask the user which groups to include
 
 **Do NOT proceed to Step 4 until the user has selected their groups.**
 
@@ -184,6 +169,7 @@ Once the endpoint-scoper agent completes:
    - **Tool list**: for each tool, show the tool name, endpoint, description, parameters, and hints
    - **Renamed tools**: highlight any tools where the name was changed from the original operationId
 3. Ask the user to approve the tool list or request changes (including which flagged endpoints to remove, if any)
+4. Do a final audit of the user tool selections for consistency. Make sure tools that need to appear together are all selected or that the user understands the implications of removing certain tools (e.g., if they remove an endpoint that is a prerequisite for another tool, flag that for review).
 
 **Do NOT proceed to Step 6 until the user approves.**
 

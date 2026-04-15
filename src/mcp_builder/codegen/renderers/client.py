@@ -63,6 +63,12 @@ _CLIENT_TEMPLATE = textwrap.dedent('''\
             Returns:
                 Parsed JSON response as a dict.
             """
+            # Strip None query params so unset optional args aren't sent
+            # as empty strings (e.g. driveId=&pageToken=) which cause 400s.
+            # Body is left as-is: some APIs distinguish null from absent.
+            if params:
+                params = {{k: v for k, v in params.items() if v is not None}}
+
             headers: dict[str, str] = {{}}
             token = get_bearer_token()
             if token:

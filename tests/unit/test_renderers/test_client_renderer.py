@@ -34,6 +34,25 @@ class TestRenderClientModule:
         source = render_client_module(plan)
         assert "class APIClient:" in source
 
+    def test_strips_none_query_params(self, plan: ServerPlan) -> None:
+        source = render_client_module(plan)
+        # None-stripping appears for query params
+        lines = source.splitlines()
+        none_filter_lines = [line for line in lines if "if v is not None" in line]
+        assert len(none_filter_lines) == 1
+        # The filter is on params, not json_body
+        assert "params" in none_filter_lines[0]
+
+    def test_preserves_none_in_json_body(self, plan: ServerPlan) -> None:
+        source = render_client_module(plan)
+        # json_body should NOT have None-stripping — APIs may distinguish
+        # null from absent (e.g. PATCH endpoints).
+        lines = source.splitlines()
+        json_body_filter = [
+            line for line in lines if "json_body" in line and "if v is not None" in line
+        ]
+        assert len(json_body_filter) == 0
+
     def test_base_url_with_quotes_compiles(self) -> None:
         plan = ServerPlan(
             module_name="test_api_mcp",
