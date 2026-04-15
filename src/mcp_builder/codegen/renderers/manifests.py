@@ -77,6 +77,9 @@ def render_manifests(plan: ServerPlan) -> dict[str, str]:
 
 def render_mcpserver(plan: ServerPlan) -> str:
     """Render the MCPServer CRD manifest."""
+    logger.debug(
+        "Rendering MCPServer for '%s' (auth=%s)", plan.server_name, plan.auth.type
+    )
     tmpl = _env.get_template("mcpserver.yaml.jinja2")
     return tmpl.render(
         server_name=plan.server_name,
@@ -98,9 +101,11 @@ def render_external_auth_config(plan: ServerPlan) -> str:
         raise ValueError("No auth config to render when auth.type is 'none'")
 
     if plan.auth.type == "oauth_bearer":
+        logger.debug("Rendering embedded auth server config for '%s'", plan.server_name)
         return _render_embedded_auth_server(plan)
 
     if plan.auth.type == "api_key":
+        logger.debug("Rendering bearer token auth config for '%s'", plan.server_name)
         return _render_bearer_token_auth(plan)
 
     raise ValueError(f"Unexpected auth type: {plan.auth.type!r}")
@@ -120,6 +125,7 @@ def render_secret(plan: ServerPlan) -> str:
             f"Secret template is only for api_key auth, got {plan.auth.type!r}"
         )
 
+    logger.debug("Rendering Secret template for '%s'", plan.server_name)
     tmpl = _env.get_template("secret.yaml.jinja2")
     return tmpl.render(
         server_name=plan.server_name,
@@ -202,11 +208,21 @@ def _derive_provider_name(issuer: str) -> str:
     hostname_lower = hostname.lower()
     for pattern, name in known:
         if pattern in hostname_lower:
+            logger.debug("Matched known provider '%s' from issuer '%s'", name, issuer)
             return name
 
     # Fall back to second-level domain (e.g., "example" from "sso.example.com")
     parts = hostname_lower.split(".")
     if len(parts) >= 2:
-        return re.sub(r"[^a-z0-9-]", "", parts[-2])
+        fallback = re.sub(r"[^a-z0-9-]", "", parts[-2])
+        logger.info(
+            "No known provider matched for issuer '%s'; using domain label '%s'",
+            issuer,
+            fallback,
+        )
+        return fallback
 
+    logger.warning(
+        "Could not derive provider name from issuer '%s'; using 'upstream'", issuer
+    )
     return "upstream"
