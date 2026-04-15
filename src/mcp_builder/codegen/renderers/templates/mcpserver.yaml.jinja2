@@ -18,6 +18,7 @@ metadata:
 spec:
   image: {{ server_name }}-mcp:latest
   transport: streamable-http
+  proxyPort: 8080
   permissionProfile:
     type: builtin
     name: network
@@ -25,3 +26,23 @@ spec:
   externalAuthConfigRef:
     name: {{ server_name }}-auth
 {% endif %}
+{% if auth_type == "oauth_bearer" %}
+  oidcConfig:
+    issuer: https://mcp.REPLACE_ME_DOMAIN/{{ server_name }}
+    audiences:
+    - https://mcp.REPLACE_ME_DOMAIN/{{ server_name }}
+{% endif %}
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+  audit:
+    enabled: true
+  telemetry:
+    openTelemetry:
+      endpoint: http://REPLACE_ME_OTEL_ENDPOINT:4317
+    prometheus:
+      enabled: true

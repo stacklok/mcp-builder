@@ -1,0 +1,32 @@
+# Ingress — external access for {{ server_name }}.
+#
+# Before applying:
+#   1. Replace REPLACE_ME_DOMAIN with your actual domain.
+#   2. Ensure an Ingress controller (e.g., AWS ALB) is installed.
+#
+# Namespace must match the MCPServer.
+#
+# Docs: https://docs.stacklok.com/toolhive/reference/crd-spec
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ server_name }}-ingress
+  namespace: {{ namespace }}
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/group.name: mcp-servers
+spec:
+  ingressClassName: alb
+  rules:
+  - host: mcp.REPLACE_ME_DOMAIN
+    http:
+      paths:
+      - path: /{{ server_name }}
+        pathType: Prefix
+        backend:
+          service:
+            name: {{ server_name }}
+            port:
+              number: 8080
