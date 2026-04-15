@@ -80,6 +80,13 @@ class TestRunPipeline:
         doc = yaml.safe_load(secret.read_text())
         assert doc["stringData"]["token"] == "REPLACE_ME"
 
+    def test_creates_ingress_yaml(self, project_dir: Path) -> None:
+        ingress = project_dir / "deploy" / "ingress.yaml"
+        assert ingress.exists()
+        doc = yaml.safe_load(ingress.read_text())
+        assert doc["kind"] == "Ingress"
+        assert doc["metadata"]["name"] == "test-api-ingress"
+
 
 class TestRunPipelineOAuth:
     def test_creates_oauth_auth_config(self, tmp_path: Path) -> None:

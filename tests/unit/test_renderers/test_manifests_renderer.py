@@ -9,6 +9,7 @@ from mcp_builder.codegen.plan import AuthPlan, ServerPlan
 from mcp_builder.codegen.renderers.manifests import (
     _derive_provider_name,
     render_external_auth_config,
+    render_ingress,
     render_manifests,
     render_mcpserver,
     render_secret,
@@ -78,6 +79,41 @@ class TestRenderMcpserver:
     def test_no_auth_ref_when_none(self) -> None:
         doc = yaml.safe_load(render_mcpserver(NONE_PLAN))
         assert "externalAuthConfigRef" not in doc["spec"]
+
+    def test_proxy_port(self, plan: ServerPlan) -> None:
+        doc = yaml.safe_load(render_mcpserver(plan))
+        assert doc["spec"]["proxyPort"] == 8080
+
+    def test_resources(self, plan: ServerPlan) -> None:
+        doc = yaml.safe_load(render_mcpserver(plan))
+        res = doc["spec"]["resources"]
+        assert res["requests"] == {"cpu": "50m", "memory": "64Mi"}
+        assert res["limits"] == {"cpu": "100m", "memory": "128Mi"}
+
+    def test_audit_enabled(self, plan: ServerPlan) -> None:
+        doc = yaml.safe_load(render_mcpserver(plan))
+        assert doc["spec"]["audit"]["enabled"] is True
+
+    def test_telemetry(self, plan: ServerPlan) -> None:
+        doc = yaml.safe_load(render_mcpserver(plan))
+        telemetry = doc["spec"]["telemetry"]
+        assert "REPLACE_ME_OTEL_ENDPOINT" in telemetry["openTelemetry"]["endpoint"]
+        assert telemetry["prometheus"]["enabled"] is True
+
+    def test_oidc_config_when_oauth(self) -> None:
+        doc = yaml.safe_load(render_mcpserver(OAUTH_PLAN))
+        oidc = doc["spec"]["oidcConfig"]
+        assert "REPLACE_ME_DOMAIN" in oidc["issuer"]
+        assert "test-api" in oidc["issuer"]
+        assert len(oidc["audiences"]) == 1
+
+    def test_no_oidc_config_when_api_key(self) -> None:
+        doc = yaml.safe_load(render_mcpserver(API_KEY_PLAN))
+        assert "oidcConfig" not in doc["spec"]
+
+    def test_no_oidc_config_when_none(self) -> None:
+        doc = yaml.safe_load(render_mcpserver(NONE_PLAN))
+        assert "oidcConfig" not in doc["spec"]
 
     def test_deterministic(self, plan: ServerPlan) -> None:
         assert render_mcpserver(plan) == render_mcpserver(plan)
@@ -149,6 +185,40 @@ class TestRenderEmbeddedAuthServer:
         doc = yaml.safe_load(render_external_auth_config(OAUTH_PLAN))
         oidc = doc["spec"]["embeddedAuthServer"]["upstreamProviders"][0]["oidcConfig"]
         assert oidc["scopes"] == ["openid", "email"]
+
+    def test_redirect_uri(self) -> None:
+        doc = yaml.safe_load(render_external_auth_config(OAUTH_PLAN))
+        oidc = doc["spec"]["embeddedAuthServer"]["upstreamProviders"][0]["oidcConfig"]
+        assert "REPLACE_ME_DOMAIN" in oidc["redirectUri"]
+        assert "test-api/oauth/callback" in oidc["redirectUri"]
+
+    def test_token_lifespans(self) -> None:
+        doc = yaml.safe_load(render_external_auth_config(OAUTH_PLAN))
+        lifespans = doc["spec"]["embeddedAuthServer"]["tokenLifespans"]
+        assert lifespans["accessToken"] == "1h"
+        assert lifespans["refreshToken"] == "168h"
+        assert lifespans["authorizationCode"] == "10m"
+
+    def test_scopes_inject_openid_email(self) -> None:
+        """Scopes missing openid/email get them injected."""
+        plan = make_plan(
+            auth=AuthPlan(
+                type="oauth_bearer",
+                issuer="https://accounts.google.com",
+                scopes=["https://www.googleapis.com/auth/drive.readonly"],
+            )
+        )
+        doc = yaml.safe_load(render_external_auth_config(plan))
+        oidc = doc["spec"]["embeddedAuthServer"]["upstreamProviders"][0]["oidcConfig"]
+        assert oidc["scopes"][:2] == ["openid", "email"]
+        assert "https://www.googleapis.com/auth/drive.readonly" in oidc["scopes"]
+
+    def test_scopes_no_duplicate_openid_email(self) -> None:
+        """Scopes already containing openid/email are not duplicated."""
+        doc = yaml.safe_load(render_external_auth_config(OAUTH_PLAN))
+        oidc = doc["spec"]["embeddedAuthServer"]["upstreamProviders"][0]["oidcConfig"]
+        assert oidc["scopes"].count("openid") == 1
+        assert oidc["scopes"].count("email") == 1
 
     def test_no_signing_keys(self) -> None:
         """Signing keys are intentionally omitted — auto-generated at runtime."""
@@ -229,27 +299,76 @@ class TestRenderSecret:
 
 
 # ---------------------------------------------------------------------------
+# render_ingress
+# ---------------------------------------------------------------------------
+
+
+class TestRenderIngress:
+    def test_valid_yaml(self, plan: ServerPlan) -> None:
+        doc = yaml.safe_load(render_ingress(plan))
+        assert isinstance(doc, dict)
+
+    def test_api_version(self, plan: ServerPlan) -> None:
+        doc = yaml.safe_load(render_ingress(plan))
+        assert doc["apiVersion"] == "networking.k8s.io/v1"
+
+    def test_kind(self, plan: ServerPlan) -> None:
+        doc = yaml.safe_load(render_ingress(plan))
+        assert doc["kind"] == "Ingress"
+
+    def test_metadata_name(self, plan: ServerPlan) -> None:
+        doc = yaml.safe_load(render_ingress(plan))
+        assert doc["metadata"]["name"] == f"{plan.server_name}-ingress"
+
+    def test_namespace(self, plan: ServerPlan) -> None:
+        doc = yaml.safe_load(render_ingress(plan))
+        assert doc["metadata"]["namespace"] == "toolhive-system"
+
+    def test_host_placeholder(self, plan: ServerPlan) -> None:
+        doc = yaml.safe_load(render_ingress(plan))
+        host = doc["spec"]["rules"][0]["host"]
+        assert "REPLACE_ME_DOMAIN" in host
+
+    def test_path(self, plan: ServerPlan) -> None:
+        doc = yaml.safe_load(render_ingress(plan))
+        path = doc["spec"]["rules"][0]["http"]["paths"][0]
+        assert path["path"] == f"/{plan.server_name}"
+        assert path["pathType"] == "Prefix"
+
+    def test_backend_port(self, plan: ServerPlan) -> None:
+        doc = yaml.safe_load(render_ingress(plan))
+        backend = doc["spec"]["rules"][0]["http"]["paths"][0]["backend"]
+        assert backend["service"]["name"] == plan.server_name
+        assert backend["service"]["port"]["number"] == 8080
+
+    def test_has_comment_header(self, plan: ServerPlan) -> None:
+        raw = render_ingress(plan)
+        assert raw.startswith("# Ingress")
+
+
+# ---------------------------------------------------------------------------
 # render_manifests (convenience wrapper)
 # ---------------------------------------------------------------------------
 
 
 class TestRenderManifests:
-    def test_api_key_returns_three_files(self) -> None:
+    def test_api_key_returns_four_files(self) -> None:
         result = render_manifests(API_KEY_PLAN)
+        assert len(result) == 4
+
+    def test_oauth_returns_three_files(self) -> None:
+        result = render_manifests(OAUTH_PLAN)
         assert len(result) == 3
 
-    def test_oauth_returns_two_files(self) -> None:
-        result = render_manifests(OAUTH_PLAN)
-        assert len(result) == 2
-
-    def test_none_returns_one_file(self) -> None:
+    def test_none_returns_two_files(self) -> None:
         result = render_manifests(NONE_PLAN)
-        assert len(result) == 1
+        assert len(result) == 2
 
     def test_filenames_api_key(self) -> None:
         result = render_manifests(API_KEY_PLAN)
         assert set(result.keys()) == {
             "mcpserver.yaml",
+            "ingress.yaml",
             "mcpexternalauthconfig.yaml",
             "secret.yaml",
         }
@@ -258,12 +377,13 @@ class TestRenderManifests:
         result = render_manifests(OAUTH_PLAN)
         assert set(result.keys()) == {
             "mcpserver.yaml",
+            "ingress.yaml",
             "mcpexternalauthconfig.yaml",
         }
 
     def test_filenames_without_auth(self) -> None:
         result = render_manifests(NONE_PLAN)
-        assert set(result.keys()) == {"mcpserver.yaml"}
+        assert set(result.keys()) == {"mcpserver.yaml", "ingress.yaml"}
 
     def test_all_values_are_strings(self) -> None:
         for content in render_manifests(OAUTH_PLAN).values():

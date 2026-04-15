@@ -5,6 +5,7 @@ Produces Kubernetes-style manifests for deploying a generated MCP server
 on ToolHive:
 
     - MCPServer CRD — always generated
+    - Ingress — always generated (external access)
     - MCPExternalAuthConfig CRD — only when auth is configured
     - Secret template — only when auth type is api_key (bearerToken)
 
@@ -49,8 +50,9 @@ def render_manifests(plan: ServerPlan) -> dict[str, str]:
     Pipeline stage: rendering (plan -> {filename: YAML string}).
     Called by: cli.run_pipeline().
 
-    Returns a dict with 1-3 entries depending on auth type:
+    Returns a dict with 2-4 entries depending on auth type:
         - "mcpserver.yaml" — always present
+        - "ingress.yaml" — always present
         - "mcpexternalauthconfig.yaml" — present when auth.type != "none"
         - "secret.yaml" — present only when auth.type == "api_key"
     """
@@ -58,6 +60,7 @@ def render_manifests(plan: ServerPlan) -> dict[str, str]:
 
     manifests: dict[str, str] = {
         "mcpserver.yaml": render_mcpserver(plan),
+        "ingress.yaml": render_ingress(plan),
     }
 
     if plan.auth.type != "none":
@@ -86,6 +89,7 @@ def render_mcpserver(plan: ServerPlan) -> str:
         api_version=TOOLHIVE_API_VERSION,
         namespace=DEFAULT_NAMESPACE,
         has_auth=plan.auth.type != "none",
+        auth_type=plan.auth.type,
     )
 
 
@@ -133,6 +137,16 @@ def render_secret(plan: ServerPlan) -> str:
     )
 
 
+def render_ingress(plan: ServerPlan) -> str:
+    """Render the Kubernetes Ingress manifest for external access."""
+    logger.debug("Rendering Ingress for '%s'", plan.server_name)
+    tmpl = _env.get_template("ingress.yaml.jinja2")
+    return tmpl.render(
+        server_name=plan.server_name,
+        namespace=DEFAULT_NAMESPACE,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Auth-type-specific renderers
 # ---------------------------------------------------------------------------
@@ -146,7 +160,10 @@ def _render_embedded_auth_server(plan: ServerPlan) -> str:
     """
     provider_name = _derive_provider_name(plan.auth.issuer or "upstream")
     issuer_url = plan.auth.issuer or "https://REPLACE_ME"
-    scopes = list(plan.auth.scopes or [])
+    # Ensure openid and email scopes are always present for user identity.
+    required_scopes = ["openid", "email"]
+    raw_scopes = list(plan.auth.scopes or [])
+    scopes = required_scopes + [s for s in raw_scopes if s not in required_scopes]
 
     tmpl = _env.get_template("authconfig_embedded.yaml.jinja2")
     return tmpl.render(
