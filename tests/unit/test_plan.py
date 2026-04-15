@@ -207,6 +207,168 @@ class TestParameterAllowlist:
 
 
 # ---------------------------------------------------------------------------
+# Body field fallback — YAML params synthesized for POST/PUT/PATCH
+# ---------------------------------------------------------------------------
+
+
+class TestBodyFieldFallback:
+    """When spec has no requestBody, YAML params become body fields for POST/PUT/PATCH."""
+
+    def test_post_no_request_body_synthesizes_body_fields(self, spec):
+        """POST with no requestBody: YAML params become body fields."""
+        from mcp_builder.codegen.plan import _build_tool_plan
+        from mcp_builder.schema.models import Parameter, Tool
+
+        tool = Tool(
+            tool_name="create_file",
+            endpoint="POST /files",
+            description="Create a file.",
+            parameters=[
+                Parameter(name="name", description="File name.", required=True),
+                Parameter(name="mimeType", description="MIME type.", required=True),
+                Parameter(
+                    name="parents", description="Parent folders.", required=False
+                ),
+            ],
+        )
+        plan = _build_tool_plan(tool, spec, "test-group")
+        assert len(plan.body_fields) == 3
+        names = {f.name for f in plan.body_fields}
+        assert names == {"name", "mimeType", "parents"}
+
+    def test_synthesized_fields_have_correct_location(self, spec):
+        """Synthesized fields have location='body'."""
+        from mcp_builder.codegen.plan import _build_tool_plan
+        from mcp_builder.schema.models import Parameter, Tool
+
+        tool = Tool(
+            tool_name="create_file",
+            endpoint="POST /files",
+            description="Create a file.",
+            parameters=[
+                Parameter(name="name", description="File name.", required=True),
+            ],
+        )
+        plan = _build_tool_plan(tool, spec, "test-group")
+        assert plan.body_fields[0].location == "body"
+
+    def test_synthesized_fields_preserve_required(self, spec):
+        """Synthesized fields preserve YAML required flags."""
+        from mcp_builder.codegen.plan import _build_tool_plan
+        from mcp_builder.schema.models import Parameter, Tool
+
+        tool = Tool(
+            tool_name="create_file",
+            endpoint="POST /files",
+            description="Create a file.",
+            parameters=[
+                Parameter(name="name", description="File name.", required=True),
+                Parameter(
+                    name="parents", description="Parent folders.", required=False
+                ),
+            ],
+        )
+        plan = _build_tool_plan(tool, spec, "test-group")
+        name_field = next(f for f in plan.body_fields if f.name == "name")
+        parents_field = next(f for f in plan.body_fields if f.name == "parents")
+        assert name_field.required is True
+        assert parents_field.required is False
+
+    def test_synthesized_fields_preserve_description(self, spec):
+        """Synthesized fields use YAML descriptions."""
+        from mcp_builder.codegen.plan import _build_tool_plan
+        from mcp_builder.schema.models import Parameter, Tool
+
+        tool = Tool(
+            tool_name="create_file",
+            endpoint="POST /files",
+            description="Create a file.",
+            parameters=[
+                Parameter(name="name", description="The file name.", required=True),
+            ],
+        )
+        plan = _build_tool_plan(tool, spec, "test-group")
+        assert plan.body_fields[0].description == "The file name."
+
+    def test_synthesized_fields_default_to_str(self, spec):
+        """Synthesized fields default to str type (no spec type info)."""
+        from mcp_builder.codegen.plan import _build_tool_plan
+        from mcp_builder.schema.models import Parameter, Tool
+
+        tool = Tool(
+            tool_name="create_file",
+            endpoint="POST /files",
+            description="Create a file.",
+            parameters=[
+                Parameter(name="name", description="File name.", required=True),
+            ],
+        )
+        plan = _build_tool_plan(tool, spec, "test-group")
+        assert plan.body_fields[0].py_type == "str"
+
+    def test_post_with_path_param_and_no_body(self, spec):
+        """POST with path param + YAML body params: path param matched, rest synthesized."""
+        from mcp_builder.codegen.plan import _build_tool_plan
+        from mcp_builder.schema.models import Parameter, Tool
+
+        tool = Tool(
+            tool_name="create_comment",
+            endpoint="POST /files/{fileId}/comments",
+            description="Create a comment.",
+            parameters=[
+                Parameter(name="fileId", description="File ID.", required=True),
+                Parameter(name="content", description="Comment text.", required=True),
+            ],
+        )
+        plan = _build_tool_plan(tool, spec, "test-group")
+        assert len(plan.path_params) == 1
+        assert plan.path_params[0].name == "fileId"
+        assert len(plan.body_fields) == 1
+        assert plan.body_fields[0].name == "content"
+        assert plan.body_fields[0].location == "body"
+
+    def test_get_does_not_synthesize_body_fields(self, spec):
+        """GET with unmatched YAML params does NOT synthesize body fields."""
+        from mcp_builder.codegen.plan import _build_tool_plan
+        from mcp_builder.schema.models import Parameter, Tool
+
+        tool = Tool(
+            tool_name="list_items",
+            endpoint="GET /items",
+            description="List items.",
+            parameters=[
+                Parameter(
+                    name="nonexistent", description="Not in spec.", required=False
+                ),
+            ],
+        )
+        plan = _build_tool_plan(tool, spec, "test-group")
+        assert len(plan.body_fields) == 0
+
+    def test_mixed_spec_body_and_synthesized(self, spec):
+        """When spec has some body fields, only unmatched YAML params are synthesized."""
+        from mcp_builder.codegen.plan import _build_tool_plan
+        from mcp_builder.schema.models import Parameter, Tool
+
+        # POST /items has body fields [name, description] in the spec.
+        # YAML lists name (matched) + extra_field (unmatched => synthesized).
+        tool = Tool(
+            tool_name="create_item",
+            endpoint="POST /items",
+            description="Create an item.",
+            parameters=[
+                Parameter(name="name", description="Item name.", required=True),
+                Parameter(name="extra_field", description="Extra.", required=False),
+            ],
+        )
+        plan = _build_tool_plan(tool, spec, "test-group")
+        names = {f.name for f in plan.body_fields}
+        assert "name" in names  # from spec body fields
+        assert "extra_field" in names  # synthesized
+        assert len(plan.body_fields) == 2
+
+
+# ---------------------------------------------------------------------------
 # ParamPlan — name sanitization
 # ---------------------------------------------------------------------------
 

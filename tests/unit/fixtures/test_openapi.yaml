@@ -209,6 +209,27 @@ paths:
       responses:
         "201":
           description: Created
+  /files:
+    post:
+      operationId: createFile
+      summary: Create file metadata (no requestBody defined)
+      responses:
+        "201":
+          description: Created
+  /files/{fileId}/comments:
+    post:
+      operationId: createComment
+      summary: Create a comment (no requestBody defined)
+      parameters:
+        - name: fileId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: "The ID of the file."
+      responses:
+        "201":
+          description: Created
 components:
   parameters:
     owner:

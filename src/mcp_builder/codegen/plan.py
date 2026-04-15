@@ -51,7 +51,7 @@ from mcp_builder.spec import (
     get_parameters,
     parse_endpoint,
 )
-from mcp_builder.schema.models import MCPScope, Tool
+from mcp_builder.schema.models import MCPScope, Parameter, Tool
 
 logger = structlog.get_logger()
 
@@ -298,6 +298,32 @@ def _build_tool_plan(tool: Tool, spec: OpenAPISpec, group_name: str) -> ToolPlan
         allowed_body = [f for f in spec_body if f.name in yaml_param_map]
         body_fields = _build_body_param_plans(allowed_body, yaml_param_map)
 
+        # Fallback: YAML params not found in spec query params or body fields.
+        # For POST/PUT/PATCH, these are synthesized as body fields using the
+        # YAML definitions. This handles specs that omit requestBody (common
+        # in auto-generated specs like Google Discovery) while the scope YAML
+        # correctly defines what the endpoint accepts.
+        matched_names = (
+            {p.name for p in spec_path_params}
+            | {p.name for p in allowed_query}
+            | {f.name for f in allowed_body}
+        )
+        unmatched = [p for p in tool.parameters if p.name not in matched_names]
+        if unmatched and method.upper() in ("POST", "PUT", "PATCH"):
+            body_fields.extend(_build_yaml_only_body_params(unmatched))
+            logger.info(
+                "synthesized body fields from YAML (not in spec)",
+                tool_name=tool_name,
+                synthesized=[p.name for p in unmatched],
+            )
+        elif unmatched:
+            logger.warning(
+                "YAML parameters not found in spec",
+                tool_name=tool_name,
+                method=method,
+                unmatched=[p.name for p in unmatched],
+            )
+
         excluded_query = [
             p.name for p in spec_query_params if p.name not in yaml_param_map
         ]
@@ -419,6 +445,41 @@ def _build_body_param_plans(
                 required=required,
                 location="body",
                 original_name=field.name,
+            )
+        )
+    return plans
+
+
+def _build_yaml_only_body_params(
+    params: list[Parameter],
+) -> list[ParamPlan]:
+    """Synthesize body ParamPlan objects from YAML-only parameter definitions.
+
+    Used when the scope YAML defines parameters for a POST/PUT/PATCH endpoint
+    but the OpenAPI spec has no matching requestBody fields. This happens with
+    auto-generated specs (e.g. Google Discovery) that omit requestBody while
+    the scope YAML correctly describes what the endpoint accepts.
+
+    Since the spec provides no type information, all fields default to ``str``.
+    """
+    plans = []
+    for param in params:
+        py_name = _sanitize_name(param.name)
+        logger.debug(
+            "yaml-only body param",
+            name=param.name,
+            py_name=py_name,
+            required=param.required,
+        )
+        plans.append(
+            ParamPlan(
+                name=param.name,
+                py_name=py_name,
+                py_type="str",
+                description=param.description,
+                required=param.required,
+                location="body",
+                original_name=param.name,
             )
         )
     return plans
