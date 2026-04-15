@@ -28,6 +28,16 @@ groups:
       - tool_name: create_item
         endpoint: POST /items
         description: "Create a new item."
+      - tool_name: list_items
+        endpoint: GET /items
+        description: "List all items with optional filtering."
+        parameters:
+          - name: fields
+            description: "Comma-separated list of fields to return."
+            required: false
+          - name: status
+            description: "Filter by item status."
+            required: false
 
 auth:
   type: api_key

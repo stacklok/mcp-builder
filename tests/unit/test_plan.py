@@ -64,7 +64,7 @@ class TestBuildServerPlan:
         assert plan.base_url == "https://api.example.com"
 
     def test_tool_count(self, plan):
-        assert len(plan.tools) == 2
+        assert len(plan.tools) == 3
 
     def test_group_count(self, plan):
         assert len(plan.groups) == 1
@@ -141,7 +141,7 @@ class TestGroupPlans:
         group = plan.groups[0]
         assert isinstance(group, GroupPlan)
         assert group.name == "item-operations"
-        assert group.tool_names == ["get_item", "create_item"]
+        assert group.tool_names == ["get_item", "create_item", "list_items"]
 
 
 # ---------------------------------------------------------------------------
@@ -162,6 +162,48 @@ class TestAuthPlan:
         assert plan.auth.issuer == "https://accounts.google.com"
         assert plan.auth.scopes is not None
         assert "openid" in plan.auth.scopes
+
+
+# ---------------------------------------------------------------------------
+# Parameter allowlist
+# ---------------------------------------------------------------------------
+
+
+class TestParameterAllowlist:
+    """YAML parameters act as an allowlist — only listed params are included."""
+
+    def test_allowlist_filters_query_params(self, plan):
+        """When YAML defines parameters, only those query params appear."""
+        tool = next(t for t in plan.tools if t.tool_name == "list_items")
+        query_names = {p.name for p in tool.query_params}
+        assert "fields" in query_names
+        assert "status" in query_names
+        assert "sortBy" not in query_names
+        assert "internalTraceId" not in query_names
+
+    def test_allowlist_applies_overrides(self, plan):
+        """YAML descriptions override spec descriptions for allowed params."""
+        tool = next(t for t in plan.tools if t.tool_name == "list_items")
+        fields = next(p for p in tool.query_params if p.name == "fields")
+        assert fields.description == "Comma-separated list of fields to return."
+
+    def test_path_params_always_included(self, plan):
+        """Path params appear even when YAML defines an explicit allowlist."""
+        tool = next(t for t in plan.tools if t.tool_name == "get_item")
+        assert len(tool.path_params) == 1
+        assert tool.path_params[0].name == "itemId"
+
+    def test_no_yaml_params_includes_all(self, plan):
+        """When parameters is None (not defined), all spec params are used."""
+        tool = next(t for t in plan.tools if t.tool_name == "create_item")
+        assert len(tool.body_fields) == 2  # name, description from spec
+
+    def test_existing_override_behavior_preserved(self, plan):
+        """YAML overrides still applied for allowlisted params."""
+        tool = next(t for t in plan.tools if t.tool_name == "get_item")
+        item_id = tool.path_params[0]
+        # YAML says "The unique item identifier." vs spec's "The ID of the item."
+        assert item_id.description == "The unique item identifier."
 
 
 # ---------------------------------------------------------------------------

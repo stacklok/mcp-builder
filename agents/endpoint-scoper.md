@@ -25,15 +25,18 @@ When invoked, you will receive the following in your prompt:
 - **Base URL** — the API base URL (e.g., `https://www.googleapis.com/drive/v3`)
 - **OpenAPI spec file path** — path to the downloaded spec file, in case you need to grep for additional details about specific endpoints
 - **Workflows** — at least 3 user workflow descriptions
-- **Selected groups and endpoints** — for each selected group:
-  - Group name and description
-  - Endpoints with: method, path, operationId, summary, description, parameters (name, in, required, type, description), request body info, tags, deprecated status
+- **Spec analysis path** — absolute path to `spec-analysis.md` containing all groups and their endpoints
+- **Selected groups** — comma-separated list of group names the user selected for inclusion
 
 ---
 
 ## Workflow
 
 **Before starting, create a TaskList** with one item per step below. Mark each item complete as you finish it.
+
+### Step 0: Read Spec Analysis
+
+Read `spec-analysis.md` at the path provided as `SPEC ANALYSIS PATH` in your prompt. Extract the endpoint details (method, path, operationId, summary, description, parameters with types/descriptions, tags, deprecated status, and request body info) for only the groups listed in `SELECTED GROUPS`. These are the endpoints you will work with in all subsequent steps.
 
 ### Step 1: Endpoint Review and Flagging
 
@@ -80,7 +83,33 @@ For each endpoint, assign a tool name. **Default to keeping the original** — o
 
 Document renaming rationale for any tool where the name changed from the original operationId.
 
-### Step 3: Description Writing
+### Step 3: Parameter Review and Curation
+
+For each tool, review ALL parameters from the spec and decide which to include. The parameters you list become an **allowlist** — only these parameters will appear in the generated MCP tool. Parameters you omit will be excluded from the generated code entirely.
+
+**Always include:**
+- All **path parameters** — these are required for URL construction and must always be present
+- Parameters directly referenced in the user's workflow descriptions
+
+**Include by default (unless there's a reason not to):**
+- Query parameters that control the core behavior of the endpoint (e.g., `q` for search, `pageSize` for pagination)
+- Required body fields
+
+**Exclude (with documented rationale):**
+- Internal/admin parameters not useful to typical API consumers (e.g., `quotaUser`, `prettyPrint`, `$.xgafv`)
+- Legacy parameters superseded by newer alternatives
+- Parameters for features the MCP server won't use (e.g., upload-specific params on metadata-only endpoints)
+- Header and cookie parameters (these are handled by the client layer, not exposed as tool arguments)
+- Parameters with confusing names/behavior that would degrade the LLM's tool-calling accuracy
+- Rarely-used optional parameters that add noise without value for the described workflows
+
+**For each included parameter, also:**
+- Decide required vs. optional status. If the spec marks it as required, keep it required. If the spec marks it as optional but workflows always need it, flag this ambiguity for human review (do NOT change required to true — just note it).
+- Note any parameters that need description rewrites (covered in the next step).
+
+Document your decisions in the tool-scoping.md output. For each tool, list included parameters and any excluded parameters with rationale.
+
+### Step 4: Description Writing
 
 For each tool, evaluate and write the description. The goal is **separability**: each description should make it immediately clear what this tool does and how it differs from similar tools in the server.
 
@@ -116,7 +145,7 @@ Apply the same principle to each parameter:
 - Enum values if constrained (e.g., 'One of "open", "closed", or "all"')
 - Format hints for structured values (e.g., "Drive search query syntax" or "ISO 8601 datetime")
 
-### Step 4: Hint Writing
+### Step 5: Hint Writing
 
 Add `hints` to tools where you notice patterns that the deterministic code generator or Phase 4 AI validator should know about:
 
@@ -134,7 +163,7 @@ Add `hints` to tools where you notice patterns that the deterministic code gener
 
 Only add hints that are genuinely useful. An endpoint with no special behavior needs no hints. If you're unsure about a detail, you can grep the OpenAPI spec file (path provided in your CONTEXT) for more information.
 
-### Step 5: Write tool-scoping.md
+### Step 6: Write tool-scoping.md
 
 Write the scoping result to `{working_dir}/tool-scoping.md` using this exact format:
 
@@ -164,6 +193,9 @@ The following endpoints are flagged for your review. They are included by defaul
 - **Parameters:**
   - {name} ({required|optional}): {description}
   - {name} ({required|optional}): {description}
+- **Parameters excluded:**
+  - {name}: {reason for exclusion}
+  - (or "None — all spec parameters included" if nothing was excluded)
 - **Hints:**
   - "{hint 1}"
   - "{hint 2}"
@@ -182,7 +214,7 @@ The following endpoints are flagged for your review. They are included by defaul
 - **Renamed tools:** {N} of {total}
 ```
 
-### Step 6: Report Completion
+### Step 7: Report Completion
 
 Output confirmation:
 

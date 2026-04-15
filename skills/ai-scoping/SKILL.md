@@ -99,8 +99,8 @@ Agent tool parameters:
     3. [workflow 3]
     ...
 
-    SPEC ANALYSIS JSON:
-    [paste the full JSON output from mcp-builder analyze]
+    SPEC ANALYSIS JSON PATH:
+    [absolute path to {working_dir}/analyze.json]
 - mode: acceptEdits
 - run_in_background: false
 ```
@@ -156,10 +156,11 @@ Agent tool parameters:
     3. [workflow 3]
     ...
 
-    SELECTED GROUPS AND ENDPOINTS:
-    [paste the filtered endpoint data for selected groups only — include method, path,
-     operationId, summary, description, parameters with types/descriptions, tags,
-     deprecated status, and request body info for each endpoint]
+    SPEC ANALYSIS PATH:
+    [absolute path to {working_dir}/spec-analysis.md]
+
+    SELECTED GROUPS:
+    [comma-separated list of selected group names]
 - mode: acceptEdits
 - run_in_background: false
 ```
@@ -306,11 +307,29 @@ Write the filled template to `{working_dir}/scoping-summary.md`.
 
 #### 6.6: Present Results
 
-Present the user with:
-- Path to the generated `mcp-scope.yaml`
-- Path to the generated `scoping-summary.md`
-- Quick summary: N tools across M groups, auth type detected
-- Reminder that Phase 2 (human review) should review the YAML before code generation
+Read `{working_dir}/scoping-summary.md` and present the user with a comprehensive completion summary:
+
+**What was generated:**
+- Server name and description
+- N tools across M groups (list each group name with its tool count)
+- Auth type detected (with issuer if OAuth)
+
+**Key decisions made:**
+- Tools renamed from their original operationId (original → new, with one-line rationale), or "No tools renamed" if all kept originals
+- Endpoints that were flagged and their disposition (kept or excluded)
+- Descriptions that were inferred (not sourced from the spec) and should be reviewed for accuracy
+
+**Parameter highlights:**
+- For each tool with explicit parameters in the YAML: note how many parameters were included vs. how many the spec defines, and list any excluded parameters
+- Flag any tools where all spec parameters were kept without curation
+
+**Phase 2 review checklist:**
+- Pull the "Flagged for Phase 2 Review" checklist items from `scoping-summary.md` and present them inline so the user sees what needs attention
+- Remind the user that Phase 2 (human review) should review the YAML before code generation
+
+**Output files:**
+- Path to `mcp-scope.yaml`
+- Path to `scoping-summary.md`
 
 ---
 

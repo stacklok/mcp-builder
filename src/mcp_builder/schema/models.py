@@ -14,7 +14,16 @@ logger = structlog.get_logger()
 
 
 class Parameter(BaseModel):
-    """A parameter override for a tool."""
+    """A parameter entry for a tool in mcp-scope.yaml.
+
+    When a tool defines a ``parameters`` list, those entries act as an
+    **allowlist**: only the listed parameters (plus path parameters, which
+    are always required for URL construction) are included in the generated
+    MCP tool. The ``description`` and ``required`` fields override the
+    corresponding values from the OpenAPI spec.
+
+    When a tool omits ``parameters`` (None), all spec parameters are used.
+    """
 
     model_config = ConfigDict(extra="forbid")
 

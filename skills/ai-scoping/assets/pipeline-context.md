@@ -34,6 +34,16 @@ The formal JSON schema is at `docs/mcp-scope-schema.json` (auto-generated from t
 - Endpoint paths must match the spec's `paths` exactly — do not prepend the base URL path
 - OAuth config is required when auth type is `oauth_bearer`
 
+### Parameter semantics
+
+When a tool in `mcp-scope.yaml` defines a `parameters` list, those parameters act as an **allowlist**: only the listed parameters are included in the generated MCP tool. Parameters present in the OpenAPI spec but absent from the YAML list are excluded from code generation.
+
+- **Path parameters are always included** regardless of the allowlist, because they are required for URL construction.
+- When `parameters` is omitted (null), ALL spec parameters are used (backward compatible).
+- The `description` and `required` fields in the YAML override the spec values for matching parameters.
+
+This means the endpoint-scoper agent should actively curate parameters — including only what's useful for the described workflows and excluding noise.
+
 ### Reference examples
 
 - `e2e/fixtures/real/google_drive.yaml` — 5 tools, 2 groups, OAuth bearer
