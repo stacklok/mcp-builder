@@ -36,6 +36,19 @@ tasks:
     deps:
       - install
 
+  test-e2e:
+    desc: Run e2e tests (generates MCP servers from fixtures and validates them)
+    cmds:
+      - uv run pytest e2e/ -v --ignore=e2e/output
+    deps:
+      - install
+
+  test-all:
+    desc: Run all tests (unit + e2e)
+    cmds:
+      - task: test
+      - task: test-e2e
+
   check:
     desc: Run all checks (lint, typecheck, tests, and security)
     cmds:
