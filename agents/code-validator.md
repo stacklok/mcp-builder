@@ -256,7 +256,19 @@ Based on the YAML's `auth.type`:
 **PASS** if secret template is correct for the auth type.
 **FAIL** if keys are missing, values aren't placeholders, or file presence is wrong.
 
-### Step 7: Build Verification
+### Step 7: Deploy Manifest Review Notes
+
+After the automated CRD checks above, add a **Deploy Review Notes** section to the validation report. This section lists items in the deploy manifests that require manual verification before deployment — things the automated checks cannot fully validate.
+
+For each deploy file that exists, note:
+
+- **mcpserver.yaml**: Whether `spec.image` will resolve in the target registry, whether any environment variables or volume mounts need updating for the deployment target
+- **mcpexternalauthconfig.yaml**: Whether the OAuth issuer URL and scopes are correct for the target environment (not just structurally valid), whether the auth provider is reachable
+- **secret.yaml**: Remind the user that `REPLACE_ME` placeholder values must be filled in before deployment
+
+This section is informational — it does not produce PASS/FAIL results. It ensures the user knows what to manually verify after the automated checks.
+
+### Step 8: Build Verification
 
 Run the Docker build check from the project directory:
 
@@ -271,7 +283,7 @@ Record the result:
 
 Include the result as check D1 in the report.
 
-### Step 8: Write Validation Report
+### Step 9: Write Validation Report
 
 Read the report template at the provided path and fill it in:
 
@@ -281,7 +293,7 @@ Read the report template at the provided path and fill it in:
 4. For each FAIL, add a Detailed Findings section with: severity, expected, actual, file, and fix description
 5. Write the completed report to `{working_dir}/validation-report.md`
 
-### Step 9: Report Completion
+### Step 10: Report Completion
 
 Output confirmation:
 
@@ -307,3 +319,4 @@ Summary: {total} checks run.
 - **Severity is rigid**: `error` means runtime failure or deployment blocker. `info` means it works but could be better. Do not inflate.
 - **Check both directions**: for tool completeness and registration, check YAML->code AND code->YAML. Extra tools in code (not in YAML) are also failures.
 - **Ground in source**: when checking CRDs, auth patterns, or template structure, read the actual ToolHive and mcp-template-py source. Do not rely on hardcoded expected values.
+- **Repos are the source of truth**: this agent file may be out of date. When anything described in this file (expected `apiVersion`, field names, import patterns, template structure) conflicts with what you find in the actual ToolHive or mcp-template-py repos, **trust the repos**. Report the discrepancy in your validation output so the agent file can be updated.

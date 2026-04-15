@@ -73,111 +73,63 @@ When checking CRD correctness (T1-T3), read the actual CRD definitions from `too
 
 ## Generated code patterns
 
-### tools.py
+Rather than duplicating code here (which gets out of date), agents should read the actual source files from the **mcp-template-py** repo for the canonical patterns. Below are the rules and guidelines the generator follows — use these as validation criteria and cross-reference with the template repo for exact syntax.
 
-Each tool is an async method on a `Tools` class. Parameters are flattened (not wrapped in a model) so FastMCP can introspect them for the tool's input schema.
+### tools.py — read `src/` in mcp-template-py for the template pattern
 
-```python
-class Tools:
-    def __init__(self, client: APIClient) -> None:
-        self._client = client
+Rules:
+- Each tool is an `async def` method on a `Tools` class, one method per YAML tool
+- Every tool method must have a docstring
+- Parameters are flattened (not wrapped in a model) so FastMCP can introspect them for the tool's input schema
+- Required params have no default value; optional params have `| None = None`
+- Path params use f-string interpolation (not string concatenation)
+- Query params are passed as a dict to `params=`
+- Body fields are passed as a dict to `json_body=`
+- HTTP method is a string literal matching the YAML endpoint: `"GET"`, `"POST"`, etc.
+- Hints from the YAML appear as `# Hint:` comments
+- Return type is `-> dict`, returning the result of `self._client.request(...)`
 
-    async def list_files(self, q: str | None = None, page_size: int | None = None) -> dict:
-        """List files in the user's Drive..."""
-        # Hint: paginated: uses pageToken/nextPageToken cursor pattern
-        return await self._client.request(
-            "GET",
-            "/files",
-            params={"q": q, "pageSize": page_size},
-        )
+### client.py — read `src/` in mcp-template-py for the template pattern
 
-    async def get_file(self, file_id: str, fields: str | None = None) -> dict:
-        """Get metadata for a single file by ID."""
-        return await self._client.request(
-            "GET",
-            f"/files/{file_id}",
-            params={"fields": fields},
-        )
-```
+Rules:
+- Calls `get_bearer_token()` (or equivalent) from the auth module
+- Sets `Authorization: Bearer {token}` header on requests
+- Base URL comes from the YAML's `spec.base_url`
+- Uses httpx for HTTP requests
 
-Key patterns:
-- Required params have no default; optional params have `| None = None`
-- Path params use f-string interpolation: `f"/files/{file_id}"`
-- Query params passed as dict to `params=`
-- Body fields passed as dict to `json_body=`
-- HTTP method is a string literal: `"GET"`, `"POST"`, etc.
-- Hints appear as `# Hint:` comments
+### mcp_builder.py — read `src/` in mcp-template-py for the template pattern
 
-### client.py
-
-```python
-class APIClient:
-    def __init__(self, base_url: str = "{base_url}"):
-        self._base_url = base_url
-
-    async def request(self, method, path, *, params=None, json_body=None):
-        token = await get_bearer_token()
-        headers = {"Authorization": f"Bearer {token}"}
-        # ... httpx request with self._base_url + path
-```
-
-Key patterns:
-- Calls `get_bearer_token()` from the auth module
-- Sets `Authorization: Bearer {token}` header
-- Base URL from the YAML's `spec.base_url`
-
-### mcp_builder.py
-
-```python
-from {module_name}.client import APIClient
-from {module_name}.settings import Settings
-from {module_name}.api.tools import Tools
-
-mcp = FastMCP("{server_name}")
-tools = Tools(APIClient())
-
-mcp.add_tool(tools.list_files)
-mcp.add_tool(tools.get_file)
-# ... one per tool
-```
-
-Key patterns:
-- Imports APIClient, Settings, Tools
-- FastMCP name matches server name from YAML
-- Tools constructed with APIClient instance
-- One `mcp.add_tool()` per tool in the YAML
+Rules:
+- Imports `APIClient` from `{module_name}.client`
+- Imports `Settings` from `{module_name}.settings`
+- Imports `Tools` from `{module_name}.api.tools`
+- Creates a `FastMCP` instance with the server name from YAML
+- Registers one `mcp.add_tool(tools.{tool_name})` per tool in the YAML
 
 ### models.py
 
-Only generated for tools with request bodies (POST/PUT/PATCH with JSON body):
+Rules:
+- Only generated for tools with request bodies (POST/PUT/PATCH with JSON body)
+- Each model is a Pydantic `BaseModel` subclass named `{ToolNamePascalCase}Params`
+- Fields use `Field(...)` with descriptions from the spec
+- Required fields have no default; optional fields have `Field(default=None, ...)`
 
-```python
-class CreateFileParams(BaseModel):
-    name: str = Field(..., description="The name of the file")
-    mime_type: str = Field(..., description="MIME type")
-    parents: list[str] | None = Field(default=None, description="Parent folder IDs")
-```
+### Deployment manifests — read `deploy/` in both mcp-template-py and toolhive CRD definitions
 
-### Deployment manifests
+Rules for **mcpserver.yaml** (always present):
+- `apiVersion` and `kind` must match the ToolHive MCPServer CRD definition (read from toolhive repo, do not hardcode)
+- `metadata.name` matches the server name from YAML
+- `spec.image` is `{server_name}-mcp:latest`
+- `spec.transport` is set to a valid value per ToolHive source
+- If auth != none: `spec.externalAuthConfig.name` is `{server_name}-auth`
+- If auth == none: no `externalAuthConfig` field
 
-**mcpserver.yaml** (always present):
-```yaml
-apiVersion: mcp.toolhive.stacklok.dev/v1alpha1
-kind: MCPServer
-metadata:
-  name: {server_name}
-spec:
-  image: {server_name}-mcp:latest
-  transport: streamablehttp
-  externalAuthConfig:          # only if auth != none
-    name: {server_name}-auth
-```
+Rules for **mcpexternalauthconfig.yaml** (only when auth != none):
+- Structure must match ToolHive's MCPExternalAuthConfig CRD definition (read from toolhive repo)
+- For `oauth_bearer`: type, issuer, and scopes must match the YAML auth config
+- For `api_key`: type and secret reference must match
 
-**mcpexternalauthconfig.yaml** (only when auth != none):
-- For `oauth_bearer`: `type: embeddedAuthServer` with `issuer` and `scopes`
-- For `api_key`: `type: bearerToken` with `secretRef` pointing to `{server_name}-secret`
-
-**secret.yaml** (only when auth != none):
+Rules for **secret.yaml** (only when auth != none):
 - For `oauth_bearer`: keys `client-id`, `client-secret` with value `REPLACE_ME`
 - For `api_key`: key `api-key` with value `REPLACE_ME`
 

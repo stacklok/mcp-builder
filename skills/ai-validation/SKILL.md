@@ -105,7 +105,7 @@ The code-validator agent will read all files, run the Docker build check, and wr
 
 ---
 
-### Step 3: Validation Gate (USER GATE)
+### Step 3: Validation Gate
 
 1. Read `{working_dir}/validation-report.md`
 
@@ -114,9 +114,11 @@ The code-validator agent will read all files, run the Docker build check, and wr
    - Build status: PASS/FAIL/SKIP
    - If there are `error`-severity failures, highlight each one prominently
 
-3. Based on the results, use AskUserQuestion to offer choices:
+3. Based on the results:
 
-   **If there are error-severity failures:**
+   **If there are error-severity failures (USER GATE — wait for response):**
+
+   Use AskUserQuestion to offer choices:
    ```
    Validation found {N} error(s) that would cause runtime or deployment failures.
 
@@ -126,16 +128,11 @@ The code-validator agent will read all files, run the Docker build check, and wr
    3. Fix manually — you fix the errors and re-run the skill later
    ```
 
+   **Do NOT proceed past this step until the user responds.**
+
    **If all checks pass (no errors):**
-   ```
-   All validation checks passed.
 
-   Options:
-   1. Generate polish suggestions (recommended) — analyze hints for improvements
-   2. Done — validation is complete, no polish needed
-   ```
-
-**Do NOT proceed past this step until the user responds.**
+   Tell the user all checks passed and automatically proceed to Step 4 (polish suggestions). No gate needed — polish is always useful.
 
 ---
 

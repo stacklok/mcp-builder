@@ -51,6 +51,16 @@
 |-------|--------|----------|---------|
 | D1: Docker build | {PASS/FAIL/SKIP} | error | {details or build output excerpt} |
 
+## Deploy Review Notes
+
+{Items requiring manual verification before deployment. This section is informational — no PASS/FAIL.}
+
+| File | Manual Check | Notes |
+|------|-------------|-------|
+| mcpserver.yaml | Image registry resolution | {Does spec.image resolve in your target registry?} |
+| mcpexternalauthconfig.yaml | Auth provider reachability | {Is the issuer URL correct and reachable for the target environment?} |
+| secret.yaml | Replace placeholder values | {REPLACE_ME values must be filled in before deployment} |
+
 ## Detailed Findings
 
 {For each FAIL check, add a detailed section below. Omit this section entirely if all checks pass.}
