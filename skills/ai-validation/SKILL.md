@@ -81,7 +81,7 @@ Agent tool parameters:
     Validate the generated MCP server code for correctness.
 
     CONTEXT:
-    Pipeline context path: [absolute path to {skill_base_dir}/assets/pipeline-context-phase4.md]
+    Pipeline context path: [absolute path to {skill_base_dir}/../ai-scoping/assets/pipeline-context.md]
     Report template path: [absolute path to {skill_base_dir}/assets/validation-report-template.md]
     Working directory: [absolute path to validation-output/]
 
@@ -182,7 +182,7 @@ Agent tool parameters:
     Analyze the generated MCP server code and suggest improvements based on YAML hints.
 
     CONTEXT:
-    Pipeline context path: [absolute path to {skill_base_dir}/assets/pipeline-context-phase4.md]
+    Pipeline context path: [absolute path to {skill_base_dir}/../ai-scoping/assets/pipeline-context.md]
     Working directory: [absolute path to validation-output/]
     Validation report path: [absolute path to {working_dir}/validation-report.md]
 

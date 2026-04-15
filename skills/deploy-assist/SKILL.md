@@ -12,7 +12,7 @@ The container image is assumed to already be built and pushed to a registry. Thi
 
 ## Pipeline Context
 
-Before starting, read `{skill_base_dir}/../ai-validation/assets/pipeline-context-phase4.md` for full pipeline context — it describes what mcp-builder is, the four phases, what the generated project looks like, what `mcp-scope.yaml` contains, and the deployment manifest structure with placeholder values. This skill's focus is the `deploy/` directory described in that doc.
+Before starting, read `{skill_base_dir}/../ai-scoping/assets/pipeline-context.md` for full pipeline context — it describes what mcp-builder is, the four phases, and what `mcp-scope.yaml` contains. This skill's focus is the `deploy/` directory of the generated project.
 
 ## Startup
 

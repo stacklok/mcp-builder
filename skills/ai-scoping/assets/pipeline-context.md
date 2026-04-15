@@ -6,7 +6,7 @@ This document provides shared context for AI agents working on the mcp-builder p
 
 mcp-builder is a pipeline that transforms an OpenAPI 3.x spec and plain-English workflow descriptions into a production-quality, ToolHive-ready MCP server. It has four phases:
 
-1. **Phase 1 — AI Scoping** (you are here): Parse the spec, semantically group endpoints, assign LLM-optimized tool names and descriptions, detect auth, and emit a validated `mcp-scope.yaml` + `scoping-summary.md`.
+1. **Phase 1 — AI Scoping**: Parse the spec, semantically group endpoints, assign LLM-optimized tool names and descriptions, detect auth, and emit a validated `mcp-scope.yaml` + `scoping-summary.md`.
 2. **Phase 2 — Human Review**: A human edits the YAML and summary, fixing any issues flagged in Phase 1.
 3. **Phase 3 — Deterministic Code Generation**: Reads the YAML + OpenAPI spec and scaffolds a complete MCP server. No AI involved — this is a pure function of the config.
 4. **Phase 4 — AI Validation**: Reviews the generated code for correctness, makes improvements guided by hints in the config, and verifies the build succeeds.
@@ -49,11 +49,3 @@ This means the endpoint-scoper agent should actively curate parameters — inclu
 - `e2e/fixtures/real/google_drive.yaml` — 5 tools, 2 groups, OAuth bearer
 - `e2e/fixtures/real/github.yaml` — 8 tools, 3 groups, OAuth bearer
 
-## What is your role?
-
-You are an AI agent working on **Phase 1 — AI Scoping**. The orchestrator skill (`skills/ai-scoping/SKILL.md`) coordinates the overall flow. You are one of two agents:
-
-- **spec-analyzer**: Processes structured JSON from `mcp-builder analyze`, assesses spec quality, and proposes semantic endpoint groups with workflow relevance ratings.
-- **endpoint-scoper**: Takes user-selected groups and refines them into polished tool definitions — naming, descriptions, hints — ready for the final YAML.
-
-Your output feeds into user-facing approval gates. The user makes all final decisions about what to include, what to name, and what to describe. Your job is to provide high-quality recommendations.
