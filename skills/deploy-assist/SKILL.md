@@ -12,51 +12,7 @@ The container image is assumed to already be built and pushed to a registry. Thi
 
 ## Pipeline Context
 
-### What does the generated project look like?
-
-Phase 3 produces a complete MCP server project with this structure:
-
-```
-{server_name}-mcp/
-├── src/{module_name}/          # Python MCP server code
-│   ├── api/
-│   │   ├── tools.py            # Tool methods (one per scoped endpoint)
-│   │   ├── mcp_builder.py      # FastMCP wiring
-│   │   └── models.py           # Pydantic request models
-│   ├── client.py               # HTTP client with auth forwarding
-│   ├── auth/                   # Token passthrough middleware
-│   └── settings.py             # Configuration from env vars
-├── deploy/                     # Kubernetes manifests (this skill's focus)
-│   ├── mcpserver.yaml          # ToolHive MCPServer CRD (always)
-│   ├── ingress.yaml            # K8s Ingress for external access (always)
-│   ├── mcpexternalauthconfig.yaml  # Auth config (if auth != none)
-│   └── secret.yaml             # K8s Secret template (if api_key auth)
-├── Dockerfile
-├── pyproject.toml
-└── ...
-```
-
-The module name is derived from the server name: hyphens become underscores, append `_mcp` (e.g., `google-drive` → `google_drive_mcp`).
-
-### What placeholders exist in the generated manifests?
-
-The manifests are valid YAML but contain placeholder values that must be replaced for a real deployment:
-
-| Placeholder | Files | What it needs |
-|---|---|---|
-| `REPLACE_ME_DOMAIN` | mcpserver.yaml, ingress.yaml, mcpexternalauthconfig.yaml | The domain for external access (e.g., `north.stacklok.dev`) |
-| `REPLACE_ME_OTEL_ENDPOINT` | mcpserver.yaml | OpenTelemetry collector endpoint |
-| `{server_name}-mcp:latest` | mcpserver.yaml (`spec.image`) | Needs a registry prefix (e.g., `123456789.dkr.ecr.us-east-1.amazonaws.com/`) |
-| `REPLACE_ME` (clientId) | mcpexternalauthconfig.yaml | OAuth client ID — **a secret, never auto-filled** |
-| `REPLACE_ME` (token) | secret.yaml | API key or bearer token — **a secret, never auto-filled** |
-
-### Auth types
-
-The generated manifests vary by auth type configured in `mcp-scope.yaml`:
-
-- **oauth_bearer**: Generates mcpexternalauthconfig.yaml with an embedded auth server that delegates to an upstream OIDC provider. The user must fill in the OAuth `clientId`.
-- **api_key**: Generates mcpexternalauthconfig.yaml (bearer token type) and secret.yaml. The user must fill in the API key `token`.
-- **none**: No auth config or secret manifests are generated.
+Before starting, read `{skill_base_dir}/../ai-validation/assets/pipeline-context-phase4.md` for full pipeline context — it describes what mcp-builder is, the four phases, what the generated project looks like, what `mcp-scope.yaml` contains, and the deployment manifest structure with placeholder values. This skill's focus is the `deploy/` directory described in that doc.
 
 ## Startup
 
