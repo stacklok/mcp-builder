@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from mcp_builder.codegen.plan import AuthPlan, ServerPlan
+from mcp_builder.codegen.plan import AuthPlan, ServerPlan, ToolPlan
 from mcp_builder.codegen.renderers.scaffold import scaffold_project
 
 from .conftest import TEMPLATE_DIR
@@ -107,3 +107,72 @@ class TestScaffoldProject:
         (tmp_path / "test-api-mcp").mkdir()
         with pytest.raises(FileExistsError, match="already exists"):
             scaffold_project(plan, TEMPLATE_DIR, tmp_path)
+
+    def test_updates_pyproject_cov_target(self, scaffolded: Path) -> None:
+        text = (scaffolded / "pyproject.toml").read_text()
+        assert "--cov=test_api_mcp" in text
+        assert "mcp_template_py" not in text
+
+    def test_updates_taskfile_run_target(self, scaffolded: Path) -> None:
+        text = (scaffolded / "Taskfile.yml").read_text()
+        assert "test_api_mcp" in text
+        assert "mcp_template_py" not in text
+
+    def test_updates_claude_md(self, scaffolded: Path) -> None:
+        text = (scaffolded / "CLAUDE.md").read_text()
+        assert "test_api_mcp" in text
+        assert "mcp_template_py" not in text
+
+    def test_updates_integration_test_with_tool_names(self, tmp_path: Path) -> None:
+        plan = ServerPlan(
+            module_name="google_drive_mcp",
+            server_name="google-drive",
+            description="Google Drive MCP server.",
+            base_url="https://www.googleapis.com",
+            auth=AuthPlan(type="api_key"),
+            tools=[
+                ToolPlan(
+                    tool_name="list_files",
+                    class_name="ListFiles",
+                    http_method="GET",
+                    path="/files",
+                    description="List files.",
+                    path_params=[],
+                    query_params=[],
+                    body_fields=[],
+                    hints=[],
+                    group_name="files",
+                ),
+                ToolPlan(
+                    tool_name="get_file",
+                    class_name="GetFile",
+                    http_method="GET",
+                    path="/files/{fileId}",
+                    description="Get a file.",
+                    path_params=[],
+                    query_params=[],
+                    body_fields=[],
+                    hints=[],
+                    group_name="files",
+                ),
+            ],
+            groups=[],
+        )
+        project = scaffold_project(plan, TEMPLATE_DIR, tmp_path)
+        text = (project / "tests" / "integration" / "test_mcp.py").read_text()
+        assert "hello" not in text
+        assert "list_files" in text
+        assert "get_file" in text
+
+    def test_no_template_leftovers_in_any_file(self, scaffolded: Path) -> None:
+        """Verify mcp_template_py does not appear in any text file."""
+        for path in scaffolded.rglob("*"):
+            if not path.is_file():
+                continue
+            try:
+                text = path.read_text(encoding="utf-8")
+            except (UnicodeDecodeError, ValueError):
+                continue
+            assert "mcp_template_py" not in text, (
+                f"{path.relative_to(scaffolded)} still contains mcp_template_py"
+            )

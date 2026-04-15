@@ -70,22 +70,23 @@ def scaffold_project(plan: ServerPlan, template_dir: Path, output_dir: Path) -> 
         new_module=plan.module_name,
     )
 
-    # Replace template references in Python files and Dockerfile.
-    _replace_in_files(project_dir, "*.py", _TEMPLATE_MODULE, plan.module_name)
+    # Replace template references in all files that embed the module name.
+    # .py files and Dockerfile were the original set; Taskfile.yml (run target),
+    # CLAUDE.md (code-structure docs), and *.toml (pytest --cov) also contain
+    # the template module name and must be rewritten.
+    for pattern in ("*.py", "Dockerfile", "Taskfile.yml", "*.md", "*.toml"):
+        _replace_in_files(project_dir, pattern, _TEMPLATE_MODULE, plan.module_name)
     logger.debug(
-        "replaced module references in .py files",
-        old=_TEMPLATE_MODULE,
-        new=plan.module_name,
-    )
-    _replace_in_files(project_dir, "Dockerfile", _TEMPLATE_MODULE, plan.module_name)
-    logger.debug(
-        "replaced module references in Dockerfile",
+        "replaced module references in project files",
         old=_TEMPLATE_MODULE,
         new=plan.module_name,
     )
 
     # Update pyproject.toml.
     _update_pyproject(project_dir / "pyproject.toml", plan)
+
+    # Rewrite integration test with actual tool names from the plan.
+    _update_integration_test(project_dir, plan)
 
     logger.info("scaffold complete", project_dir=str(project_dir))
     return project_dir
@@ -142,3 +143,95 @@ def _update_pyproject(pyproject_path: Path, plan: ServerPlan) -> None:
         logger.debug("pyproject.toml: httpx already in dependencies, skipped")
 
     pyproject_path.write_text(text, encoding="utf-8")
+
+
+def _update_integration_test(project_dir: Path, plan: ServerPlan) -> None:
+    """Rewrite the template integration test with actual tool names.
+
+    The template's test_mcp.py hardcodes a ``hello`` tool. This replaces it
+    with assertions for the real tool names from the plan. If the template
+    file doesn't exist, this is a no-op.
+    """
+    test_path = project_dir / "tests" / "integration" / "test_mcp.py"
+    if not test_path.is_file():
+        logger.debug("no integration test to update (file not found)")
+        return
+
+    tool_names = [t.tool_name for t in plan.tools]
+    if not tool_names:
+        logger.debug("no tools in plan, skipping integration test update")
+        return
+
+    first_tool = tool_names[0]
+    tool_names_repr = repr(tool_names)
+
+    test_path.write_text(
+        f'''\
+"""Integration tests for the MCP server.
+
+These tests verify the MCP server works correctly using the official
+MCP Python client library. They require a running server
+(MCP_SERVER_URL environment variable).
+"""
+
+import os
+
+import pytest
+
+from tests.integration.conftest import get_mcp_client_session
+
+# Skip MCP client tests if no server URL is configured
+mcp_client = pytest.mark.skipif(
+    not os.getenv("MCP_SERVER_URL"),
+    reason="MCP_SERVER_URL environment variable not set. "
+    "Set it to run MCP client integration tests against a live server.",
+)
+
+EXPECTED_TOOLS = {tool_names_repr}
+
+
+@mcp_client
+class TestMCPClient:
+    """Integration tests using the official MCP Python client library.
+
+    These tests require a running MCP server.
+    Set MCP_SERVER_URL environment variable to run.
+
+    Example:
+        export MCP_SERVER_URL=http://localhost:8100/mcp
+        pytest tests/integration/test_mcp.py -v
+    """
+
+    @pytest.mark.asyncio
+    async def test_mcp_client_connection(self):
+        """Test MCP client connection."""
+        async with get_mcp_client_session() as session:
+            result = await session.send_ping()
+            assert result is not None
+
+    @pytest.mark.asyncio
+    async def test_mcp_client_list_tools(self):
+        """Test listing MCP tools using the official client."""
+        async with get_mcp_client_session() as session:
+            tools_result = await session.list_tools()
+
+            assert tools_result.tools is not None
+            tool_names = [tool.name for tool in tools_result.tools]
+            assert len(tool_names) > 0
+            for expected in EXPECTED_TOOLS:
+                assert expected in tool_names, (
+                    f"Expected '{{expected}}' tool, found: {{tool_names}}"
+                )
+
+    @pytest.mark.asyncio
+    async def test_mcp_client_call_tool(self):
+        """Test calling the {first_tool} tool using the official client."""
+        async with get_mcp_client_session() as session:
+            result = await session.call_tool("{first_tool}", arguments={{}})
+
+            assert result is not None
+            assert len(result.content) > 0
+''',
+        encoding="utf-8",
+    )
+    logger.debug("updated integration test", tool_count=len(tool_names))
