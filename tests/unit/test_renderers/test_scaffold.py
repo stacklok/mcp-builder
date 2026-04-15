@@ -163,6 +163,21 @@ class TestScaffoldProject:
         assert "hello" not in text
         assert "list_files" in text
         assert "get_file" in text
+        assert "call_tool" not in text
+
+    def test_empty_tools_produces_agnostic_integration_test(
+        self, plan: ServerPlan, tmp_path: Path
+    ) -> None:
+        """With no tools in plan, the integration test should still be
+        rewritten to remove the template 'hello' reference."""
+        project = scaffold_project(plan, TEMPLATE_DIR, tmp_path)
+        text = (project / "tests" / "integration" / "test_mcp.py").read_text()
+        assert "hello" not in text
+        assert "call_tool" not in text
+        assert "EXPECTED_TOOLS" not in text
+        # Should still have the connection and list_tools tests.
+        assert "test_mcp_client_connection" in text
+        assert "test_mcp_client_list_tools" in text
 
     def test_no_template_leftovers_in_any_file(self, scaffolded: Path) -> None:
         """Verify mcp_template_py does not appear in any text file."""
