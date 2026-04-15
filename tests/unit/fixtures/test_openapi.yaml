@@ -216,6 +216,33 @@ paths:
       responses:
         "201":
           description: Created
+  /files/{fileId}:
+    put:
+      operationId: updateFile
+      summary: Replace file metadata (no requestBody defined)
+      parameters:
+        - name: fileId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: "The ID of the file."
+      responses:
+        "200":
+          description: Updated
+    patch:
+      operationId: patchFile
+      summary: Partially update file metadata (no requestBody defined)
+      parameters:
+        - name: fileId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: "The ID of the file."
+      responses:
+        "200":
+          description: Updated
   /files/{fileId}/comments:
     post:
       operationId: createComment

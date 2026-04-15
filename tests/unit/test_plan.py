@@ -327,8 +327,53 @@ class TestBodyFieldFallback:
         assert plan.body_fields[0].name == "content"
         assert plan.body_fields[0].location == "body"
 
+    def test_put_no_request_body_synthesizes_body_fields(self, spec):
+        """PUT with no requestBody: YAML params become body fields."""
+        from mcp_builder.codegen.plan import _build_tool_plan
+        from mcp_builder.schema.models import Parameter, Tool
+
+        tool = Tool(
+            tool_name="update_file",
+            endpoint="PUT /files/{fileId}",
+            description="Replace a file.",
+            parameters=[
+                Parameter(name="fileId", description="File ID.", required=True),
+                Parameter(name="name", description="New name.", required=True),
+                Parameter(name="mimeType", description="MIME type.", required=False),
+            ],
+        )
+        plan = _build_tool_plan(tool, spec, "test-group")
+        assert len(plan.path_params) == 1
+        assert plan.path_params[0].name == "fileId"
+        assert len(plan.body_fields) == 2
+        names = {f.name for f in plan.body_fields}
+        assert names == {"name", "mimeType"}
+
+    def test_patch_no_request_body_synthesizes_body_fields(self, spec):
+        """PATCH with no requestBody: YAML params become body fields."""
+        from mcp_builder.codegen.plan import _build_tool_plan
+        from mcp_builder.schema.models import Parameter, Tool
+
+        tool = Tool(
+            tool_name="patch_file",
+            endpoint="PATCH /files/{fileId}",
+            description="Partially update a file.",
+            parameters=[
+                Parameter(name="fileId", description="File ID.", required=True),
+                Parameter(name="name", description="New name.", required=False),
+            ],
+        )
+        plan = _build_tool_plan(tool, spec, "test-group")
+        assert len(plan.path_params) == 1
+        assert plan.path_params[0].name == "fileId"
+        assert len(plan.body_fields) == 1
+        assert plan.body_fields[0].name == "name"
+        assert plan.body_fields[0].location == "body"
+
     def test_get_does_not_synthesize_body_fields(self, spec):
         """GET with unmatched YAML params does NOT synthesize body fields."""
+        from unittest.mock import patch
+
         from mcp_builder.codegen.plan import _build_tool_plan
         from mcp_builder.schema.models import Parameter, Tool
 
@@ -342,8 +387,13 @@ class TestBodyFieldFallback:
                 ),
             ],
         )
-        plan = _build_tool_plan(tool, spec, "test-group")
+        with patch("mcp_builder.codegen.plan.logger") as mock_logger:
+            plan = _build_tool_plan(tool, spec, "test-group")
         assert len(plan.body_fields) == 0
+        mock_logger.warning.assert_called_once()
+        call_kwargs = mock_logger.warning.call_args
+        assert "not found in spec" in call_kwargs[0][0]
+        assert call_kwargs[1]["unmatched"] == ["nonexistent"]
 
     def test_mixed_spec_body_and_synthesized(self, spec):
         """When spec has some body fields, only unmatched YAML params are synthesized."""
