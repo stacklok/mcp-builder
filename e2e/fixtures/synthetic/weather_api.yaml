@@ -27,6 +27,7 @@ groups:
           - name: location
             description: "City name or postal code for the forecast."
             required: true
+            location: path
 
 auth:
   type: api_key

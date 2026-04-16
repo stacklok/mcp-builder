@@ -32,16 +32,19 @@ groups:
               Drive search query string. Examples: "name contains 'design'"
               or "mimeType = 'application/pdf'". See Drive query syntax docs.
             required: false
+            location: query
           - name: pageSize
             description: >
               Number of files to return per page. Default is 100. Maximum is 1000.
             required: false
+            location: query
           - name: fields
             description: >
               Comma-separated list of file fields to include in the response.
               Default returns a minimal set. Use "files(id,name,mimeType,modifiedTime)"
               for common fields.
             required: false
+            location: query
         hints:
           - "paginated: uses pageToken/nextPageToken cursor pattern"
           - "response is large — consider extracting only id, name, mimeType, modifiedTime"
@@ -55,6 +58,7 @@ groups:
           - name: fileId
             description: "The ID of the file to retrieve."
             required: true
+            location: path
         hints:
           - "response has 50+ fields — consider response shaping"
 
@@ -70,6 +74,7 @@ groups:
           - name: fileId
             description: "The ID of the file or folder."
             required: true
+            location: path
 
 auth:
   type: oauth_bearer

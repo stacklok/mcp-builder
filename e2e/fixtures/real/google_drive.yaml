@@ -31,20 +31,24 @@ groups:
               Drive search query string. Examples: "name contains 'design'"
               or "mimeType = 'application/pdf'". See Drive query syntax docs.
             required: false
+            location: query
           - name: pageSize
             description: >
               Number of files to return per page. Default is 100, maximum 1000.
             required: false
+            location: query
           - name: pageToken
             description: >
               Token for continuing a previous list request. Returned as
               nextPageToken in paginated responses.
             required: false
+            location: query
           - name: fields
             description: >
               Comma-separated list of fields to include. Use
               "files(id,name,mimeType,modifiedTime)" for common fields.
             required: false
+            location: query
         hints:
           - "paginated: uses pageToken/nextPageToken cursor pattern"
           - "response is large — use fields param to limit returned data"
@@ -58,11 +62,13 @@ groups:
           - name: fileId
             description: "The ID of the file to retrieve."
             required: true
+            location: path
           - name: fields
             description: >
               Comma-separated list of fields to include in the response.
               The full resource has 50+ fields.
             required: false
+            location: query
         hints:
           - "response has 50+ fields — consider field selection"
 
@@ -76,17 +82,20 @@ groups:
           - name: name
             description: "The name of the file or folder to create."
             required: true
+            location: body
           - name: mimeType
             description: >
               MIME type of the file. Use "application/vnd.google-apps.folder"
               for folders, "application/vnd.google-apps.document" for
               Google Docs.
             required: true
+            location: body
           - name: parents
             description: >
               List of parent folder IDs. If not specified, the file is
               placed in the user's My Drive root.
             required: false
+            location: body
 
   - name: comments
     description: "File comments for collaboration and review"
@@ -101,9 +110,11 @@ groups:
           - name: fileId
             description: "The ID of the file."
             required: true
+            location: path
           - name: pageSize
             description: "Number of comments to return per page. Default is 20."
             required: false
+            location: query
         hints:
           - "paginated: uses pageToken/nextPageToken cursor pattern"
 
@@ -116,9 +127,11 @@ groups:
           - name: fileId
             description: "The ID of the file to comment on."
             required: true
+            location: path
           - name: content
             description: "The plain text content of the comment."
             required: true
+            location: body
 
 auth:
   type: oauth_bearer

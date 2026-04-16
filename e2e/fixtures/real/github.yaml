@@ -30,22 +30,27 @@ groups:
           - name: owner
             description: "The account owner of the repository."
             required: true
+            location: path
           - name: repo
             description: "The name of the repository."
             required: true
+            location: path
           - name: state
             description: >
               Filter by issue state. One of "open", "closed", or "all".
               Defaults to "open".
             required: false
+            location: query
           - name: labels
             description: >
               Comma-separated list of label names to filter by.
               Example: "bug,priority:high".
             required: false
+            location: query
           - name: per_page
             description: "Number of results per page. Default 30, maximum 100."
             required: false
+            location: query
         hints:
           - "paginated: uses page/per_page pattern"
           - "also returns pull requests — filter with is:issue in search if needed"
@@ -59,12 +64,15 @@ groups:
           - name: owner
             description: "The account owner of the repository."
             required: true
+            location: path
           - name: repo
             description: "The name of the repository."
             required: true
+            location: path
           - name: issue_number
             description: "The issue number."
             required: true
+            location: path
 
       - tool_name: create_issue
         endpoint: POST /repos/{owner}/{repo}/issues
@@ -75,18 +83,23 @@ groups:
           - name: owner
             description: "The account owner of the repository."
             required: true
+            location: path
           - name: repo
             description: "The name of the repository."
             required: true
+            location: path
           - name: title
             description: "The title of the issue."
             required: true
+            location: body
           - name: body
             description: "The body content of the issue. Supports GitHub Flavored Markdown."
             required: false
+            location: body
           - name: labels
             description: "List of label names to apply to the issue."
             required: false
+            location: body
 
       - tool_name: create_issue_comment
         endpoint: POST /repos/{owner}/{repo}/issues/{issue_number}/comments
@@ -97,15 +110,19 @@ groups:
           - name: owner
             description: "The account owner of the repository."
             required: true
+            location: path
           - name: repo
             description: "The name of the repository."
             required: true
+            location: path
           - name: issue_number
             description: "The issue number to comment on."
             required: true
+            location: path
           - name: body
             description: "The comment text. Supports GitHub Flavored Markdown."
             required: true
+            location: body
 
   - name: code
     description: "Repository contents and code search"
@@ -120,17 +137,21 @@ groups:
           - name: owner
             description: "The account owner of the repository."
             required: true
+            location: path
           - name: repo
             description: "The name of the repository."
             required: true
+            location: path
           - name: path
             description: "The file path relative to the repository root."
             required: true
+            location: path
           - name: ref
             description: >
               Branch, tag, or commit SHA to read from. Defaults to the
               repository's default branch.
             required: false
+            location: query
         hints:
           - "file content is base64 encoded — decode before displaying"
           - "only files smaller than 100 MB can be retrieved"
@@ -148,9 +169,11 @@ groups:
               "addClass repo:jquery/jquery", "filename:config.yaml org:acme",
               "HTTPClient language:go".
             required: true
+            location: query
           - name: per_page
             description: "Number of results per page. Default 30, maximum 100."
             required: false
+            location: query
         hints:
           - "only searches the default branch"
           - "only files smaller than 384 KB are searchable"
@@ -169,12 +192,15 @@ groups:
           - name: org
             description: "The organization that owns the project."
             required: true
+            location: path
           - name: project_number
             description: "The project number (visible in the project URL)."
             required: true
+            location: path
           - name: per_page
             description: "Number of items per page. Default 30, maximum 100."
             required: false
+            location: query
         hints:
           - "paginated: uses page/per_page pattern"
 
@@ -189,9 +215,11 @@ groups:
           - name: org
             description: "The organization that owns the project."
             required: true
+            location: path
           - name: project_number
             description: "The project number."
             required: true
+            location: path
 
 auth:
   type: oauth_bearer

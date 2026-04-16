@@ -33,20 +33,24 @@ groups:
               "assignee = currentUser() AND sprint in openSprints()",
               "labels = bug AND created >= -7d ORDER BY priority DESC".
             required: true
+            location: query
           - name: fields
             description: >
               Comma-separated list of field names to include in the response.
               Use "*all" for everything or "summary,status,assignee" for
               specific fields. Reduces payload size significantly.
             required: false
+            location: query
           - name: maxResults
             description: "Maximum number of issues to return. Default 50, maximum 100."
             required: false
+            location: query
           - name: nextPageToken
             description: >
               Pagination token returned from a previous request. Replaces
               the deprecated startAt parameter.
             required: false
+            location: query
         hints:
           - "paginated: uses nextPageToken cursor pattern (startAt is deprecated)"
           - "JQL is its own query language — see Atlassian JQL docs for syntax"
@@ -62,11 +66,13 @@ groups:
           - name: issueIdOrKey
             description: "The issue key (e.g. PROJ-123) or numeric issue ID."
             required: true
+            location: path
           - name: fields
             description: >
               Comma-separated list of fields to return. Use "*all" for
               everything or specific names to reduce payload.
             required: false
+            location: query
         hints:
           - "description and comments use Atlassian Document Format (ADF), not plain text"
 
@@ -80,25 +86,31 @@ groups:
           - name: project
             description: "The project key (e.g. ENG) or project ID."
             required: true
+            location: body
           - name: issuetype
             description: >
               The issue type name or ID. Common values: "Bug", "Story",
               "Task", "Epic".
             required: true
+            location: body
           - name: summary
             description: "The issue summary/title."
             required: true
+            location: body
           - name: description
             description: >
               The issue description in Atlassian Document Format (ADF).
               ADF is a structured JSON format, not plain text or Markdown.
             required: false
+            location: body
           - name: labels
             description: "List of label strings to apply to the issue."
             required: false
+            location: body
           - name: assignee
             description: "The accountId of the user to assign. Use 'myself' endpoint to get your own."
             required: false
+            location: body
 
       - tool_name: update_issue
         endpoint: PUT /rest/api/3/issue/{issueIdOrKey}
@@ -110,18 +122,23 @@ groups:
           - name: issueIdOrKey
             description: "The issue key (e.g. PROJ-123) or numeric issue ID."
             required: true
+            location: path
           - name: summary
             description: "Updated summary/title."
             required: false
+            location: body
           - name: description
             description: "Updated description in Atlassian Document Format (ADF)."
             required: false
+            location: body
           - name: labels
             description: "Updated list of label strings."
             required: false
+            location: body
           - name: assignee
             description: "The accountId of the new assignee, or null to unassign."
             required: false
+            location: body
 
       - tool_name: delete_issue
         endpoint: DELETE /rest/api/3/issue/{issueIdOrKey}
@@ -133,9 +150,11 @@ groups:
           - name: issueIdOrKey
             description: "The issue key (e.g. PROJ-123) or numeric issue ID."
             required: true
+            location: path
           - name: deleteSubtasks
             description: "Set to true to also delete all subtasks. Defaults to false."
             required: false
+            location: query
 
       - tool_name: add_comment
         endpoint: POST /rest/api/3/issue/{issueIdOrKey}/comment
@@ -147,11 +166,13 @@ groups:
           - name: issueIdOrKey
             description: "The issue key (e.g. PROJ-123) or numeric issue ID."
             required: true
+            location: path
           - name: body
             description: >
               The comment body in Atlassian Document Format (ADF). This is
               a structured JSON document, not plain text or Markdown.
             required: true
+            location: body
         hints:
           - "body must be ADF — plain text strings will be rejected by the v3 API"
 
@@ -166,14 +187,17 @@ groups:
           - name: issueIdOrKey
             description: "The issue key (e.g. PROJ-123) or numeric issue ID."
             required: true
+            location: path
           - name: transitionId
             description: >
               The ID of the transition to execute. Get available transitions
               by calling GET on this same endpoint.
             required: true
+            location: body
           - name: comment
             description: "Optional comment to add when transitioning, in ADF format."
             required: false
+            location: body
 
 auth:
   type: oauth_bearer

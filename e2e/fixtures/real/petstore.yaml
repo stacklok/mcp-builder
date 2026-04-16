@@ -30,6 +30,7 @@ groups:
               Filter by pet status. One of "available", "pending", or "sold".
               Defaults to "available".
             required: true
+            location: query
 
       - tool_name: get_pet_by_id
         endpoint: GET /pet/{petId}
@@ -40,6 +41,7 @@ groups:
           - name: petId
             description: "The numeric ID of the pet to retrieve."
             required: true
+            location: path
 
   - name: store
     description: "Order placement and lookup"
@@ -53,9 +55,11 @@ groups:
           - name: petId
             description: "The ID of the pet being ordered."
             required: true
+            location: body
           - name: quantity
             description: "Number of pets to order."
             required: true
+            location: body
 
       - tool_name: get_order_by_id
         endpoint: GET /store/order/{orderId}
@@ -66,6 +70,7 @@ groups:
           - name: orderId
             description: "The numeric ID of the order."
             required: true
+            location: path
 
   - name: users
     description: "User account lookup"
@@ -79,6 +84,7 @@ groups:
           - name: username
             description: "The username to look up."
             required: true
+            location: path
 
 auth:
   type: api_key

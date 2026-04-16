@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from enum import StrEnum
 from pathlib import Path
 from typing import Literal, Self
 
@@ -13,20 +14,28 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 logger = structlog.get_logger()
 
 
+class ParamLocation(StrEnum):
+    """Where a parameter belongs in the HTTP request."""
+
+    PATH = "path"
+    QUERY = "query"
+    BODY = "body"
+
+
 class Parameter(BaseModel):
     """A parameter entry for a tool in mcp-scope.yaml.
 
     When a tool defines a ``parameters`` list, those entries act as an
-    **allowlist**: only the listed parameters (plus path parameters, which
-    are always required for URL construction) are included in the generated
+    **allowlist**: only the listed parameters are included in the generated
     MCP tool. The ``description`` and ``required`` fields override the
     corresponding values from the OpenAPI spec.
 
     When a tool omits ``parameters`` (None), all spec parameters are used.
 
-    The ``location`` field ("query" or "body") tells codegen where this
-    parameter belongs in the HTTP request. When omitted, the location is
-    inferred by matching the parameter name against the OpenAPI spec.
+    The ``location`` field tells codegen where this parameter belongs:
+    - ``path``: URL template slot (e.g., ``/items/{itemId}``)
+    - ``query``: URL query parameter (e.g., ``?fields=name``)
+    - ``body``: JSON request body property (e.g., ``{"color": "red"}``)
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -34,7 +43,7 @@ class Parameter(BaseModel):
     name: str
     description: str
     required: bool
-    location: Literal["query", "body"] | None = None
+    location: ParamLocation
 
 
 class OAuthConfig(BaseModel):

@@ -1,8 +1,9 @@
 """Tests for the parameter models renderer."""
 
 from mcp_builder.codegen.plan import AuthPlan, ParamPlan, ServerPlan, ToolPlan
-from mcp_builder.spec import PythonType
 from mcp_builder.codegen.renderers.models import render_parameter_models
+from mcp_builder.schema.models import ParamLocation
+from mcp_builder.spec import PythonType
 
 
 def _make_plan(tools: list[ToolPlan] | None = None) -> ServerPlan:
@@ -47,7 +48,7 @@ def _make_body_field(
         py_type=py_type,
         description=description,
         required=required,
-        location="body",
+        location=ParamLocation.BODY,
         original_name=name,
     )
 

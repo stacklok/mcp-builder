@@ -29,12 +29,15 @@ groups:
           - name: AccountSid
             description: "The Twilio Account SID that owns the messages."
             required: true
+            location: path
           - name: To
             description: "Filter by recipient phone number (E.164 format)."
             required: false
+            location: query
           - name: PageSize
             description: "Number of messages per page. Default 50, max 1000."
             required: false
+            location: query
 
       - tool_name: get_message
         endpoint: GET /2010-04-01/Accounts/{AccountSid}/Messages/{Sid}.json
@@ -45,9 +48,11 @@ groups:
           - name: AccountSid
             description: "The Twilio Account SID."
             required: true
+            location: path
           - name: Sid
             description: "The message SID to retrieve."
             required: true
+            location: path
 
   - name: applications
     description: "TwiML application management"
@@ -62,12 +67,15 @@ groups:
           - name: AccountSid
             description: "The Twilio Account SID."
             required: true
+            location: path
           - name: FriendlyName
             description: "Filter by application friendly name."
             required: false
+            location: query
           - name: PageSize
             description: "Number of results per page. Default 50, max 1000."
             required: false
+            location: query
 
 auth:
   type: api_key

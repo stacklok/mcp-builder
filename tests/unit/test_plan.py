@@ -11,7 +11,7 @@ from mcp_builder.codegen.plan import (
     build_server_plan,
     server_name_to_module,
 )
-from mcp_builder.schema.models import load_scope
+from mcp_builder.schema.models import ParamLocation, load_scope
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -207,7 +207,7 @@ class TestParameterAllowlist:
 
 
 # ---------------------------------------------------------------------------
-# Explicit location — YAML params with location="body" or location="query"
+# Explicit location — YAML params with location=ParamLocation.BODY or location=ParamLocation.QUERY
 # ---------------------------------------------------------------------------
 
 
@@ -215,7 +215,7 @@ class TestExplicitLocation:
     """When YAML params have location set, codegen routes them directly."""
 
     def test_body_location_routes_to_body_fields(self, spec):
-        """location="body" params become body fields even without spec requestBody."""
+        """location=ParamLocation.BODY params become body fields even without spec requestBody."""
         from mcp_builder.codegen.plan import _build_tool_plan
         from mcp_builder.schema.models import Parameter, Tool
 
@@ -228,19 +228,19 @@ class TestExplicitLocation:
                     name="name",
                     description="File name.",
                     required=True,
-                    location="body",
+                    location=ParamLocation.BODY,
                 ),
                 Parameter(
                     name="mimeType",
                     description="MIME type.",
                     required=True,
-                    location="body",
+                    location=ParamLocation.BODY,
                 ),
                 Parameter(
                     name="parents",
                     description="Parent folders.",
                     required=False,
-                    location="body",
+                    location=ParamLocation.BODY,
                 ),
             ],
         )
@@ -263,7 +263,7 @@ class TestExplicitLocation:
                     name="name",
                     description="File name.",
                     required=True,
-                    location="body",
+                    location=ParamLocation.BODY,
                 ),
             ],
         )
@@ -284,13 +284,13 @@ class TestExplicitLocation:
                     name="name",
                     description="File name.",
                     required=True,
-                    location="body",
+                    location=ParamLocation.BODY,
                 ),
                 Parameter(
                     name="parents",
                     description="Parent folders.",
                     required=False,
-                    location="body",
+                    location=ParamLocation.BODY,
                 ),
             ],
         )
@@ -314,7 +314,7 @@ class TestExplicitLocation:
                     name="name",
                     description="The file name.",
                     required=True,
-                    location="body",
+                    location=ParamLocation.BODY,
                 ),
             ],
         )
@@ -335,7 +335,7 @@ class TestExplicitLocation:
                     name="name",
                     description="File name.",
                     required=True,
-                    location="body",
+                    location=ParamLocation.BODY,
                 ),
             ],
         )
@@ -352,12 +352,17 @@ class TestExplicitLocation:
             endpoint="POST /files/{fileId}/comments",
             description="Create a comment.",
             parameters=[
-                Parameter(name="fileId", description="File ID.", required=True),
+                Parameter(
+                    name="fileId",
+                    description="File ID.",
+                    required=True,
+                    location=ParamLocation.PATH,
+                ),
                 Parameter(
                     name="content",
                     description="Comment text.",
                     required=True,
-                    location="body",
+                    location=ParamLocation.BODY,
                 ),
             ],
         )
@@ -378,15 +383,23 @@ class TestExplicitLocation:
             endpoint="PUT /files/{fileId}",
             description="Replace a file.",
             parameters=[
-                Parameter(name="fileId", description="File ID.", required=True),
                 Parameter(
-                    name="name", description="New name.", required=True, location="body"
+                    name="fileId",
+                    description="File ID.",
+                    required=True,
+                    location=ParamLocation.PATH,
+                ),
+                Parameter(
+                    name="name",
+                    description="New name.",
+                    required=True,
+                    location=ParamLocation.BODY,
                 ),
                 Parameter(
                     name="mimeType",
                     description="MIME type.",
                     required=False,
-                    location="body",
+                    location=ParamLocation.BODY,
                 ),
             ],
         )
@@ -407,12 +420,17 @@ class TestExplicitLocation:
             endpoint="PATCH /files/{fileId}",
             description="Partially update a file.",
             parameters=[
-                Parameter(name="fileId", description="File ID.", required=True),
+                Parameter(
+                    name="fileId",
+                    description="File ID.",
+                    required=True,
+                    location=ParamLocation.PATH,
+                ),
                 Parameter(
                     name="name",
                     description="New name.",
                     required=False,
-                    location="body",
+                    location=ParamLocation.BODY,
                 ),
             ],
         )
@@ -423,50 +441,29 @@ class TestExplicitLocation:
         assert plan.body_fields[0].name == "name"
         assert plan.body_fields[0].location == "body"
 
-    def test_no_location_unmatched_warns(self, spec):
-        """Params with no location that don't match spec are warned and dropped."""
-        from unittest.mock import patch
-
-        from mcp_builder.codegen.plan import _build_tool_plan
-        from mcp_builder.schema.models import Parameter, Tool
-
-        tool = Tool(
-            tool_name="list_items",
-            endpoint="GET /items",
-            description="List items.",
-            parameters=[
-                Parameter(
-                    name="nonexistent", description="Not in spec.", required=False
-                ),
-            ],
-        )
-        with patch("mcp_builder.codegen.plan.logger") as mock_logger:
-            plan = _build_tool_plan(tool, spec, "test-group")
-        assert len(plan.body_fields) == 0
-        assert len(plan.query_params) == 0
-        mock_logger.warning.assert_called_once()
-        call_kwargs = mock_logger.warning.call_args
-        assert "dropped" in call_kwargs[0][0]
-        assert call_kwargs[1]["unmatched"] == ["nonexistent"]
-
     def test_mixed_spec_body_and_explicit_body(self, spec):
         """Spec body fields + explicit body params coexist."""
         from mcp_builder.codegen.plan import _build_tool_plan
         from mcp_builder.schema.models import Parameter, Tool
 
         # POST /items has body fields [name, description] in the spec.
-        # YAML lists name (spec match) + extra_field (explicit body).
+        # YAML lists name (spec match, type from spec) + extra_field (no spec, defaults to str).
         tool = Tool(
             tool_name="create_item",
             endpoint="POST /items",
             description="Create an item.",
             parameters=[
-                Parameter(name="name", description="Item name.", required=True),
+                Parameter(
+                    name="name",
+                    description="Item name.",
+                    required=True,
+                    location=ParamLocation.BODY,
+                ),
                 Parameter(
                     name="extra_field",
                     description="Extra.",
                     required=False,
-                    location="body",
+                    location=ParamLocation.BODY,
                 ),
             ],
         )
@@ -477,7 +474,7 @@ class TestExplicitLocation:
         assert len(plan.body_fields) == 2
 
     def test_explicit_query_location(self, spec):
-        """location="query" params not in spec are included as query params."""
+        """location=ParamLocation.QUERY params not in spec are included as query params."""
         from mcp_builder.codegen.plan import _build_tool_plan
         from mcp_builder.schema.models import Parameter, Tool
 
@@ -490,13 +487,13 @@ class TestExplicitLocation:
                     name="uploadType",
                     description="Upload type.",
                     required=True,
-                    location="query",
+                    location=ParamLocation.QUERY,
                 ),
                 Parameter(
                     name="name",
                     description="File name.",
                     required=True,
-                    location="body",
+                    location=ParamLocation.BODY,
                 ),
             ],
         )
@@ -507,24 +504,53 @@ class TestExplicitLocation:
         assert len(plan.body_fields) == 1
         assert plan.body_fields[0].name == "name"
 
-    def test_no_location_falls_back_to_spec(self, spec):
-        """Params without location are matched against spec (backward compat)."""
+    def test_spec_type_enrichment(self, spec):
+        """When a YAML param matches a spec param, the spec type is used."""
         from mcp_builder.codegen.plan import _build_tool_plan
         from mcp_builder.schema.models import Parameter, Tool
 
+        # GET /items has query param "fields" with type "string" in the spec.
         tool = Tool(
             tool_name="list_items",
             endpoint="GET /items",
             description="List items.",
             parameters=[
-                Parameter(name="fields", description="Fields.", required=False),
-                Parameter(name="status", description="Status.", required=False),
+                Parameter(
+                    name="fields",
+                    description="Fields.",
+                    required=False,
+                    location=ParamLocation.QUERY,
+                ),
             ],
         )
         plan = _build_tool_plan(tool, spec, "test-group")
-        assert len(plan.query_params) == 2
-        names = {p.name for p in plan.query_params}
-        assert names == {"fields", "status"}
+        assert len(plan.query_params) == 1
+        assert plan.query_params[0].py_type == "str"
+
+    def test_auto_include_unlisted_path_params(self, spec):
+        """Spec path params not listed in YAML are auto-included for URL safety."""
+        from mcp_builder.codegen.plan import _build_tool_plan
+        from mcp_builder.schema.models import Parameter, Tool
+
+        # POST /files/{fileId}/comments has fileId as a path param in the spec.
+        # YAML only lists a body param — fileId should be auto-included.
+        tool = Tool(
+            tool_name="create_comment",
+            endpoint="POST /files/{fileId}/comments",
+            description="Create a comment.",
+            parameters=[
+                Parameter(
+                    name="content",
+                    description="Comment text.",
+                    required=True,
+                    location=ParamLocation.BODY,
+                ),
+            ],
+        )
+        plan = _build_tool_plan(tool, spec, "test-group")
+        assert len(plan.path_params) == 1
+        assert plan.path_params[0].name == "fileId"
+        assert len(plan.body_fields) == 1
 
 
 # ---------------------------------------------------------------------------
@@ -600,7 +626,7 @@ class TestNameCollisionResolution:
                 py_type="str",
                 description="path id",
                 required=True,
-                location="path",
+                location=ParamLocation.PATH,
                 original_name="id",
             ),
             ParamPlan(
@@ -609,7 +635,7 @@ class TestNameCollisionResolution:
                 py_type="str",
                 description="query id",
                 required=False,
-                location="query",
+                location=ParamLocation.QUERY,
                 original_name="id",
             ),
         ]
@@ -629,7 +655,7 @@ class TestNameCollisionResolution:
                 py_type="str",
                 description="first",
                 required=False,
-                location="query",
+                location=ParamLocation.QUERY,
                 original_name="foo-bar",
             ),
             ParamPlan(
@@ -638,7 +664,7 @@ class TestNameCollisionResolution:
                 py_type="str",
                 description="second",
                 required=False,
-                location="query",
+                location=ParamLocation.QUERY,
                 original_name="foo.bar",
             ),
         ]
@@ -659,7 +685,7 @@ class TestNameCollisionResolution:
                 py_type="str",
                 description="",
                 required=True,
-                location="path",
+                location=ParamLocation.PATH,
                 original_name="id",
             ),
             ParamPlan(
@@ -668,7 +694,7 @@ class TestNameCollisionResolution:
                 py_type="str",
                 description="",
                 required=True,
-                location="query",
+                location=ParamLocation.QUERY,
                 original_name="name",
             ),
         ]

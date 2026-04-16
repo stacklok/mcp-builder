@@ -1,9 +1,8 @@
 """Tests for the tools module renderer."""
 
-from typing import Literal
-
 from mcp_builder.codegen.plan import ParamPlan, ToolPlan
 from mcp_builder.codegen.renderers.tools import render_tools_module
+from mcp_builder.schema.models import ParamLocation
 from mcp_builder.spec import PythonType
 from tests.unit.test_renderers.conftest import make_plan
 
@@ -37,7 +36,7 @@ def _make_param(
     py_name: str | None = None,
     py_type: PythonType = "str",
     required: bool = True,
-    location: Literal["path", "query", "body"] = "path",
+    location: ParamLocation = ParamLocation.PATH,
     original_name: str | None = None,
     description: str = "A parameter.",
 ) -> ParamPlan:
@@ -105,7 +104,7 @@ class TestRenderToolsModuleMethods:
             name="create_item",
             http_method="POST",
             path="/items",
-            body_fields=[_make_param("title", location="body")],
+            body_fields=[_make_param("title", location=ParamLocation.BODY)],
         )
         source = render_tools_module(make_plan(tools=[tool_a, tool_b]))
         assert "async def get_item(" in source
@@ -142,7 +141,9 @@ class TestRenderToolsModuleParams:
         tool = _make_tool(
             path="/items",
             query_params=[
-                _make_param("page_size", location="query", original_name="page-size"),
+                _make_param(
+                    "page_size", location=ParamLocation.QUERY, original_name="page-size"
+                ),
             ],
         )
         source = render_tools_module(make_plan(tools=[tool]))
@@ -155,8 +156,8 @@ class TestRenderToolsModuleParams:
             http_method="POST",
             path="/items",
             body_fields=[
-                _make_param("title", location="body"),
-                _make_param("color", location="body", required=False),
+                _make_param("title", location=ParamLocation.BODY),
+                _make_param("color", location=ParamLocation.BODY, required=False),
             ],
         )
         source = render_tools_module(make_plan(tools=[tool]))
@@ -170,8 +171,8 @@ class TestRenderToolsModuleParams:
             http_method="POST",
             path="/items",
             body_fields=[
-                _make_param("color", location="body", required=False),
-                _make_param("title", location="body", required=True),
+                _make_param("color", location=ParamLocation.BODY, required=False),
+                _make_param("title", location=ParamLocation.BODY, required=True),
             ],
         )
         source = render_tools_module(make_plan(tools=[tool]))
@@ -183,7 +184,7 @@ class TestRenderToolsModuleParams:
     def test_optional_params_have_none_default(self) -> None:
         tool = _make_tool(
             query_params=[
-                _make_param("fields", location="query", required=False),
+                _make_param("fields", location=ParamLocation.QUERY, required=False),
             ],
         )
         source = render_tools_module(make_plan(tools=[tool]))
@@ -195,7 +196,10 @@ class TestRenderToolsModuleParams:
             path="/items",
             query_params=[
                 _make_param(
-                    "q", location="query", required=False, description="Search query."
+                    "q",
+                    location=ParamLocation.QUERY,
+                    required=False,
+                    description="Search query.",
                 ),
             ],
         )
@@ -214,7 +218,7 @@ class TestRenderToolsModuleParams:
         tool = _make_tool(
             path="/items",
             path_params=[],
-            query_params=[_make_param("q", location="query")],
+            query_params=[_make_param("q", location=ParamLocation.QUERY)],
         )
         source = render_tools_module(make_plan(tools=[tool]))
         assert "params=" in source
@@ -226,7 +230,7 @@ class TestRenderToolsModuleParams:
             http_method="POST",
             path="/items",
             path_params=[],
-            body_fields=[_make_param("title", location="body")],
+            body_fields=[_make_param("title", location=ParamLocation.BODY)],
         )
         source = render_tools_module(make_plan(tools=[tool]))
         assert "json_body=" in source
@@ -236,7 +240,9 @@ class TestRenderToolsModuleParams:
         tool = _make_tool(
             path="/items",
             query_params=[
-                _make_param("page_size", location="query", original_name="page-size"),
+                _make_param(
+                    "page_size", location=ParamLocation.QUERY, original_name="page-size"
+                ),
             ],
         )
         source = render_tools_module(make_plan(tools=[tool]))
@@ -276,7 +282,7 @@ class TestRenderToolsModuleEdgeCases:
             query_params=[
                 _make_param(
                     "q",
-                    location="query",
+                    location=ParamLocation.QUERY,
                     description='Filter by "type" field.',
                 ),
             ],
@@ -290,7 +296,7 @@ class TestRenderToolsModuleEdgeCases:
             query_params=[
                 _make_param(
                     "filter",
-                    location="query",
+                    location=ParamLocation.QUERY,
                     original_name='my"filter',
                 ),
             ],
@@ -313,8 +319,10 @@ class TestRenderToolsModuleEdgeCases:
             http_method="PUT",
             path="/items/{itemId}",
             path_params=[_make_param("item_id", original_name="itemId")],
-            query_params=[_make_param("dry_run", location="query", required=False)],
-            body_fields=[_make_param("title", location="body")],
+            query_params=[
+                _make_param("dry_run", location=ParamLocation.QUERY, required=False)
+            ],
+            body_fields=[_make_param("title", location=ParamLocation.BODY)],
         )
         source = render_tools_module(make_plan(tools=[tool]))
         compile(source, "<test>", "exec")
@@ -325,7 +333,9 @@ class TestRenderToolsModuleEdgeCases:
     def test_deterministic(self) -> None:
         tool = _make_tool(
             path_params=[_make_param("item_id", original_name="itemId")],
-            query_params=[_make_param("fields", location="query", required=False)],
+            query_params=[
+                _make_param("fields", location=ParamLocation.QUERY, required=False)
+            ],
         )
         plan = make_plan(tools=[tool])
         source1 = render_tools_module(plan)

@@ -103,7 +103,12 @@ class TestValidInputs:
     def test_tool_with_parameters_and_hints(self) -> None:
         data = _minimal_scope()
         data["groups"][0]["tools"][0]["parameters"] = [
-            {"name": "q", "description": "Query string.", "required": False}
+            {
+                "name": "q",
+                "description": "Query string.",
+                "required": False,
+                "location": "query",
+            }
         ]
         data["groups"][0]["tools"][0]["hints"] = ["paginated"]
         scope = MCPScope.model_validate(data)

@@ -24,10 +24,11 @@ Reading guide:
 
 Parameter semantics:
     When a tool in mcp-scope.yaml defines a ``parameters`` list, those
-    parameters act as an **allowlist**: only the listed parameters (plus
-    all path parameters) are included in the generated tool. Parameters
-    present in the OpenAPI spec but absent from the YAML are excluded.
-    When ``parameters`` is omitted (None), all spec parameters are used
+    parameters act as an **allowlist**: only the listed parameters are
+    included in the generated tool. Each parameter declares its
+    ``location`` (path, query, or body). Parameters present in the
+    OpenAPI spec but absent from the YAML are excluded. When
+    ``parameters`` is omitted (None), all spec parameters are used
     (backward-compatible legacy mode).
 """
 
@@ -51,7 +52,7 @@ from mcp_builder.spec import (
     get_parameters,
     parse_endpoint,
 )
-from mcp_builder.schema.models import MCPScope, Parameter, Tool
+from mcp_builder.schema.models import MCPScope, ParamLocation, Parameter, Tool
 
 logger = structlog.get_logger()
 
@@ -80,7 +81,7 @@ class ParamPlan(BaseModel):
     py_type: PythonType
     description: str
     required: bool
-    location: Literal["path", "query", "body"]
+    location: ParamLocation
     original_name: str  # preserved for path template substitution
 
 
@@ -238,9 +239,10 @@ def _build_tool_plan(tool: Tool, spec: OpenAPISpec, group_name: str) -> ToolPlan
     Operates in two modes based on the YAML ``parameters`` field:
 
     - **Allowlist mode** (``tool.parameters is not None``): only parameters
-      listed in the YAML are included for query params and body fields.
-      Path parameters are always included because they are required for URL
-      construction. YAML descriptions and required flags override spec values.
+      listed in the YAML are included. Each YAML param declares its
+      ``location`` (path, query, body), so routing is explicit — no
+      inference needed. The spec is only consulted for type enrichment.
+      Spec path params not listed in YAML are auto-included for URL safety.
     - **Legacy mode** (``tool.parameters is None``): all spec parameters are
       included with no overrides. This preserves backward compatibility for
       tools that don't define explicit parameters.
@@ -277,89 +279,60 @@ def _build_tool_plan(tool: Tool, spec: OpenAPISpec, group_name: str) -> ToolPlan
 
     if tool.parameters is not None:
         # Allowlist mode: YAML parameters define which params to include.
-        yaml_param_map: dict[str, tuple[str, bool]] = {
-            p.name: (p.description, p.required) for p in tool.parameters
-        }
+        # Each YAML param declares its location explicitly, so we just
+        # group by location and build plans.  Spec data is only used for
+        # type enrichment (YAML doesn't carry types).
+        yaml_path = [p for p in tool.parameters if p.location == ParamLocation.PATH]
+        yaml_query = [p for p in tool.parameters if p.location == ParamLocation.QUERY]
+        yaml_body = [p for p in tool.parameters if p.location == ParamLocation.BODY]
         logger.debug(
             "allowlist mode",
             tool_name=tool_name,
-            allowlist_keys=list(yaml_param_map),
+            path=len(yaml_path),
+            query=len(yaml_query),
+            body=len(yaml_body),
         )
 
-        # Separate YAML params that have an explicit location from those
-        # that need spec-based inference.
-        explicit_query = {p.name for p in tool.parameters if p.location == "query"}
-        explicit_body = {p.name for p in tool.parameters if p.location == "body"}
+        # Type lookup maps — spec provides types, YAML provides everything else.
+        spec_param_types: dict[str, PythonType] = {
+            p.name: OPENAPI_TYPE_MAP[p.schema_type] for p in spec_params
+        }
+        spec_body_types: dict[str, PythonType] = {
+            f.name: OPENAPI_TYPE_MAP[f.schema_type] for f in spec_body
+        }
 
-        # Path params: always include all (needed for URL construction),
-        # apply overrides if present in the allowlist.
-        path_params = _build_param_plans(spec_path_params, yaml_param_map, "path")
-
-        # Query params: include those named in the allowlist that either
-        # have explicit location="query" or exist in the spec's query params.
-        allowed_query = [
-            p
-            for p in spec_query_params
-            if p.name in yaml_param_map and p.name not in explicit_body
-        ]
-        query_params = _build_param_plans(allowed_query, yaml_param_map, "query")
-        # Also build query params that are explicitly marked location="query"
-        # but missing from the spec (the YAML is authoritative).
-        spec_query_names = {p.name for p in spec_query_params}
-        yaml_only_query = [
-            p
-            for p in tool.parameters
-            if p.location == "query" and p.name not in spec_query_names
-        ]
-        if yaml_only_query:
-            query_params.extend(
-                _build_yaml_only_params(yaml_only_query, location="query")
-            )
-
-        # Body fields: include those named in the allowlist that either
-        # have explicit location="body" or exist in the spec's body fields.
-        allowed_body = [
-            f
-            for f in spec_body
-            if f.name in yaml_param_map and f.name not in explicit_query
-        ]
-        body_fields = _build_body_param_plans(allowed_body, yaml_param_map)
-        # Also build body fields that are explicitly marked location="body"
-        # but missing from the spec (the YAML is authoritative).
-        spec_body_names = {f.name for f in spec_body}
-        yaml_only_body = [
-            p
-            for p in tool.parameters
-            if p.location == "body" and p.name not in spec_body_names
-        ]
-        if yaml_only_body:
-            body_fields.extend(_build_yaml_only_params(yaml_only_body, location="body"))
-
-        # Warn about YAML params with no location that don't match any spec
-        # param — these are silently dropped, which is likely a mistake.
-        matched_names = (
-            {p.name for p in spec_path_params}
-            | {p.name for p in allowed_query}
-            | {f.name for f in allowed_body}
-            | explicit_query
-            | explicit_body
+        path_params = _build_param_plans_from_yaml(
+            yaml_path, spec_param_types, ParamLocation.PATH
         )
-        unmatched = [
-            p
-            for p in tool.parameters
-            if p.name not in matched_names and p.location is None
-        ]
-        if unmatched:
-            logger.warning(
-                "YAML parameters have no location and don't match spec — dropped",
-                tool_name=tool_name,
-                unmatched=[p.name for p in unmatched],
-            )
+        # Safety: auto-include spec path params not listed in the YAML,
+        # since they're required for URL construction.
+        yaml_path_names = {p.name for p in yaml_path}
+        for sp in spec_path_params:
+            if sp.name not in yaml_path_names:
+                logger.debug("auto-including spec path param", name=sp.name)
+                path_params.append(
+                    ParamPlan(
+                        name=sp.name,
+                        py_name=_sanitize_name(sp.name),
+                        py_type=OPENAPI_TYPE_MAP[sp.schema_type],
+                        description=sp.description,
+                        required=sp.required,
+                        location=ParamLocation.PATH,
+                        original_name=sp.name,
+                    )
+                )
 
-        excluded_query = [
-            p.name for p in spec_query_params if p.name not in yaml_param_map
-        ]
-        excluded_body = [f.name for f in spec_body if f.name not in yaml_param_map]
+        query_params = _build_param_plans_from_yaml(
+            yaml_query, spec_param_types, ParamLocation.QUERY
+        )
+        body_fields = _build_param_plans_from_yaml(
+            yaml_body, spec_body_types, ParamLocation.BODY
+        )
+
+        # Log which spec params were excluded by the allowlist.
+        yaml_names = {p.name for p in tool.parameters}
+        excluded_query = [p.name for p in spec_query_params if p.name not in yaml_names]
+        excluded_body = [f.name for f in spec_body if f.name not in yaml_names]
         if excluded_query or excluded_body:
             logger.info(
                 "allowlist filtered params",
@@ -370,8 +343,12 @@ def _build_tool_plan(tool: Tool, spec: OpenAPISpec, group_name: str) -> ToolPlan
     else:
         # Legacy mode: no YAML parameters — include all spec params.
         no_overrides: dict[str, tuple[str, bool]] = {}
-        path_params = _build_param_plans(spec_path_params, no_overrides, "path")
-        query_params = _build_param_plans(spec_query_params, no_overrides, "query")
+        path_params = _build_param_plans(
+            spec_path_params, no_overrides, ParamLocation.PATH
+        )
+        query_params = _build_param_plans(
+            spec_query_params, no_overrides, ParamLocation.QUERY
+        )
         body_fields = _build_body_param_plans(spec_body, no_overrides)
 
     # Detect and resolve name collisions across all param locations
@@ -395,7 +372,7 @@ def _build_tool_plan(tool: Tool, spec: OpenAPISpec, group_name: str) -> ToolPlan
 def _build_param_plans(
     params: list[ExtractedParameter],
     yaml_overrides: dict[str, tuple[str, bool]],
-    location: Literal["path", "query"],
+    location: ParamLocation,
 ) -> list[ParamPlan]:
     """Convert URL parameters (path/query) into ParamPlan objects.
 
@@ -456,7 +433,7 @@ def _build_body_param_plans(
             logger.debug(
                 "applied yaml override",
                 field_name=field.name,
-                location="body",
+                location=ParamLocation.BODY,
                 required=required,
             )
         py_name = _sanitize_name(field.name)
@@ -475,40 +452,45 @@ def _build_body_param_plans(
                 py_type=py_type,
                 description=desc,
                 required=required,
-                location="body",
+                location=ParamLocation.BODY,
                 original_name=field.name,
             )
         )
     return plans
 
 
-def _build_yaml_only_params(
+def _build_param_plans_from_yaml(
     params: list[Parameter],
-    location: Literal["query", "body"],
+    spec_types: dict[str, PythonType],
+    location: ParamLocation,
 ) -> list[ParamPlan]:
-    """Build ParamPlan objects from YAML parameters that have no spec match.
+    """Build ParamPlan objects from YAML parameters, enriched by spec types.
 
-    Used when the scope YAML declares an explicit ``location`` for parameters
-    that don't appear in the OpenAPI spec (e.g. the spec omits requestBody
-    for a POST endpoint, or omits a query param).
+    YAML provides name, description, required, and location.  The spec
+    provides the Python type (via ``spec_types`` lookup); params not found
+    in the spec default to ``str``.
 
-    Since the spec provides no type information, all fields default to ``str``.
+    This single function handles all three locations (path, query, body)
+    and both spec-backed and spec-missing parameters.
     """
     plans = []
     for param in params:
         py_name = _sanitize_name(param.name)
+        py_type = spec_types.get(param.name, "str")
         logger.debug(
-            "yaml-only param",
+            "param plan (yaml)",
             name=param.name,
             py_name=py_name,
+            py_type=py_type,
             location=location,
             required=param.required,
+            from_spec=param.name in spec_types,
         )
         plans.append(
             ParamPlan(
                 name=param.name,
                 py_name=py_name,
-                py_type="str",
+                py_type=py_type,
                 description=param.description,
                 required=param.required,
                 location=location,

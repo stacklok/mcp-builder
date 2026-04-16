@@ -22,9 +22,11 @@ groups:
           - name: itemId
             description: "The unique item identifier."
             required: true
+            location: path
           - name: fields
             description: "Comma-separated list of fields to return."
             required: false
+            location: query
       - tool_name: create_item
         endpoint: POST /items
         description: "Create a new item."
@@ -35,9 +37,11 @@ groups:
           - name: fields
             description: "Comma-separated list of fields to return."
             required: false
+            location: query
           - name: status
             description: "Filter by item status."
             required: false
+            location: query
 
 auth:
   type: api_key
