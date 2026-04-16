@@ -107,3 +107,31 @@ class TestScaffoldProject:
         (tmp_path / "test-api-mcp").mkdir()
         with pytest.raises(FileExistsError, match="already exists"):
             scaffold_project(plan, TEMPLATE_DIR, tmp_path)
+
+    def test_updates_pyproject_cov_target(self, scaffolded: Path) -> None:
+        text = (scaffolded / "pyproject.toml").read_text()
+        assert "--cov=test_api_mcp" in text
+        assert "mcp_template_py" not in text
+
+    def test_updates_taskfile_run_target(self, scaffolded: Path) -> None:
+        text = (scaffolded / "Taskfile.yml").read_text()
+        assert "test_api_mcp" in text
+        assert "mcp_template_py" not in text
+
+    def test_updates_claude_md(self, scaffolded: Path) -> None:
+        text = (scaffolded / "CLAUDE.md").read_text()
+        assert "test_api_mcp" in text
+        assert "mcp_template_py" not in text
+
+    def test_no_template_leftovers_in_any_file(self, scaffolded: Path) -> None:
+        """Verify mcp_template_py does not appear in any text file."""
+        for path in scaffolded.rglob("*"):
+            if not path.is_file():
+                continue
+            try:
+                text = path.read_text(encoding="utf-8")
+            except (UnicodeDecodeError, ValueError):
+                continue
+            assert "mcp_template_py" not in text, (
+                f"{path.relative_to(scaffolded)} still contains mcp_template_py"
+            )

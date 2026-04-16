@@ -47,7 +47,7 @@ exclude = ["e2e", "tests/unit/fixtures/template/"]
 exclude_dirs = ["tests", "e2e"]
 
 [tool.pytest.ini_options]
-addopts = "--cov=mcp_builder --cov-report=html --cov-report=term-missing --ignore=e2e"
+addopts = "--cov=mcp_builder --cov-report=html --cov-report=term-missing --ignore=e2e --ignore=tests/unit/fixtures/template"
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]

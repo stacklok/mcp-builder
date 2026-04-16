@@ -1,0 +1,12 @@
+version: '3'
+
+tasks:
+  test:
+    desc: Run unit tests with pytest
+    cmds:
+      - uv run pytest -v
+
+  run:
+    desc: Run the MCP server locally
+    cmds:
+      - uv run python -m src.mcp_template_py

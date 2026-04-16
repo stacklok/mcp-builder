@@ -70,16 +70,14 @@ def scaffold_project(plan: ServerPlan, template_dir: Path, output_dir: Path) -> 
         new_module=plan.module_name,
     )
 
-    # Replace template references in Python files and Dockerfile.
-    _replace_in_files(project_dir, "*.py", _TEMPLATE_MODULE, plan.module_name)
+    # Replace template references in all files that embed the module name.
+    # .py files and Dockerfile were the original set; Taskfile.yml (run target),
+    # CLAUDE.md (code-structure docs), and *.toml (pytest --cov) also contain
+    # the template module name and must be rewritten.
+    for pattern in ("*.py", "Dockerfile", "Taskfile.yml", "*.md", "*.toml"):
+        _replace_in_files(project_dir, pattern, _TEMPLATE_MODULE, plan.module_name)
     logger.debug(
-        "replaced module references in .py files",
-        old=_TEMPLATE_MODULE,
-        new=plan.module_name,
-    )
-    _replace_in_files(project_dir, "Dockerfile", _TEMPLATE_MODULE, plan.module_name)
-    logger.debug(
-        "replaced module references in Dockerfile",
+        "replaced module references in project files",
         old=_TEMPLATE_MODULE,
         new=plan.module_name,
     )
