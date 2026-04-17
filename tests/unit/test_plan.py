@@ -193,11 +193,6 @@ class TestParameterAllowlist:
         assert len(tool.path_params) == 1
         assert tool.path_params[0].name == "itemId"
 
-    def test_no_yaml_params_includes_all(self, plan):
-        """When parameters is None (not defined), all spec params are used."""
-        tool = next(t for t in plan.tools if t.tool_name == "create_item")
-        assert len(tool.body_fields) == 2  # name, description from spec
-
     def test_existing_override_behavior_preserved(self, plan):
         """YAML overrides still applied for allowlisted params."""
         tool = next(t for t in plan.tools if t.tool_name == "get_item")
@@ -526,31 +521,6 @@ class TestExplicitLocation:
         plan = _build_tool_plan(tool, spec, "test-group")
         assert len(plan.query_params) == 1
         assert plan.query_params[0].py_type == "str"
-
-    def test_auto_include_unlisted_path_params(self, spec):
-        """Spec path params not listed in YAML are auto-included for URL safety."""
-        from mcp_builder.codegen.plan import _build_tool_plan
-        from mcp_builder.schema.models import Parameter, Tool
-
-        # POST /files/{fileId}/comments has fileId as a path param in the spec.
-        # YAML only lists a body param — fileId should be auto-included.
-        tool = Tool(
-            tool_name="create_comment",
-            endpoint="POST /files/{fileId}/comments",
-            description="Create a comment.",
-            parameters=[
-                Parameter(
-                    name="content",
-                    description="Comment text.",
-                    required=True,
-                    location=ParamLocation.BODY,
-                ),
-            ],
-        )
-        plan = _build_tool_plan(tool, spec, "test-group")
-        assert len(plan.path_params) == 1
-        assert plan.path_params[0].name == "fileId"
-        assert len(plan.body_fields) == 1
 
 
 # ---------------------------------------------------------------------------

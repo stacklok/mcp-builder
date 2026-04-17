@@ -30,6 +30,15 @@ groups:
       - tool_name: create_item
         endpoint: POST /items
         description: "Create a new item."
+        parameters:
+          - name: name
+            description: "The name of the item."
+            required: true
+            location: body
+          - name: description
+            description: "Optional description."
+            required: false
+            location: body
       - tool_name: list_items
         endpoint: GET /items
         description: "List all items with optional filtering."

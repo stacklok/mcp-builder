@@ -23,13 +23,12 @@ Reading guide:
       signatures (e.g., render_client_module(plan: ServerPlan) -> str).
 
 Parameter semantics:
-    When a tool in mcp-scope.yaml defines a ``parameters`` list, those
-    parameters act as an **allowlist**: only the listed parameters are
-    included in the generated tool. Each parameter declares its
-    ``location`` (path, query, or body). Parameters present in the
-    OpenAPI spec but absent from the YAML are excluded. When
-    ``parameters`` is omitted (None), all spec parameters are used
-    (backward-compatible legacy mode).
+    Every tool's ``parameters`` list is an **allowlist**: only the listed
+    parameters are included in the generated tool. Each parameter declares
+    its ``location`` (path, query, or body). Parameters present in the
+    OpenAPI spec but absent from the YAML are excluded. Path parameters
+    are validated at load time — the YAML must declare every ``{placeholder}``
+    in the endpoint path.
 """
 
 from __future__ import annotations
@@ -44,8 +43,6 @@ from pydantic import BaseModel
 
 from mcp_builder.spec import (
     OPENAPI_TYPE_MAP,
-    ExtractedBodyField,
-    ExtractedParameter,
     OpenAPISpec,
     PythonType,
     get_body_fields,
@@ -236,120 +233,42 @@ def build_server_plan(scope: MCPScope, spec: OpenAPISpec) -> ServerPlan:
 def _build_tool_plan(tool: Tool, spec: OpenAPISpec, group_name: str) -> ToolPlan:
     """Build a ToolPlan for a single tool definition.
 
-    Operates in two modes based on the YAML ``parameters`` field:
+    YAML parameters are the source of truth: each declares its location
+    (path, query, body) explicitly. The spec is only consulted for type
+    enrichment — params not found in the spec default to ``str``.
 
-    - **Allowlist mode** (``tool.parameters is not None``): only parameters
-      listed in the YAML are included. Each YAML param declares its
-      ``location`` (path, query, body), so routing is explicit — no
-      inference needed. The spec is only consulted for type enrichment.
-      Spec path params not listed in YAML are auto-included for URL safety.
-    - **Legacy mode** (``tool.parameters is None``): all spec parameters are
-      included with no overrides. This preserves backward compatibility for
-      tools that don't define explicit parameters.
+    Path param completeness is enforced at YAML load time by
+    ``Tool.validate_path_params_declared``, so no fallback logic is needed here.
     """
     tool_name = tool.tool_name
-    endpoint = tool.endpoint
-    description = tool.description
-    hints: list[str] = tool.hints or []
+    method, path = parse_endpoint(tool.endpoint)
+    logger.debug("building tool plan", tool_name=tool_name, endpoint=tool.endpoint)
 
-    method, path = parse_endpoint(endpoint)
-    logger.debug("building tool plan", tool_name=tool_name, endpoint=endpoint)
-
-    # OpenAPI splits parameters into three locations. For a request like
-    #   POST /items/{itemId}?fields=name  { "color": "red" }
-    # the three param kinds are:
-    #   path_params  — URL template slots (e.g., itemId)
-    #   query_params — ?key=value pairs  (e.g., fields)
-    #   body_fields  — JSON request body properties (e.g., color)
-    #
-    # NOTE: We intentionally skip header and cookie parameters — they are not
-    # exposed as tool arguments. Auth headers are handled by the client layer
-    # (token passthrough), and cookie params are not relevant for MCP tools.
+    # Spec type lookup maps — YAML provides name/description/required/location,
+    # spec provides Python types.  Params not in the spec default to str.
     spec_params = get_parameters(spec, method, path)
-    skipped = [p for p in spec_params if p.location not in ("path", "query")]
-    if skipped:
-        logger.debug(
-            "skipping header/cookie params",
-            tool_name=tool_name,
-            skipped=[p.name for p in skipped],
-        )
-    spec_path_params = [p for p in spec_params if p.location == "path"]
-    spec_query_params = [p for p in spec_params if p.location == "query"]
     spec_body = get_body_fields(spec, method, path)
+    spec_param_types: dict[str, PythonType] = {
+        p.name: OPENAPI_TYPE_MAP[p.schema_type] for p in spec_params
+    }
+    spec_body_types: dict[str, PythonType] = {
+        f.name: OPENAPI_TYPE_MAP[f.schema_type] for f in spec_body
+    }
 
-    if tool.parameters is not None:
-        # Allowlist mode: YAML parameters define which params to include.
-        # Each YAML param declares its location explicitly, so we just
-        # group by location and build plans.  Spec data is only used for
-        # type enrichment (YAML doesn't carry types).
-        yaml_path = [p for p in tool.parameters if p.location == ParamLocation.PATH]
-        yaml_query = [p for p in tool.parameters if p.location == ParamLocation.QUERY]
-        yaml_body = [p for p in tool.parameters if p.location == ParamLocation.BODY]
-        logger.debug(
-            "allowlist mode",
-            tool_name=tool_name,
-            path=len(yaml_path),
-            query=len(yaml_query),
-            body=len(yaml_body),
-        )
+    # Group YAML params by location and build plans.
+    yaml_path = [p for p in tool.parameters if p.location == ParamLocation.PATH]
+    yaml_query = [p for p in tool.parameters if p.location == ParamLocation.QUERY]
+    yaml_body = [p for p in tool.parameters if p.location == ParamLocation.BODY]
 
-        # Type lookup maps — spec provides types, YAML provides everything else.
-        spec_param_types: dict[str, PythonType] = {
-            p.name: OPENAPI_TYPE_MAP[p.schema_type] for p in spec_params
-        }
-        spec_body_types: dict[str, PythonType] = {
-            f.name: OPENAPI_TYPE_MAP[f.schema_type] for f in spec_body
-        }
-
-        path_params = _build_param_plans_from_yaml(
-            yaml_path, spec_param_types, ParamLocation.PATH
-        )
-        # Safety: auto-include spec path params not listed in the YAML,
-        # since they're required for URL construction.
-        yaml_path_names = {p.name for p in yaml_path}
-        for sp in spec_path_params:
-            if sp.name not in yaml_path_names:
-                logger.debug("auto-including spec path param", name=sp.name)
-                path_params.append(
-                    ParamPlan(
-                        name=sp.name,
-                        py_name=_sanitize_name(sp.name),
-                        py_type=OPENAPI_TYPE_MAP[sp.schema_type],
-                        description=sp.description,
-                        required=sp.required,
-                        location=ParamLocation.PATH,
-                        original_name=sp.name,
-                    )
-                )
-
-        query_params = _build_param_plans_from_yaml(
-            yaml_query, spec_param_types, ParamLocation.QUERY
-        )
-        body_fields = _build_param_plans_from_yaml(
-            yaml_body, spec_body_types, ParamLocation.BODY
-        )
-
-        # Log which spec params were excluded by the allowlist.
-        yaml_names = {p.name for p in tool.parameters}
-        excluded_query = [p.name for p in spec_query_params if p.name not in yaml_names]
-        excluded_body = [f.name for f in spec_body if f.name not in yaml_names]
-        if excluded_query or excluded_body:
-            logger.info(
-                "allowlist filtered params",
-                tool_name=tool_name,
-                excluded_query=excluded_query,
-                excluded_body=excluded_body,
-            )
-    else:
-        # Legacy mode: no YAML parameters — include all spec params.
-        no_overrides: dict[str, tuple[str, bool]] = {}
-        path_params = _build_param_plans(
-            spec_path_params, no_overrides, ParamLocation.PATH
-        )
-        query_params = _build_param_plans(
-            spec_query_params, no_overrides, ParamLocation.QUERY
-        )
-        body_fields = _build_body_param_plans(spec_body, no_overrides)
+    path_params = _build_param_plans_from_yaml(
+        yaml_path, spec_param_types, ParamLocation.PATH
+    )
+    query_params = _build_param_plans_from_yaml(
+        yaml_query, spec_param_types, ParamLocation.QUERY
+    )
+    body_fields = _build_param_plans_from_yaml(
+        yaml_body, spec_body_types, ParamLocation.BODY
+    )
 
     # Detect and resolve name collisions across all param locations
     all_params = path_params + query_params + body_fields
@@ -360,103 +279,13 @@ def _build_tool_plan(tool: Tool, spec: OpenAPISpec, group_name: str) -> ToolPlan
         class_name=_tool_name_to_class(tool_name),
         http_method=method,
         path=path,
-        description=description,
+        description=tool.description,
         path_params=path_params,
         query_params=query_params,
         body_fields=body_fields,
-        hints=hints,
+        hints=tool.hints or [],
         group_name=group_name,
     )
-
-
-def _build_param_plans(
-    params: list[ExtractedParameter],
-    yaml_overrides: dict[str, tuple[str, bool]],
-    location: ParamLocation,
-) -> list[ParamPlan]:
-    """Convert URL parameters (path/query) into ParamPlan objects.
-
-    Input comes from the operation's ``parameters`` array in the OpenAPI spec.
-    YAML overrides from the scope file are applied on top.
-    """
-    plans = []
-    for param in params:
-        desc = param.description
-        required = param.required
-        if param.name in yaml_overrides:
-            desc, required = yaml_overrides[param.name]
-            logger.debug(
-                "applied yaml override",
-                param_name=param.name,
-                location=location,
-                required=required,
-            )
-        py_name = _sanitize_name(param.name)
-        py_type = OPENAPI_TYPE_MAP[param.schema_type]
-        logger.debug(
-            "param plan",
-            name=param.name,
-            py_name=py_name,
-            py_type=py_type,
-            location=location,
-            required=required,
-        )
-        plans.append(
-            ParamPlan(
-                name=param.name,
-                py_name=py_name,
-                py_type=py_type,
-                description=desc,
-                required=required,
-                location=location,
-                original_name=param.name,
-            )
-        )
-    return plans
-
-
-def _build_body_param_plans(
-    fields: list[ExtractedBodyField],
-    yaml_overrides: dict[str, tuple[str, bool]],
-) -> list[ParamPlan]:
-    """Convert JSON request body properties into ParamPlan objects.
-
-    Input comes from the ``requestBody`` schema in the OpenAPI spec.
-    YAML overrides from the scope file are applied on top.
-    """
-    plans = []
-    for field in fields:
-        desc = field.description
-        required = field.required
-        if field.name in yaml_overrides:
-            desc, required = yaml_overrides[field.name]
-            logger.debug(
-                "applied yaml override",
-                field_name=field.name,
-                location=ParamLocation.BODY,
-                required=required,
-            )
-        py_name = _sanitize_name(field.name)
-        py_type = OPENAPI_TYPE_MAP[field.schema_type]
-        logger.debug(
-            "body param plan",
-            name=field.name,
-            py_name=py_name,
-            py_type=py_type,
-            required=required,
-        )
-        plans.append(
-            ParamPlan(
-                name=field.name,
-                py_name=py_name,
-                py_type=py_type,
-                description=desc,
-                required=required,
-                location=ParamLocation.BODY,
-                original_name=field.name,
-            )
-        )
-    return plans
 
 
 def _build_param_plans_from_yaml(

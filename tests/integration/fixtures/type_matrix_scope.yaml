@@ -16,6 +16,55 @@ groups:
       - tool_name: test_all_types
         endpoint: POST /types/{str_param}/{int_param}
         description: "Exercise every supported type in every param location."
+        parameters:
+          - name: str_param
+            description: "String path param."
+            required: true
+            location: path
+          - name: int_param
+            description: "Integer path param."
+            required: true
+            location: path
+          - name: num_query
+            description: "Number query param."
+            required: false
+            location: query
+          - name: bool_query
+            description: "Boolean query param."
+            required: false
+            location: query
+          - name: arr_query
+            description: "Array query param."
+            required: false
+            location: query
+          - name: obj_query
+            description: "Object query param."
+            required: false
+            location: query
+          - name: field_string
+            description: "String body field."
+            required: true
+            location: body
+          - name: field_integer
+            description: "Integer body field."
+            required: true
+            location: body
+          - name: field_number
+            description: "Number body field."
+            required: false
+            location: body
+          - name: field_boolean
+            description: "Boolean body field."
+            required: false
+            location: body
+          - name: field_array
+            description: "Array body field."
+            required: false
+            location: body
+          - name: field_object
+            description: "Object body field."
+            required: false
+            location: body
 
 auth:
   type: none

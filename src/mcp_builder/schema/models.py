@@ -30,8 +30,6 @@ class Parameter(BaseModel):
     MCP tool. The ``description`` and ``required`` fields override the
     corresponding values from the OpenAPI spec.
 
-    When a tool omits ``parameters`` (None), all spec parameters are used.
-
     The ``location`` field tells codegen where this parameter belongs:
     - ``path``: URL template slot (e.g., ``/items/{itemId}``)
     - ``query``: URL query parameter (e.g., ``?fields=name``)
@@ -95,7 +93,7 @@ class Tool(BaseModel):
     tool_name: str
     endpoint: str
     description: str
-    parameters: list[Parameter] | None = None
+    parameters: list[Parameter] = Field(default_factory=list)
     hints: list[str] | None = None
 
     @field_validator("tool_name")
@@ -119,6 +117,22 @@ class Tool(BaseModel):
                 "one of GET, POST, PUT, PATCH, DELETE."
             )
         return v
+
+    @model_validator(mode="after")
+    def validate_path_params_declared(self) -> Self:
+        """Every {placeholder} in the endpoint path must have a parameter with location=path."""
+        _, path = self.endpoint.split(" ", 1)
+        placeholders = set(re.findall(r"\{(\w+)\}", path))
+        if not placeholders:
+            return self
+        declared = {p.name for p in self.parameters if p.location == ParamLocation.PATH}
+        missing = placeholders - declared
+        if missing:
+            raise ValueError(
+                f"Endpoint '{self.endpoint}' has path parameters {missing} "
+                f"that are not declared in parameters with location='path'."
+            )
+        return self
 
 
 class Group(BaseModel):
