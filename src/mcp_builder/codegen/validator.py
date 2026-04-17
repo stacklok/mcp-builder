@@ -10,8 +10,13 @@ from __future__ import annotations
 import structlog
 from pydantic import BaseModel, Field
 
-from mcp_builder.schema.models import MCPScope
-from mcp_builder.spec import OpenAPISpec, parse_endpoint
+from mcp_builder.schema.models import MCPScope, ParamLocation
+from mcp_builder.spec import (
+    OpenAPISpec,
+    get_body_fields,
+    get_parameters,
+    parse_endpoint,
+)
 
 logger = structlog.get_logger()
 
@@ -78,6 +83,32 @@ def validate_scope(
                         f"Tool '{tool.tool_name}': method '{method}' "
                         f"not found for path '{path}' in OpenAPI spec."
                     )
+                    continue
+
+                # Check that each YAML parameter exists in the spec.
+                # Params missing from the spec will default to type str
+                # during code generation, which may be wrong.
+                spec_params = get_parameters(spec, method, path)
+                spec_body = get_body_fields(spec, method, path)
+                spec_param_names = {p.name for p in spec_params}
+                spec_body_names = {f.name for f in spec_body}
+                for param in tool.parameters:
+                    if param.location == ParamLocation.BODY:
+                        if param.name not in spec_body_names:
+                            warnings.append(
+                                f"Tool '{tool.tool_name}': body parameter "
+                                f"'{param.name}' not found in spec's "
+                                f"requestBody — type will default to str. "
+                                f"The spec may be incomplete."
+                            )
+                    else:
+                        if param.name not in spec_param_names:
+                            warnings.append(
+                                f"Tool '{tool.tool_name}': {param.location} "
+                                f"parameter '{param.name}' not found in "
+                                f"spec's parameters — type will default to "
+                                f"str. The spec may be incomplete."
+                            )
 
     logger.info(
         "validation complete",
