@@ -305,15 +305,31 @@ def _build_param_plans_from_yaml(
     plans = []
     for param in params:
         py_name = _sanitize_name(param.name)
-        py_type = spec_types.get(param.name, "str")
+        in_spec = param.name in spec_types
+        if in_spec:
+            py_type = spec_types[param.name]
+        else:
+            # The OpenAPI spec has no type info for this parameter.
+            # This typically means the spec is incomplete (e.g., a POST
+            # endpoint with no requestBody defined).  We default to str
+            # because we have no better information.  The validate_scope()
+            # check warns about this at validation time so the user can
+            # confirm the spec is genuinely incomplete.
+            py_type = "str"
+            logger.warning(
+                "parameter not found in spec — defaulting to str",
+                param=param.name,
+                location=location,
+                tool_hint="run 'mcp-builder validate' to see all missing params",
+            )
         logger.debug(
-            "param plan (yaml)",
+            "param plan",
             name=param.name,
             py_name=py_name,
             py_type=py_type,
             location=location,
             required=param.required,
-            from_spec=param.name in spec_types,
+            from_spec=in_spec,
         )
         plans.append(
             ParamPlan(

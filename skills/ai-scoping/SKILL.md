@@ -278,8 +278,8 @@ This checks:
 If validation fails or warns:
 1. Read the error/warning output
 2. **Errors**: fix the YAML (common issues: tool name too long, endpoint path doesn't match spec, missing required auth config, path parameter not declared)
-3. **Warnings about missing spec parameters**: check whether the spec is genuinely missing the parameter (e.g., no `requestBody` defined for a POST endpoint). If so, the YAML is correct and the warning is expected — note it in the scoping summary for Phase 2 review. If the param name is simply misspelled vs the spec, fix it.
-4. Re-validate
+3. **Warnings about missing spec parameters**: **STOP and present these to the user before continuing.** These warnings mean the OpenAPI spec does not define these parameters, so codegen will default their types to `str`. This is often because the spec is incomplete (e.g., no `requestBody` on a POST endpoint). The user must confirm this is acceptable. If the param name is simply misspelled vs the spec, fix it and re-validate.
+4. Re-validate after fixes
 5. Repeat up to 3 times. If still failing after 3 attempts, present the errors to the user and ask for help.
 
 #### 6.5: Write Scoping Summary
