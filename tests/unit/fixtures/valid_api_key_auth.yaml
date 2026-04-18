@@ -20,6 +20,7 @@ groups:
           - name: location
             description: "Location identifier (city name or coordinates)."
             required: true
+            location: path
 
 auth:
   type: api_key

@@ -31,14 +31,17 @@ groups:
               The user ID or email address. Use "me" for the authenticated
               user.
             required: true
+            location: path
           - name: type
             description: >
               Meeting type filter. One of "scheduled", "live", "upcoming",
               "upcoming_meetings", "previous_meetings". Default "live".
             required: false
+            location: query
           - name: page_size
             description: "Number of meetings per page. Default 30, max 300."
             required: false
+            location: query
 
       - tool_name: get_meeting
         endpoint: GET /meetings/{meetingId}
@@ -50,9 +53,11 @@ groups:
           - name: meetingId
             description: "The meeting ID."
             required: true
+            location: path
           - name: occurrence_id
             description: "Occurrence ID for recurring meetings."
             required: false
+            location: query
 
   - name: users
     description: "User directory"
@@ -68,12 +73,15 @@ groups:
               Filter by user status. One of "active", "inactive", "pending".
               Default "active".
             required: false
+            location: query
           - name: page_size
             description: "Number of users per page. Default 30, max 300."
             required: false
+            location: query
           - name: role_id
             description: "Filter by role ID."
             required: false
+            location: query
 
       - tool_name: get_user
         endpoint: GET /users/{userId}
@@ -84,6 +92,7 @@ groups:
           - name: userId
             description: "The user ID or email address."
             required: true
+            location: path
 
 auth:
   type: oauth_bearer

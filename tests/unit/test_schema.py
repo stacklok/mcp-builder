@@ -103,7 +103,12 @@ class TestValidInputs:
     def test_tool_with_parameters_and_hints(self) -> None:
         data = _minimal_scope()
         data["groups"][0]["tools"][0]["parameters"] = [
-            {"name": "q", "description": "Query string.", "required": False}
+            {
+                "name": "q",
+                "description": "Query string.",
+                "required": False,
+                "location": "query",
+            }
         ]
         data["groups"][0]["tools"][0]["hints"] = ["paginated"]
         scope = MCPScope.model_validate(data)
@@ -418,6 +423,53 @@ class TestErrorMessageQuality:
         msg = str(exc_info.value)
         assert "Not-Valid" in msg
         assert "snake_case" in msg
+
+
+# ===================================================================
+# Path parameter validation
+# ===================================================================
+
+
+class TestPathParamValidation:
+    """Tool.validate_path_params_declared catches missing path params at load time."""
+
+    def test_missing_path_param_raises(self) -> None:
+        data = _minimal_scope()
+        data["groups"][0]["tools"][0]["endpoint"] = "GET /items/{itemId}"
+        with pytest.raises(ValidationError, match="itemId"):
+            MCPScope.model_validate(data)
+
+    def test_path_params_present_passes(self) -> None:
+        data = _minimal_scope()
+        data["groups"][0]["tools"][0]["endpoint"] = "GET /items/{itemId}"
+        data["groups"][0]["tools"][0]["parameters"] = [
+            {
+                "name": "itemId",
+                "description": "Item ID.",
+                "required": True,
+                "location": "path",
+            }
+        ]
+        MCPScope.model_validate(data)
+
+    def test_no_path_placeholders_passes(self) -> None:
+        data = _minimal_scope()
+        data["groups"][0]["tools"][0]["endpoint"] = "GET /items"
+        MCPScope.model_validate(data)
+
+    def test_path_param_wrong_location_raises(self) -> None:
+        data = _minimal_scope()
+        data["groups"][0]["tools"][0]["endpoint"] = "GET /items/{itemId}"
+        data["groups"][0]["tools"][0]["parameters"] = [
+            {
+                "name": "itemId",
+                "description": "Item ID.",
+                "required": True,
+                "location": "query",
+            }
+        ]
+        with pytest.raises(ValidationError, match="itemId"):
+            MCPScope.model_validate(data)
 
 
 # ===================================================================

@@ -16,9 +16,47 @@ groups:
       - tool_name: get_resource
         endpoint: GET /resources/{id}
         description: "Cross-location and same-location collision test."
+        parameters:
+          - name: id
+            description: "Resource ID."
+            required: true
+            location: path
+          - name: id
+            description: "Query ID filter."
+            required: false
+            location: query
+          - name: foo-bar
+            description: "Hyphenated param."
+            required: false
+            location: query
+          - name: foo.bar
+            description: "Dotted param."
+            required: false
+            location: query
       - tool_name: list_filters
         endpoint: GET /filters
         description: "Triple collision and keyword collision test."
+        parameters:
+          - name: a.b
+            description: "Dotted."
+            required: false
+            location: query
+          - name: a-b
+            description: "Hyphenated."
+            required: false
+            location: query
+          - name: a[b]
+            description: "Bracketed."
+            required: false
+            location: query
+          - name: from
+            description: "Keyword param."
+            required: false
+            location: query
+          - name: from_
+            description: "Underscore-suffixed."
+            required: false
+            location: query
 
 auth:
   type: none

@@ -37,6 +37,7 @@ groups:
           - name: account
             description: "The Stripe account ID (e.g., acct_1234)."
             required: true
+            location: path
 
       - tool_name: list_capabilities
         endpoint: GET /v1/accounts/{account}/capabilities
@@ -47,6 +48,7 @@ groups:
           - name: account
             description: "The Stripe account ID."
             required: true
+            location: path
 
       - tool_name: get_capability
         endpoint: GET /v1/accounts/{account}/capabilities/{capability}
@@ -57,9 +59,11 @@ groups:
           - name: account
             description: "The Stripe account ID."
             required: true
+            location: path
           - name: capability
             description: "The capability identifier (e.g., card_payments, transfers)."
             required: true
+            location: path
 
 auth:
   type: api_key

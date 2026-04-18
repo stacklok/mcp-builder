@@ -18,12 +18,35 @@ groups:
       - tool_name: get_ep1
         endpoint: GET /ep1
         description: "First selected endpoint."
+        parameters:
+          - name: q
+            description: "Search query."
+            required: false
+            location: query
       - tool_name: get_ep5
         endpoint: GET /ep5
         description: "Fifth endpoint — has two query params."
+        parameters:
+          - name: q
+            description: "Search query."
+            required: false
+            location: query
+          - name: limit
+            description: "Result limit."
+            required: false
+            location: query
       - tool_name: get_ep10
         endpoint: GET /ep10
         description: "Tenth endpoint — also has two query params."
+        parameters:
+          - name: fields
+            description: "Fields to include."
+            required: false
+            location: query
+          - name: limit
+            description: "Result limit."
+            required: false
+            location: query
 
 auth:
   type: none

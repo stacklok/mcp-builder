@@ -246,6 +246,7 @@ groups:
           - name: {param_name}
             description: "{param description}"
             required: {true|false}
+            location: {path|query|body}
         hints:
           - "{hint}"
 
@@ -270,14 +271,16 @@ uv run mcp-builder validate {working_dir}/mcp-scope.yaml --spec <openapi-spec-pa
 ```
 
 This checks:
-- Schema compliance (tool names unique, snake_case, <=40 chars; server name is DNS label; auth config valid)
+- Schema compliance (tool names unique, snake_case, <=40 chars; server name is DNS label; auth config valid; path params declared)
 - Cross-validation (every endpoint in the scope exists in the spec's paths)
+- Parameter coverage (every YAML parameter exists in the spec — warnings flag params missing from the spec whose types will default to `str`, which usually means the spec is incomplete)
 
-If validation fails:
-1. Read the error output
-2. Fix the YAML (common issues: tool name too long, endpoint path doesn't match spec, missing required auth config)
-3. Re-validate
-4. Repeat up to 3 times. If still failing after 3 attempts, present the errors to the user and ask for help.
+If validation fails or warns:
+1. Read the error/warning output
+2. **Errors**: fix the YAML (common issues: tool name too long, endpoint path doesn't match spec, missing required auth config, path parameter not declared)
+3. **Warnings about missing spec parameters**: **STOP and present these to the user before continuing.** These warnings mean the OpenAPI spec does not define these parameters, so codegen will default their types to `str`. This is often because the spec is incomplete (e.g., no `requestBody` on a POST endpoint). The user must confirm this is acceptable. If the param name is simply misspelled vs the spec, fix it and re-validate.
+4. Re-validate after fixes
+5. Repeat up to 3 times. If still failing after 3 attempts, present the errors to the user and ask for help.
 
 #### 6.5: Write Scoping Summary
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from enum import StrEnum
 from pathlib import Path
 from typing import Literal, Self
 
@@ -13,16 +14,26 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 logger = structlog.get_logger()
 
 
+class ParamLocation(StrEnum):
+    """Where a parameter belongs in the HTTP request."""
+
+    PATH = "path"
+    QUERY = "query"
+    BODY = "body"
+
+
 class Parameter(BaseModel):
     """A parameter entry for a tool in mcp-scope.yaml.
 
     When a tool defines a ``parameters`` list, those entries act as an
-    **allowlist**: only the listed parameters (plus path parameters, which
-    are always required for URL construction) are included in the generated
+    **allowlist**: only the listed parameters are included in the generated
     MCP tool. The ``description`` and ``required`` fields override the
     corresponding values from the OpenAPI spec.
 
-    When a tool omits ``parameters`` (None), all spec parameters are used.
+    The ``location`` field tells codegen where this parameter belongs:
+    - ``path``: URL template slot (e.g., ``/items/{itemId}``)
+    - ``query``: URL query parameter (e.g., ``?fields=name``)
+    - ``body``: JSON request body property (e.g., ``{"color": "red"}``)
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -30,6 +41,7 @@ class Parameter(BaseModel):
     name: str
     description: str
     required: bool
+    location: ParamLocation
 
 
 class OAuthConfig(BaseModel):
@@ -81,7 +93,7 @@ class Tool(BaseModel):
     tool_name: str
     endpoint: str
     description: str
-    parameters: list[Parameter] | None = None
+    parameters: list[Parameter] = Field(default_factory=list)
     hints: list[str] | None = None
 
     @field_validator("tool_name")
@@ -105,6 +117,22 @@ class Tool(BaseModel):
                 "one of GET, POST, PUT, PATCH, DELETE."
             )
         return v
+
+    @model_validator(mode="after")
+    def validate_path_params_declared(self) -> Self:
+        """Every {placeholder} in the endpoint path must have a parameter with location=path."""
+        _, path = self.endpoint.split(" ", 1)
+        placeholders = set(re.findall(r"\{(\w+)\}", path))
+        if not placeholders:
+            return self
+        declared = {p.name for p in self.parameters if p.location == ParamLocation.PATH}
+        missing = placeholders - declared
+        if missing:
+            raise ValueError(
+                f"Endpoint '{self.endpoint}' has path parameters {missing} "
+                f"that are not declared in parameters with location='path'."
+            )
+        return self
 
 
 class Group(BaseModel):

@@ -36,14 +36,17 @@ groups:
               "public_channel", "private_channel", "mpim", "im".
               Defaults to "public_channel".
             required: false
+            location: query
           - name: limit
             description: "Number of channels to return per page. Default 100, maximum 1000."
             required: false
+            location: query
           - name: cursor
             description: >
               Pagination cursor returned from a previous request as
               next_cursor in the response_metadata.
             required: false
+            location: query
         hints:
           - "paginated: uses cursor/next_cursor pattern in response_metadata"
           - "returns archived channels by default — use exclude_archived=true to filter"
@@ -58,6 +61,7 @@ groups:
           - name: channel
             description: "The channel ID (e.g. C0123456789)."
             required: true
+            location: query
 
   - name: messages
     description: "Message reading, searching, and sending"
@@ -72,22 +76,27 @@ groups:
           - name: channel
             description: "The channel ID to fetch history from."
             required: true
+            location: query
           - name: limit
             description: "Number of messages to return. Default 100, maximum 1000."
             required: false
+            location: query
           - name: oldest
             description: >
               Only return messages after this Unix timestamp (inclusive).
               Example: "1234567890.123456".
             required: false
+            location: query
           - name: latest
             description: >
               Only return messages before this Unix timestamp (exclusive).
               Defaults to now.
             required: false
+            location: query
           - name: cursor
             description: "Pagination cursor for fetching additional pages."
             required: false
+            location: query
         hints:
           - "paginated: uses cursor/next_cursor pattern in response_metadata"
           - "timestamps are Unix epoch strings with microsecond precision"
@@ -105,14 +114,17 @@ groups:
               "in:#general", "from:@alice", "after:2024-01-01", and
               "has:link". Combine with plain text keywords.
             required: true
+            location: query
           - name: count
             description: "Number of results per page. Default 20, maximum 100."
             required: false
+            location: query
           - name: sort
             description: >
               Sort order for results. One of "score" (relevance) or
               "timestamp". Defaults to "score".
             required: false
+            location: query
         hints:
           - "paginated: uses page/total_count pattern"
           - "only searches messages the authenticated user can see"
@@ -127,12 +139,14 @@ groups:
           - name: channel
             description: "The channel ID or user ID to send the message to."
             required: true
+            location: body
           - name: text
             description: >
               The message text. Used as the notification text and fallback
               for clients that don't support blocks. Supports Slack
               mrkdwn formatting.
             required: true
+            location: body
 
   - name: users
     description: "User directory and profile lookup"
@@ -147,9 +161,11 @@ groups:
           - name: limit
             description: "Number of users to return per page. Default 200."
             required: false
+            location: query
           - name: cursor
             description: "Pagination cursor for fetching additional pages."
             required: false
+            location: query
         hints:
           - "paginated: uses cursor/next_cursor pattern in response_metadata"
           - "may be slow for large workspaces — use limit to page through results"
@@ -164,6 +180,7 @@ groups:
           - name: user
             description: "The user ID to look up (e.g. U0123456789)."
             required: true
+            location: query
 
 auth:
   type: oauth_bearer

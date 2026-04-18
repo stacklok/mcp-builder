@@ -30,17 +30,21 @@ groups:
               Search query. Supports field filters like artist:Radiohead,
               album:OK Computer, track:Creep, year:1993, genre:rock.
             required: true
+            location: query
           - name: type
             description: >
               Comma-separated list of item types to search. Valid values:
               album, artist, playlist, track, show, episode, audiobook.
             required: true
+            location: query
           - name: limit
             description: "Maximum results per type. Default 20, range 1-50."
             required: false
+            location: query
           - name: offset
             description: "Index of the first result to return. Default 0."
             required: false
+            location: query
 
   - name: artists
     description: "Artist information"
@@ -54,6 +58,7 @@ groups:
           - name: id
             description: "The Spotify ID of the artist."
             required: true
+            location: path
 
   - name: playlists
     description: "Playlist browsing"
@@ -67,11 +72,13 @@ groups:
           - name: playlist_id
             description: "The Spotify ID of the playlist."
             required: true
+            location: path
           - name: fields
             description: >
               Comma-separated list of fields to return. Use to limit the
               response size. Example: "name,tracks.items(track(name,artists))".
             required: false
+            location: query
 
       - tool_name: get_playlist_tracks
         endpoint: GET /playlists/{playlist_id}/tracks
@@ -82,12 +89,15 @@ groups:
           - name: playlist_id
             description: "The Spotify ID of the playlist."
             required: true
+            location: path
           - name: limit
             description: "Maximum number of tracks to return. Default 100, max 100."
             required: false
+            location: query
           - name: offset
             description: "Index of the first track to return. Default 0."
             required: false
+            location: query
 
 auth:
   type: oauth_bearer

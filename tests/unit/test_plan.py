@@ -11,7 +11,7 @@ from mcp_builder.codegen.plan import (
     build_server_plan,
     server_name_to_module,
 )
-from mcp_builder.schema.models import load_scope
+from mcp_builder.schema.models import ParamLocation, load_scope
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -193,17 +193,334 @@ class TestParameterAllowlist:
         assert len(tool.path_params) == 1
         assert tool.path_params[0].name == "itemId"
 
-    def test_no_yaml_params_includes_all(self, plan):
-        """When parameters is None (not defined), all spec params are used."""
-        tool = next(t for t in plan.tools if t.tool_name == "create_item")
-        assert len(tool.body_fields) == 2  # name, description from spec
-
     def test_existing_override_behavior_preserved(self, plan):
         """YAML overrides still applied for allowlisted params."""
         tool = next(t for t in plan.tools if t.tool_name == "get_item")
         item_id = tool.path_params[0]
         # YAML says "The unique item identifier." vs spec's "The ID of the item."
         assert item_id.description == "The unique item identifier."
+
+
+# ---------------------------------------------------------------------------
+# Explicit location — YAML params with location=ParamLocation.BODY or location=ParamLocation.QUERY
+# ---------------------------------------------------------------------------
+
+
+class TestExplicitLocation:
+    """When YAML params have location set, codegen routes them directly."""
+
+    def test_body_location_routes_to_body_fields(self, spec):
+        """location=ParamLocation.BODY params become body fields even without spec requestBody."""
+        from mcp_builder.codegen.plan import _build_tool_plan
+        from mcp_builder.schema.models import Parameter, Tool
+
+        tool = Tool(
+            tool_name="create_file",
+            endpoint="POST /files",
+            description="Create a file.",
+            parameters=[
+                Parameter(
+                    name="name",
+                    description="File name.",
+                    required=True,
+                    location=ParamLocation.BODY,
+                ),
+                Parameter(
+                    name="mimeType",
+                    description="MIME type.",
+                    required=True,
+                    location=ParamLocation.BODY,
+                ),
+                Parameter(
+                    name="parents",
+                    description="Parent folders.",
+                    required=False,
+                    location=ParamLocation.BODY,
+                ),
+            ],
+        )
+        plan = _build_tool_plan(tool, spec, "test-group")
+        assert len(plan.body_fields) == 3
+        names = {f.name for f in plan.body_fields}
+        assert names == {"name", "mimeType", "parents"}
+
+    def test_body_fields_have_correct_location(self, spec):
+        """Explicit body params have location='body' in the plan."""
+        from mcp_builder.codegen.plan import _build_tool_plan
+        from mcp_builder.schema.models import Parameter, Tool
+
+        tool = Tool(
+            tool_name="create_file",
+            endpoint="POST /files",
+            description="Create a file.",
+            parameters=[
+                Parameter(
+                    name="name",
+                    description="File name.",
+                    required=True,
+                    location=ParamLocation.BODY,
+                ),
+            ],
+        )
+        plan = _build_tool_plan(tool, spec, "test-group")
+        assert plan.body_fields[0].location == "body"
+
+    def test_body_fields_preserve_required(self, spec):
+        """Explicit body params preserve YAML required flags."""
+        from mcp_builder.codegen.plan import _build_tool_plan
+        from mcp_builder.schema.models import Parameter, Tool
+
+        tool = Tool(
+            tool_name="create_file",
+            endpoint="POST /files",
+            description="Create a file.",
+            parameters=[
+                Parameter(
+                    name="name",
+                    description="File name.",
+                    required=True,
+                    location=ParamLocation.BODY,
+                ),
+                Parameter(
+                    name="parents",
+                    description="Parent folders.",
+                    required=False,
+                    location=ParamLocation.BODY,
+                ),
+            ],
+        )
+        plan = _build_tool_plan(tool, spec, "test-group")
+        name_field = next(f for f in plan.body_fields if f.name == "name")
+        parents_field = next(f for f in plan.body_fields if f.name == "parents")
+        assert name_field.required is True
+        assert parents_field.required is False
+
+    def test_body_fields_preserve_description(self, spec):
+        """Explicit body params use YAML descriptions."""
+        from mcp_builder.codegen.plan import _build_tool_plan
+        from mcp_builder.schema.models import Parameter, Tool
+
+        tool = Tool(
+            tool_name="create_file",
+            endpoint="POST /files",
+            description="Create a file.",
+            parameters=[
+                Parameter(
+                    name="name",
+                    description="The file name.",
+                    required=True,
+                    location=ParamLocation.BODY,
+                ),
+            ],
+        )
+        plan = _build_tool_plan(tool, spec, "test-group")
+        assert plan.body_fields[0].description == "The file name."
+
+    def test_yaml_only_params_default_to_str(self, spec):
+        """Params not in spec default to str type."""
+        from mcp_builder.codegen.plan import _build_tool_plan
+        from mcp_builder.schema.models import Parameter, Tool
+
+        tool = Tool(
+            tool_name="create_file",
+            endpoint="POST /files",
+            description="Create a file.",
+            parameters=[
+                Parameter(
+                    name="name",
+                    description="File name.",
+                    required=True,
+                    location=ParamLocation.BODY,
+                ),
+            ],
+        )
+        plan = _build_tool_plan(tool, spec, "test-group")
+        assert plan.body_fields[0].py_type == "str"
+
+    def test_post_with_path_param_and_body_location(self, spec):
+        """POST with path param + explicit body params: path matched, body routed."""
+        from mcp_builder.codegen.plan import _build_tool_plan
+        from mcp_builder.schema.models import Parameter, Tool
+
+        tool = Tool(
+            tool_name="create_comment",
+            endpoint="POST /files/{fileId}/comments",
+            description="Create a comment.",
+            parameters=[
+                Parameter(
+                    name="fileId",
+                    description="File ID.",
+                    required=True,
+                    location=ParamLocation.PATH,
+                ),
+                Parameter(
+                    name="content",
+                    description="Comment text.",
+                    required=True,
+                    location=ParamLocation.BODY,
+                ),
+            ],
+        )
+        plan = _build_tool_plan(tool, spec, "test-group")
+        assert len(plan.path_params) == 1
+        assert plan.path_params[0].name == "fileId"
+        assert len(plan.body_fields) == 1
+        assert plan.body_fields[0].name == "content"
+        assert plan.body_fields[0].location == "body"
+
+    def test_put_with_body_location(self, spec):
+        """PUT with explicit body params works."""
+        from mcp_builder.codegen.plan import _build_tool_plan
+        from mcp_builder.schema.models import Parameter, Tool
+
+        tool = Tool(
+            tool_name="update_file",
+            endpoint="PUT /files/{fileId}",
+            description="Replace a file.",
+            parameters=[
+                Parameter(
+                    name="fileId",
+                    description="File ID.",
+                    required=True,
+                    location=ParamLocation.PATH,
+                ),
+                Parameter(
+                    name="name",
+                    description="New name.",
+                    required=True,
+                    location=ParamLocation.BODY,
+                ),
+                Parameter(
+                    name="mimeType",
+                    description="MIME type.",
+                    required=False,
+                    location=ParamLocation.BODY,
+                ),
+            ],
+        )
+        plan = _build_tool_plan(tool, spec, "test-group")
+        assert len(plan.path_params) == 1
+        assert plan.path_params[0].name == "fileId"
+        assert len(plan.body_fields) == 2
+        names = {f.name for f in plan.body_fields}
+        assert names == {"name", "mimeType"}
+
+    def test_patch_with_body_location(self, spec):
+        """PATCH with explicit body params works."""
+        from mcp_builder.codegen.plan import _build_tool_plan
+        from mcp_builder.schema.models import Parameter, Tool
+
+        tool = Tool(
+            tool_name="patch_file",
+            endpoint="PATCH /files/{fileId}",
+            description="Partially update a file.",
+            parameters=[
+                Parameter(
+                    name="fileId",
+                    description="File ID.",
+                    required=True,
+                    location=ParamLocation.PATH,
+                ),
+                Parameter(
+                    name="name",
+                    description="New name.",
+                    required=False,
+                    location=ParamLocation.BODY,
+                ),
+            ],
+        )
+        plan = _build_tool_plan(tool, spec, "test-group")
+        assert len(plan.path_params) == 1
+        assert plan.path_params[0].name == "fileId"
+        assert len(plan.body_fields) == 1
+        assert plan.body_fields[0].name == "name"
+        assert plan.body_fields[0].location == "body"
+
+    def test_mixed_spec_body_and_explicit_body(self, spec):
+        """Spec body fields + explicit body params coexist."""
+        from mcp_builder.codegen.plan import _build_tool_plan
+        from mcp_builder.schema.models import Parameter, Tool
+
+        # POST /items has body fields [name, description] in the spec.
+        # YAML lists name (spec match, type from spec) + extra_field (no spec, defaults to str).
+        tool = Tool(
+            tool_name="create_item",
+            endpoint="POST /items",
+            description="Create an item.",
+            parameters=[
+                Parameter(
+                    name="name",
+                    description="Item name.",
+                    required=True,
+                    location=ParamLocation.BODY,
+                ),
+                Parameter(
+                    name="extra_field",
+                    description="Extra.",
+                    required=False,
+                    location=ParamLocation.BODY,
+                ),
+            ],
+        )
+        plan = _build_tool_plan(tool, spec, "test-group")
+        names = {f.name for f in plan.body_fields}
+        assert "name" in names  # from spec body fields
+        assert "extra_field" in names  # explicit body from YAML
+        assert len(plan.body_fields) == 2
+
+    def test_explicit_query_location(self, spec):
+        """location=ParamLocation.QUERY params not in spec are included as query params."""
+        from mcp_builder.codegen.plan import _build_tool_plan
+        from mcp_builder.schema.models import Parameter, Tool
+
+        tool = Tool(
+            tool_name="create_file",
+            endpoint="POST /files",
+            description="Create a file.",
+            parameters=[
+                Parameter(
+                    name="uploadType",
+                    description="Upload type.",
+                    required=True,
+                    location=ParamLocation.QUERY,
+                ),
+                Parameter(
+                    name="name",
+                    description="File name.",
+                    required=True,
+                    location=ParamLocation.BODY,
+                ),
+            ],
+        )
+        plan = _build_tool_plan(tool, spec, "test-group")
+        assert len(plan.query_params) == 1
+        assert plan.query_params[0].name == "uploadType"
+        assert plan.query_params[0].location == "query"
+        assert len(plan.body_fields) == 1
+        assert plan.body_fields[0].name == "name"
+
+    def test_spec_type_enrichment(self, spec):
+        """When a YAML param matches a spec param, the spec type is used."""
+        from mcp_builder.codegen.plan import _build_tool_plan
+        from mcp_builder.schema.models import Parameter, Tool
+
+        # GET /items has query param "fields" with type "string" in the spec.
+        tool = Tool(
+            tool_name="list_items",
+            endpoint="GET /items",
+            description="List items.",
+            parameters=[
+                Parameter(
+                    name="fields",
+                    description="Fields.",
+                    required=False,
+                    location=ParamLocation.QUERY,
+                ),
+            ],
+        )
+        plan = _build_tool_plan(tool, spec, "test-group")
+        assert len(plan.query_params) == 1
+        assert plan.query_params[0].py_type == "str"
 
 
 # ---------------------------------------------------------------------------
@@ -279,7 +596,7 @@ class TestNameCollisionResolution:
                 py_type="str",
                 description="path id",
                 required=True,
-                location="path",
+                location=ParamLocation.PATH,
                 original_name="id",
             ),
             ParamPlan(
@@ -288,7 +605,7 @@ class TestNameCollisionResolution:
                 py_type="str",
                 description="query id",
                 required=False,
-                location="query",
+                location=ParamLocation.QUERY,
                 original_name="id",
             ),
         ]
@@ -308,7 +625,7 @@ class TestNameCollisionResolution:
                 py_type="str",
                 description="first",
                 required=False,
-                location="query",
+                location=ParamLocation.QUERY,
                 original_name="foo-bar",
             ),
             ParamPlan(
@@ -317,7 +634,7 @@ class TestNameCollisionResolution:
                 py_type="str",
                 description="second",
                 required=False,
-                location="query",
+                location=ParamLocation.QUERY,
                 original_name="foo.bar",
             ),
         ]
@@ -338,7 +655,7 @@ class TestNameCollisionResolution:
                 py_type="str",
                 description="",
                 required=True,
-                location="path",
+                location=ParamLocation.PATH,
                 original_name="id",
             ),
             ParamPlan(
@@ -347,7 +664,7 @@ class TestNameCollisionResolution:
                 py_type="str",
                 description="",
                 required=True,
-                location="query",
+                location=ParamLocation.QUERY,
                 original_name="name",
             ),
         ]
