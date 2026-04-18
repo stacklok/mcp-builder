@@ -260,15 +260,9 @@ def _build_tool_plan(tool: Tool, spec: OpenAPISpec, group_name: str) -> ToolPlan
     yaml_query = [p for p in tool.parameters if p.location == ParamLocation.QUERY]
     yaml_body = [p for p in tool.parameters if p.location == ParamLocation.BODY]
 
-    path_params = _build_param_plans_from_yaml(
-        yaml_path, spec_param_types, ParamLocation.PATH
-    )
-    query_params = _build_param_plans_from_yaml(
-        yaml_query, spec_param_types, ParamLocation.QUERY
-    )
-    body_fields = _build_param_plans_from_yaml(
-        yaml_body, spec_body_types, ParamLocation.BODY
-    )
+    path_params = _build_param_plans(yaml_path, spec_param_types, ParamLocation.PATH)
+    query_params = _build_param_plans(yaml_query, spec_param_types, ParamLocation.QUERY)
+    body_fields = _build_param_plans(yaml_body, spec_body_types, ParamLocation.BODY)
 
     # Detect and resolve name collisions across all param locations
     all_params = path_params + query_params + body_fields
@@ -288,7 +282,7 @@ def _build_tool_plan(tool: Tool, spec: OpenAPISpec, group_name: str) -> ToolPlan
     )
 
 
-def _build_param_plans_from_yaml(
+def _build_param_plans(
     params: list[Parameter],
     spec_types: dict[str, PythonType],
     location: ParamLocation,
