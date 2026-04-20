@@ -165,22 +165,29 @@ async def create_file(self, name: str, mime_type: str) -> dict:
 
 Keep docstring additions concise. One or two sentences per quirk.
 
-### Step 4: Filter and Prioritize
+### Step 4: Filter and Classify Severity
 
 Before writing output, filter your suggestions:
 
 1. **Remove low-value suggestions.** If a suggestion only adds a comment restating what's already in the method name, drop it.
 2. **Remove conflicting suggestions.** If the validation report has a FAIL for a tool, don't suggest polish on the same code — the fix should come first.
-3. **Prioritize by impact:**
-   - **High**: pagination documentation (LLM will otherwise not know about pagination)
-   - **High**: response shaping with field selection defaults (reduces noise for LLM)
-   - **Medium**: error normalization (improves debugging experience)
-   - **Medium**: quirk documentation (prevents LLM mistakes)
-   - **Low**: minor docstring improvements
+
+Then classify each remaining suggestion on the **severity** scale below. Severity is about the consequence of NOT applying the fix, not about how invasive the diff is.
+
+| Severity | Meaning | Typical examples |
+|---|---|---|
+| `blocker` | The tool or client is broken. Every invocation fails, or the server won't start, or a deployment-critical assumption is wrong. This is effectively a functional bug the validator missed. | Response parser raises on every call; auth header never attached; base URL computed wrong. |
+| `high`  | Tool works, but an LLM caller is very likely to misuse it or get unusable output. | No pagination guidance in docstring; response is so large it blows context on a single call; required quirk not documented. |
+| `medium` | Noticeable quality-of-life or robustness improvement, but the tool is usable without it. | Error normalization / structured `APIError`; compact default field projections; documenting non-critical quirks. |
+| `low`  | Minor polish — doc wording, formatting, minor param defaults. | Docstring phrasing, slight parameter description improvements. |
+
+**Important:** if you identify a `blocker`, say so explicitly in the **Description** field (e.g. "effectively a functional bug — the validator missed this because ..."). The skill treats `blocker` differently from `high` when presenting results.
 
 ### Step 5: Write polish-suggestions.md
 
-Write the suggestions to `{working_dir}/polish-suggestions.md` using this format:
+Write the suggestions to `{working_dir}/polish-suggestions.md` using the format below. The canonical copy of this template lives at `{skill_base_dir}/assets/polish-suggestions-template.md` — prefer reading that file if it is present.
+
+Each suggestion has three required prose fields — **Problem**, **Impact if unfixed**, and **Proposed fix** — plus a metadata table and the before/after diff. Do not collapse them; the skill's chat presentation renders these fields directly.
 
 ```markdown
 # Polish Suggestions: {server_name}
@@ -190,41 +197,55 @@ Write the suggestions to `{working_dir}/polish-suggestions.md` using this format
 
 ## Summary
 
-| Category | Count | Priority |
-|----------|-------|----------|
-| Pagination | {N} | high |
-| Response shaping | {N} | high |
-| Error normalization | {N} | medium |
-| API quirks | {N} | medium |
+| Severity | Count | What it means |
+|----------|-------|---------------|
+| blocker  | {N} | Functional bug — tool fails or deployment assumption is wrong |
+| high     | {N} | Works, but LLM callers are likely to misuse or get unusable output |
+| medium   | {N} | Noticeable robustness / quality improvement |
+| low      | {N} | Minor polish |
+
+| # | Severity | Category | Tool(s) | One-line summary |
+|---|----------|----------|---------|------------------|
+| P1 | blocker | response-shaping | `export_file` | Shared client `.json()` call breaks raw-bytes endpoints |
+| P2 | high    | pagination       | `list_files`  | Docstring missing nextPageToken cursor guidance |
+| ... | ... | ... | ... | ... |
 
 ## Suggestions
 
-### P1: {Short title}
+### P1: {Short imperative title}
 
-**Category:** {pagination / response-shaping / error-normalization / api-quirks}
-**Priority:** {high / medium / low}
-**Tool(s):** {tool_name(s) affected}
-**Hint:** {triggering hint text, or "AI-analyzed" if not hint-driven}
+|  |  |
+|---|---|
+| **Severity**         | `{blocker / high / medium / low}` |
+| **Category**         | {pagination / response-shaping / error-normalization / api-quirks} |
+| **Affected tool(s)** | `{tool_name}` (or `all` for shared-client changes) |
+| **File(s)**          | `{relative path(s)}` |
+| **Hint source**      | {triggering hint text, or "AI-analyzed" if not hint-driven} |
 
-**Description:** {one-paragraph explanation of what this improves and why}
+**Problem**
+{2–4 sentences stating exactly what is wrong or suboptimal in the generated code today. Reference line behavior, not just "could be better". If this is a `blocker`, explicitly call that out here.}
 
-**Before:**
+**Impact if unfixed**
+{1–2 sentences on the concrete consequence. For `blocker`: what breaks. For `high`: how the LLM misuses the tool. For `medium`/`low`: what degrades.}
+
+**Proposed fix**
+{2–4 sentences describing the change at a conceptual level — what function to add, what behavior to switch to, what docstring content to add. The reader should be able to decide yes/no from this paragraph alone, without reading the diff.}
+
+**Before**
 ```python
-{existing code snippet}
+{existing code snippet — keep it minimal, just the affected lines}
 ```
 
-**After:**
+**After**
 ```python
 {improved code snippet}
 ```
 
-**File:** {relative path to the file to modify}
-
 ---
 
-### P2: {Short title}
+### P2: {Short imperative title}
 
-{same format}
+{same structure}
 
 ---
 
@@ -252,9 +273,10 @@ Output confirmation:
 **Output:** {absolute path to polish-suggestions.md}
 
 Summary: {N} suggestions across {M} categories.
-- {X} high priority
-- {Y} medium priority
-- {Z} low priority
+- {X} blocker  (functional bugs — MUST fix before deploy)
+- {Y} high     (LLM will likely misuse the tool without these)
+- {Z} medium   (robustness / quality improvements)
+- {W} low      (minor polish)
 ```
 
 ---

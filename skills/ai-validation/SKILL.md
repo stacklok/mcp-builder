@@ -208,24 +208,84 @@ The polish-suggester agent will read all files and write `{working_dir}/polish-s
 
 ### Step 5: Polish Application Gate (USER GATE)
 
-1. Read `{working_dir}/polish-suggestions.md`
+1. Read `{working_dir}/polish-suggestions.md`.
 
-2. Present the suggestions to the user:
-   - Summary: N suggestions across M categories
-   - Each suggestion with its category, priority, affected tool(s), and the code diff
-   - If there are no suggestions, skip to Step 6
+2. Present the suggestions to the user. **Do not flatten the report into one-line bullets** — the user needs to be able to judge severity and decide fix-or-skip from the chat output alone. Render the report in chat using the format below.
+
+   **2a. Overview block** — a severity-count table plus an at-a-glance index table:
+
+   ```markdown
+   ## Polish Suggestions ({N} total)
+
+   **Report:** {path to polish-suggestions.md}
+
+   | Severity | Count | What it means |
+   |----------|-------|---------------|
+   | 🔴 blocker  | {N} | Functional bug — MUST fix before deploy |
+   | 🟠 high     | {N} | LLM likely to misuse the tool without this |
+   | 🟡 medium   | {N} | Robustness / quality improvement |
+   | ⚪ low      | {N} | Minor polish |
+
+   | #  | Severity | Category | Tool(s) | Summary |
+   |----|----------|----------|---------|---------|
+   | P1 | 🔴 blocker | response-shaping | `export_file` | Client `.json()` breaks raw-bytes endpoints |
+   | P2 | 🟠 high    | pagination       | `list_files`  | Docstring missing nextPageToken guidance    |
+   | …  | …        | …        | …       | …       |
+   ```
+
+   **2b. Per-suggestion detail** — for EACH suggestion in the report, render:
+
+   ```markdown
+   ### P{n}: {title}  —  {severity emoji} {severity}
+
+   | Field | Value |
+   |-------|-------|
+   | Category | {category} |
+   | Affected | `{tool(s)}` |
+   | File(s)  | `{paths}` |
+   | Hint     | {hint text or "AI-analyzed"} |
+
+   **Problem:** {copy the Problem paragraph from the report verbatim}
+
+   **Impact if unfixed:** {copy verbatim}
+
+   **Proposed fix:** {copy verbatim}
+
+   <details><summary>View diff</summary>
+
+   ```python
+   # Before
+   {before snippet}
+   ```
+
+   ```python
+   # After
+   {after snippet}
+   ```
+   </details>
+   ```
+
+   **Required fields per suggestion:** severity, category, affected tool(s), file(s), problem, impact, proposed fix. If the report is missing any of these fields, say so explicitly to the user instead of silently omitting — it means the polish-suggester agent produced an incomplete suggestion and should be re-run.
+
+   **Ordering:** render blocker suggestions first, then high, then medium, then low. Within a severity tier, preserve the P-number order from the report.
+
+   **Length:** do not truncate Problem / Impact / Proposed fix — they are the whole point. DO wrap long diffs in `<details>` so the chat stays scannable.
+
+   If there are no suggestions, say so briefly and skip to Step 6.
 
 3. Use AskUserQuestion to offer choices:
 
    ```
-   {N} polish suggestions generated.
+   {N} polish suggestions generated ({B} blocker, {H} high, {M} medium, {L} low).
 
    Options:
    1. Have AI apply all suggestions — spawns an agent to edit the generated code
-   2. Have AI apply selected suggestions — choose which ones to apply
+   2. Have AI apply selected suggestions — choose which ones to apply (e.g. "P1, P3")
    3. Review manually — apply the diffs yourself
    4. Skip — no polish needed
    ```
+
+   If there are any `blocker` suggestions, explicitly note in the question prompt that skipping them will likely leave the server broken at runtime.
 
 **Do NOT proceed past this step until the user responds.**
 
