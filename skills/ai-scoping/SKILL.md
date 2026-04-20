@@ -51,13 +51,13 @@ Given an OpenAPI spec path ($ARGUMENTS), execute the following steps:
 
 #### 2.1: Run deterministic extraction
 
-Run the CLI to parse the spec into structured JSON. **Important:** the CLI writes structlog lines to stdout mixed with the JSON payload, so pipe through `sed` to keep only lines from the opening `{` onward:
+Run the CLI to parse the spec into structured JSON. Logs go to stderr, JSON goes to stdout, so redirect directly:
 
 ```bash
-uv run mcp-builder analyze <spec-path> 2>/dev/null | sed -n '/^{/,$p' > {working_dir}/analyze.json
+uv run mcp-builder analyze <spec-path> 2>/dev/null > {working_dir}/analyze.json
 ```
 
-Then verify the file parses as JSON (e.g., `uv run python -c "import json; json.load(open('{working_dir}/analyze.json'))"`). If it does not, re-run and inspect the raw CLI output for an actual error.
+This outputs JSON with all endpoints, security schemes, and quality metrics.
 
 If the command fails (invalid spec, unsupported format), present the error to the user and exit.
 
