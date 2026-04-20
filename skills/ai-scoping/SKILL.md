@@ -51,17 +51,15 @@ Given an OpenAPI spec path ($ARGUMENTS), execute the following steps:
 
 #### 2.1: Run deterministic extraction
 
-Run the CLI to parse the spec into structured JSON:
+Run the CLI to parse the spec into structured JSON. **Important:** the CLI writes structlog lines to stdout mixed with the JSON payload, so pipe through `sed` to keep only lines from the opening `{` onward:
 
 ```bash
-uv run mcp-builder analyze <spec-path>
+uv run mcp-builder analyze <spec-path> 2>/dev/null | sed -n '/^{/,$p' > {working_dir}/analyze.json
 ```
 
-This outputs JSON with all endpoints, security schemes, and quality metrics. Capture the full output.
+Then verify the file parses as JSON (e.g., `uv run python -c "import json; json.load(open('{working_dir}/analyze.json'))"`). If it does not, re-run and inspect the raw CLI output for an actual error.
 
 If the command fails (invalid spec, unsupported format), present the error to the user and exit.
-
-Save the JSON output to `{working_dir}/analyze.json` for reference.
 
 #### 2.2: Spawn spec-analyzer agent
 
@@ -76,7 +74,7 @@ Agent tool parameters:
 
     CONTEXT:
     Pipeline context path: [absolute path to {skill_base_dir}/assets/pipeline-context.md]
-    Working directory: [absolute path to scoping-output/]
+    Working directory: [absolute path to {working_dir} from Step 1.4]
 
     WORKFLOWS:
     1. [workflow 1]
@@ -130,7 +128,7 @@ Agent tool parameters:
 
     CONTEXT:
     Pipeline context path: [absolute path to {skill_base_dir}/assets/pipeline-context.md]
-    Working directory: [absolute path to scoping-output/]
+    Working directory: [absolute path to {working_dir} from Step 1.4]
     Server name: [derived from API — e.g., "google-drive"]
     Base URL: [from analyze JSON — e.g., "https://www.googleapis.com/drive/v3"]
     OpenAPI spec file path: [absolute path to the downloaded OpenAPI spec file]
@@ -198,7 +196,7 @@ If multiple security schemes exist, select the most ToolHive-compatible one and 
 
 For OAuth scopes: pull from the spec when available. If scopes look incomplete or are missing, add a note flagging this for human review.
 
-Present the auth detection result to the user for confirmation before assembling the YAML.
+**USER GATE:** Present the auth detection result to the user (selected scheme, issuer, chosen scopes, and any alternatives you rejected). **Do NOT proceed to Step 6.2 until the user confirms the auth block.** This gate is easy to skip by accident — do not.
 
 #### 6.2: Determine Server Metadata
 
@@ -267,7 +265,7 @@ Write the YAML to `{working_dir}/mcp-scope.yaml`.
 Run validation from the working directory:
 
 ```bash
-uv run mcp-builder validate {working_dir}/mcp-scope.yaml --spec <openapi-spec-path>
+uv run mcp-builder validate {working_dir}/mcp-scope.yaml --openapi-spec <openapi-spec-path>
 ```
 
 This checks:
@@ -341,7 +339,7 @@ Read `{working_dir}/scoping-summary.md` and present the user with a comprehensiv
 - Pass all context in the prompt CONTEXT section — agents do not share memory with the orchestrator
 
 ### Working Directory
-- All files (intermediate and final) go in `{cwd}/scoping-output/`
+- All files (intermediate and final) go in `{cwd}/scoping-output-{date_timestamp}/` (see Step 1.4). Use today's date as the timestamp to avoid collisions across runs.
 - This includes `analyze.json`, `spec-analysis.md`, `tool-scoping.md`, `mcp-scope.yaml`, and `scoping-summary.md`
 
 ### Reference Examples
