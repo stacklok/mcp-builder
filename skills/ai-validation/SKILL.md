@@ -107,7 +107,7 @@ The code-validator agent will read all files, run the Docker build check, and wr
 
 ### Step 3: Validation Gate
 
-1. Read `{working_dir}/validation-report.md` — in particular the `Build Verification` table (check D1) and any error-severity failures.
+1. Read `{working_dir}/validation-report.md` — pay particular attention to the `Build Verification` row and any error-severity failures.
 
 2. Present the validation summary to the user using the structure below. **Build status is a first-class block, not a footnote** — it must be visible at a glance even when the rest of the report is green.
 
@@ -118,22 +118,19 @@ The code-validator agent will read all files, run the Docker build check, and wr
 
    - Total checks: {X} passed, {Y} failed, {Z} skipped
 
-   ### 🏗️ Docker build (D1): {✅ PASS / ❌ FAIL / ⏭️ SKIP}
+   ### 🏗️ Docker build: {✅ PASS / ❌ FAIL / ⏭️ SKIP}
 
-   {If PASS:  one-line confirmation copied from D1 Details.}
-   {If FAIL:  "The Docker build failed." — then the stage/line, the
-              error excerpt from D1 Details (as a fenced code block),
-              and the one-line "what to try" hint from D1 Details.}
-   {If SKIP:  "The Docker build was not attempted." — then the concrete
-              reason from D1 Details (e.g. "host lacks dhi.io login",
-              "Docker daemon not running", "--skip-build requested").}
+   {Copy the reason from the Build Verification row's Details column verbatim.
+    If the status is FAIL, render any multi-line error output as a fenced code
+    block so it stays readable. If the status is SKIP, state the concrete cause
+    the validator recorded.}
 
    **This is not a blocker for proceeding** — polish suggestions and
    deployment review still work regardless of build status. But you
    should know it happened.
    ```
 
-   If there are `error`-severity failures (other than D1), list each one prominently under a separate `### ❌ Errors` heading with the check ID, file, and one-line fix description from Detailed Findings.
+   If there are `error`-severity failures from other checks, list each one prominently under a separate `### ❌ Errors` heading with the check ID, file, and one-line fix description from Detailed Findings.
 
 3. Run the appropriate user gate based on what the report contains:
 
@@ -158,7 +155,7 @@ The code-validator agent will read all files, run the Docker build check, and wr
    ```
    All code-correctness checks passed, but the Docker build is {FAIL / SKIP}.
 
-   Reason: {one-line reason from D1 Details}
+   Reason: {reason copied from the Build Verification row}
 
    This is fine — we can keep going. What would you like to do?
 
@@ -171,9 +168,9 @@ The code-validator agent will read all files, run the Docker build check, and wr
 
    For SKIP, drop option 2 (there's nothing to fix if the build wasn't attempted). Offer only retry / acknowledge / stop.
 
-   If the user picks "Retry the build", re-run the code-validator agent (Step 2) but pass an additional directive in the prompt: `"RE-RUN MODE: only re-run the D1 Docker build check; reuse the existing report for other checks, updating only the D1 row and the Summary counts."`. Then loop back to this step with the updated report.
+   If the user picks "Retry the build", re-run the code-validator agent (Step 2) but pass an additional directive in the prompt: `"RE-RUN MODE: only re-run the Docker build check; reuse the existing report for other checks, updating only the build row and the Summary counts."`. Then loop back to this step with the updated report.
 
-   If the user picks "Have AI investigate / fix", spawn the fix agent (Step 3b) with a note that D1 (build) is the thing to fix — after it completes, re-run validation.
+   If the user picks "Have AI investigate / fix", spawn the fix agent (Step 3b) with a note that the Docker build is the thing to fix — after it completes, re-run validation.
 
    **Do NOT proceed past this step until the user responds.**
 
