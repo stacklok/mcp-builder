@@ -172,16 +172,15 @@ Before writing output, filter your suggestions:
 1. **Remove low-value suggestions.** If a suggestion only adds a comment restating what's already in the method name, drop it.
 2. **Remove conflicting suggestions.** If the validation report has a FAIL for a tool, don't suggest polish on the same code — the fix should come first.
 
-Then classify each remaining suggestion on the **severity** scale below. Severity is about the consequence of NOT applying the fix, not about how invasive the diff is.
+Then classify each remaining suggestion on a three-tier **severity** scale. Severity is about the consequence of NOT applying the fix, not about how invasive the diff is.
 
-| Severity | Meaning | Typical examples |
-|---|---|---|
-| `blocker` | The tool or client is broken. Every invocation fails, or the server won't start, or a deployment-critical assumption is wrong. This is effectively a functional bug the validator missed. | Response parser raises on every call; auth header never attached; base URL computed wrong. |
-| `high`  | Tool works, but an LLM caller is very likely to misuse it or get unusable output. | No pagination guidance in docstring; response is so large it blows context on a single call; required quirk not documented. |
-| `medium` | Noticeable quality-of-life or robustness improvement, but the tool is usable without it. | Error normalization / structured `APIError`; compact default field projections; documenting non-critical quirks. |
-| `low`  | Minor polish — doc wording, formatting, minor param defaults. | Docstring phrasing, slight parameter description improvements. |
+| Severity | Meaning |
+|---|---|
+| `high`   | The tool is broken or an LLM caller is very likely to misuse it / get unusable output. Use this for functional bugs the validator missed AND for cases like missing pagination guidance or context-overrun responses. |
+| `medium` | Noticeable robustness or quality-of-life improvement, but the tool is usable without it. |
+| `low`    | Minor polish — doc wording, small parameter defaults. |
 
-**Important:** if you identify a `blocker`, say so explicitly in the **Description** field (e.g. "effectively a functional bug — the validator missed this because ..."). The skill treats `blocker` differently from `high` when presenting results.
+When the suggestion is a functional bug (runtime failure, deployment-critical wrong assumption), it MUST be classified as `high` AND the **Problem** paragraph MUST open by calling it out as a functional bug. The severity stays three-tiered so ordering remains unambiguous; the prose carries the "this is broken, not just a nit" signal.
 
 ### Step 5: Write polish-suggestions.md
 
@@ -199,15 +198,14 @@ Each suggestion has three required prose fields — **Problem**, **Impact if unf
 
 | Severity | Count | What it means |
 |----------|-------|---------------|
-| blocker  | {N} | Functional bug — tool fails or deployment assumption is wrong |
-| high     | {N} | Works, but LLM callers are likely to misuse or get unusable output |
+| high     | {N} | Tool is broken OR LLM callers are very likely to misuse it / get unusable output |
 | medium   | {N} | Noticeable robustness / quality improvement |
 | low      | {N} | Minor polish |
 
-| # | Severity | Category | Tool(s) | One-line summary |
-|---|----------|----------|---------|------------------|
-| P1 | blocker | response-shaping | `export_file` | Shared client `.json()` call breaks raw-bytes endpoints |
-| P2 | high    | pagination       | `list_files`  | Docstring missing nextPageToken cursor guidance |
+| #  | Severity | Category | Tool(s) | One-line summary |
+|----|----------|----------|---------|------------------|
+| P1 | high   | ... | ... | ... |
+| P2 | medium | ... | ... | ... |
 | ... | ... | ... | ... | ... |
 
 ## Suggestions
@@ -216,17 +214,17 @@ Each suggestion has three required prose fields — **Problem**, **Impact if unf
 
 |  |  |
 |---|---|
-| **Severity**         | `{blocker / high / medium / low}` |
+| **Severity**         | `{high / medium / low}` |
 | **Category**         | {pagination / response-shaping / error-normalization / api-quirks} |
 | **Affected tool(s)** | `{tool_name}` (or `all` for shared-client changes) |
 | **File(s)**          | `{relative path(s)}` |
 | **Hint source**      | {triggering hint text, or "AI-analyzed" if not hint-driven} |
 
 **Problem**
-{2–4 sentences stating exactly what is wrong or suboptimal in the generated code today. Reference line behavior, not just "could be better". If this is a `blocker`, explicitly call that out here.}
+{2–4 sentences stating exactly what is wrong or suboptimal in the generated code today. Reference concrete behavior. If this is a functional bug (runtime failure, broken deployment assumption), open the paragraph by saying so — e.g. "Functional bug: the shared client unconditionally calls ...".}
 
 **Impact if unfixed**
-{1–2 sentences on the concrete consequence. For `blocker`: what breaks. For `high`: how the LLM misuses the tool. For `medium`/`low`: what degrades.}
+{1–2 sentences on the concrete consequence. For functional bugs: what breaks. For LLM-usability issues: how the LLM misuses the tool. For lower-severity: what degrades.}
 
 **Proposed fix**
 {2–4 sentences describing the change at a conceptual level — what function to add, what behavior to switch to, what docstring content to add. The reader should be able to decide yes/no from this paragraph alone, without reading the diff.}
@@ -273,10 +271,9 @@ Output confirmation:
 **Output:** {absolute path to polish-suggestions.md}
 
 Summary: {N} suggestions across {M} categories.
-- {X} blocker  (functional bugs — MUST fix before deploy)
-- {Y} high     (LLM will likely misuse the tool without these)
-- {Z} medium   (robustness / quality improvements)
-- {W} low      (minor polish)
+- {X} high
+- {Y} medium
+- {Z} low
 ```
 
 ---

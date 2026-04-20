@@ -136,41 +136,22 @@ The code-validator agent will read all files, run the Docker build check, and wr
 
    **Case A — error-severity failures exist (USER GATE — wait for response):**
 
-   Use AskUserQuestion:
-   ```
-   Validation found {N} error(s) that would cause runtime or deployment failures.
-   {If build also failed/skipped: "Build status: FAIL/SKIP — {one-line reason}."}
+   Use AskUserQuestion. Explain how many errors were found and — if the build also failed or was skipped — mention that. Ask how the user wants to proceed. Offer these paths:
 
-   Options:
-   1. Have AI fix the errors — spawns an agent to edit the generated code, then re-validates
-   2. Proceed to polish — continue to polish suggestions despite errors (all issues presented together)
-   3. Fix manually — you fix the errors and re-run the skill later
-   ```
+   - Have AI fix the errors (spawn the fix agent, then re-validate)
+   - Proceed to polish despite the errors
+   - Fix manually and re-run the skill later
 
    **Do NOT proceed past this step until the user responds.**
 
    **Case B — no error-severity failures, but build is FAIL or SKIP (USER GATE — wait for response):**
 
-   Use AskUserQuestion:
-   ```
-   All code-correctness checks passed, but the Docker build is {FAIL / SKIP}.
+   Use AskUserQuestion. Explain the situation (build failed or was skipped, include the reason from the Build Verification row) and make clear this is not a blocker for the rest of the flow. Ask what the user wants to do. Offer these paths:
 
-   Reason: {reason copied from the Build Verification row}
-
-   This is fine — we can keep going. What would you like to do?
-
-   Options:
-   1. Retry the build — re-run the build step (useful if you just fixed the underlying issue, e.g. ran `docker login`)
-   2. Have AI investigate / fix — spawn an agent to diagnose the build failure and attempt a fix, then re-validate (only offer this when FAIL, not SKIP)
-   3. Acknowledge and continue to polish — accept the {FAIL / SKIP}, proceed to Step 4
-   4. Stop here — exit the skill; you'll rebuild in an authenticated environment later
-   ```
-
-   For SKIP, drop option 2 (there's nothing to fix if the build wasn't attempted). Offer only retry / acknowledge / stop.
-
-   If the user picks "Retry the build", re-run the code-validator agent (Step 2) but pass an additional directive in the prompt: `"RE-RUN MODE: only re-run the Docker build check; reuse the existing report for other checks, updating only the build row and the Summary counts."`. Then loop back to this step with the updated report.
-
-   If the user picks "Have AI investigate / fix", spawn the fix agent (Step 3b) with a note that the Docker build is the thing to fix — after it completes, re-run validation.
+   - Retry the build (re-run the code-validator agent, but instruct it to re-run only the build check and reuse the existing report for everything else)
+   - Have AI investigate and fix the build (only when the build actually FAILED — spawn the fix agent scoped to the build, then re-validate)
+   - Acknowledge and continue to polish
+   - Stop here
 
    **Do NOT proceed past this step until the user responds.**
 
@@ -265,15 +246,14 @@ The polish-suggester agent will read all files and write `{working_dir}/polish-s
 
    | Severity | Count | What it means |
    |----------|-------|---------------|
-   | 🔴 blocker  | {N} | Functional bug — MUST fix before deploy |
-   | 🟠 high     | {N} | LLM likely to misuse the tool without this |
+   | 🟠 high     | {N} | Tool is broken OR LLM callers are very likely to misuse it |
    | 🟡 medium   | {N} | Robustness / quality improvement |
    | ⚪ low      | {N} | Minor polish |
 
    | #  | Severity | Category | Tool(s) | Summary |
    |----|----------|----------|---------|---------|
-   | P1 | 🔴 blocker | response-shaping | `export_file` | Client `.json()` breaks raw-bytes endpoints |
-   | P2 | 🟠 high    | pagination       | `list_files`  | Docstring missing nextPageToken guidance    |
+   | P1 | 🟠 high   | ... | ... | ... |
+   | P2 | 🟡 medium | ... | ... | ... |
    | …  | …        | …        | …       | …       |
    ```
 
@@ -311,25 +291,20 @@ The polish-suggester agent will read all files and write `{working_dir}/polish-s
 
    **Required fields per suggestion:** severity, category, affected tool(s), file(s), problem, impact, proposed fix. If the report is missing any of these fields, say so explicitly to the user instead of silently omitting — it means the polish-suggester agent produced an incomplete suggestion and should be re-run.
 
-   **Ordering:** render blocker suggestions first, then high, then medium, then low. Within a severity tier, preserve the P-number order from the report.
+   **Ordering:** render high-severity suggestions first, then medium, then low. Within a severity tier, preserve the P-number order from the report. When a `high`-severity suggestion flags a functional bug in its Problem paragraph, mention that fact when you introduce it so the user understands it isn't just a docstring nit.
 
    **Length:** do not truncate Problem / Impact / Proposed fix — they are the whole point. DO wrap long diffs in `<details>` so the chat stays scannable.
 
    If there are no suggestions, say so briefly and skip to Step 6.
 
-3. Use AskUserQuestion to offer choices:
+3. Use AskUserQuestion to ask the user how they want to handle the suggestions. Summarize the counts by severity, then offer these paths:
 
-   ```
-   {N} polish suggestions generated ({B} blocker, {H} high, {M} medium, {L} low).
+   - Have AI apply all suggestions
+   - Have AI apply selected suggestions (user names the P-numbers)
+   - Review manually
+   - Skip
 
-   Options:
-   1. Have AI apply all suggestions — spawns an agent to edit the generated code
-   2. Have AI apply selected suggestions — choose which ones to apply (e.g. "P1, P3")
-   3. Review manually — apply the diffs yourself
-   4. Skip — no polish needed
-   ```
-
-   If there are any `blocker` suggestions, explicitly note in the question prompt that skipping them will likely leave the server broken at runtime.
+   If any `high`-severity suggestions flagged themselves as functional bugs in the Problem paragraph, mention that in the question so the user knows skipping will leave those behind. Otherwise keep the framing neutral.
 
 **Do NOT proceed past this step until the user responds.**
 

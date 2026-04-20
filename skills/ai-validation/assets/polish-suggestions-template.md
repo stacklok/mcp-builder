@@ -7,16 +7,15 @@
 
 | Severity | Count | What it means |
 |----------|-------|---------------|
-| blocker  | {N}   | Functional bug — tool fails or a deployment-critical assumption is wrong. MUST fix before deploy. |
-| high     | {N}   | Tool works, but LLM callers are likely to misuse it or get unusable output. |
+| high     | {N}   | Tool is broken OR LLM callers are very likely to misuse it / get unusable output. |
 | medium   | {N}   | Noticeable robustness / quality-of-life improvement. |
 | low      | {N}   | Minor polish — wording, formatting, small defaults. |
 
-| #  | Severity | Category               | Tool(s)       | One-line summary                                     |
-|----|----------|------------------------|---------------|------------------------------------------------------|
-| P1 | blocker  | response-shaping       | `export_file` | Shared client `.json()` call breaks raw-bytes endpoints |
-| P2 | high     | pagination             | `list_files`  | Docstring missing nextPageToken cursor guidance      |
-| P3 | ...      | ...                    | ...           | ...                                                  |
+| #  | Severity | Category | Tool(s) | One-line summary |
+|----|----------|----------|---------|------------------|
+| P1 | high   | ...      | ...     | ... |
+| P2 | medium | ...      | ...     | ... |
+| P3 | ...    | ...      | ...     | ... |
 
 ## Suggestions
 
@@ -31,7 +30,7 @@ the user guessing what the issue actually is.
 
 |  |  |
 |---|---|
-| **Severity**         | `{blocker / high / medium / low}` |
+| **Severity**         | `{high / medium / low}` |
 | **Category**         | {pagination / response-shaping / error-normalization / api-quirks} |
 | **Affected tool(s)** | `{tool_name}` (or `all` for shared-client changes) |
 | **File(s)**          | `{relative path(s)}` |
@@ -39,16 +38,14 @@ the user guessing what the issue actually is.
 
 **Problem**
 {2–4 sentences stating exactly what is wrong or suboptimal in the generated
-code today. Reference concrete behavior — e.g. "the shared client calls
-`response.json()` unconditionally, but this endpoint returns raw bytes" —
-not vague "could be better". If this is a `blocker`, explicitly call that
-out here so the reader knows it isn't just a style nit.}
+code today. Reference concrete behavior. If this is a functional bug (runtime
+failure, broken deployment assumption), open the paragraph by saying so
+explicitly — the severity stays `high`, but the prose carries the bug signal.}
 
 **Impact if unfixed**
-{1–2 sentences on the concrete consequence.
-  - `blocker`: what breaks and when (e.g. "every call raises JSONDecodeError").
-  - `high`: how the LLM misuses the tool (e.g. "LLM won't page through results").
-  - `medium` / `low`: what degrades (e.g. "error messages lose structure").}
+{1–2 sentences on the concrete consequence — what breaks, how the LLM
+misuses the tool, or what quality degrades. Match the detail level to the
+severity tier.}
 
 **Proposed fix**
 {2–4 sentences describing the change at a conceptual level — what function
