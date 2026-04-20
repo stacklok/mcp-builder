@@ -107,20 +107,42 @@ The code-validator agent will read all files, run the Docker build check, and wr
 
 ### Step 3: Validation Gate
 
-1. Read `{working_dir}/validation-report.md`
+1. Read `{working_dir}/validation-report.md` — in particular the `Build Verification` table (check D1) and any error-severity failures.
 
-2. Present the validation summary to the user:
-   - Total checks: X passed, Y failed
-   - Build status: PASS/FAIL/SKIP
-   - If there are `error`-severity failures, highlight each one prominently
+2. Present the validation summary to the user using the structure below. **Build status is a first-class block, not a footnote** — it must be visible at a glance even when the rest of the report is green.
 
-3. Based on the results:
+   ```markdown
+   ## Validation Summary
 
-   **If there are error-severity failures (USER GATE — wait for response):**
+   **Report:** {path to validation-report.md}
 
-   Use AskUserQuestion to offer choices:
+   - Total checks: {X} passed, {Y} failed, {Z} skipped
+
+   ### 🏗️ Docker build (D1): {✅ PASS / ❌ FAIL / ⏭️ SKIP}
+
+   {If PASS:  one-line confirmation copied from D1 Details.}
+   {If FAIL:  "The Docker build failed." — then the stage/line, the
+              error excerpt from D1 Details (as a fenced code block),
+              and the one-line "what to try" hint from D1 Details.}
+   {If SKIP:  "The Docker build was not attempted." — then the concrete
+              reason from D1 Details (e.g. "host lacks dhi.io login",
+              "Docker daemon not running", "--skip-build requested").}
+
+   **This is not a blocker for proceeding** — polish suggestions and
+   deployment review still work regardless of build status. But you
+   should know it happened.
+   ```
+
+   If there are `error`-severity failures (other than D1), list each one prominently under a separate `### ❌ Errors` heading with the check ID, file, and one-line fix description from Detailed Findings.
+
+3. Run the appropriate user gate based on what the report contains:
+
+   **Case A — error-severity failures exist (USER GATE — wait for response):**
+
+   Use AskUserQuestion:
    ```
    Validation found {N} error(s) that would cause runtime or deployment failures.
+   {If build also failed/skipped: "Build status: FAIL/SKIP — {one-line reason}."}
 
    Options:
    1. Have AI fix the errors — spawns an agent to edit the generated code, then re-validates
@@ -130,9 +152,34 @@ The code-validator agent will read all files, run the Docker build check, and wr
 
    **Do NOT proceed past this step until the user responds.**
 
-   **If all checks pass (no errors):**
+   **Case B — no error-severity failures, but build is FAIL or SKIP (USER GATE — wait for response):**
 
-   Tell the user all checks passed and automatically proceed to Step 4 (polish suggestions). No gate needed — polish is always useful.
+   Use AskUserQuestion:
+   ```
+   All code-correctness checks passed, but the Docker build is {FAIL / SKIP}.
+
+   Reason: {one-line reason from D1 Details}
+
+   This is fine — we can keep going. What would you like to do?
+
+   Options:
+   1. Retry the build — re-run the build step (useful if you just fixed the underlying issue, e.g. ran `docker login`)
+   2. Have AI investigate / fix — spawn an agent to diagnose the build failure and attempt a fix, then re-validate (only offer this when FAIL, not SKIP)
+   3. Acknowledge and continue to polish — accept the {FAIL / SKIP}, proceed to Step 4
+   4. Stop here — exit the skill; you'll rebuild in an authenticated environment later
+   ```
+
+   For SKIP, drop option 2 (there's nothing to fix if the build wasn't attempted). Offer only retry / acknowledge / stop.
+
+   If the user picks "Retry the build", re-run the code-validator agent (Step 2) but pass an additional directive in the prompt: `"RE-RUN MODE: only re-run the D1 Docker build check; reuse the existing report for other checks, updating only the D1 row and the Summary counts."`. Then loop back to this step with the updated report.
+
+   If the user picks "Have AI investigate / fix", spawn the fix agent (Step 3b) with a note that D1 (build) is the thing to fix — after it completes, re-run validation.
+
+   **Do NOT proceed past this step until the user responds.**
+
+   **Case C — no errors and build is PASS:**
+
+   Tell the user all checks passed (including build) and automatically proceed to Step 4 (polish suggestions). No gate needed.
 
 ---
 

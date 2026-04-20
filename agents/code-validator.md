@@ -276,10 +276,21 @@ Run the Docker build check from the project directory:
 cd {project_dir} && docker build -t {server_name}-mcp:validation-test . 2>&1
 ```
 
-Record the result:
-- **PASS** — build succeeded (exit code 0)
-- **FAIL** — build failed (capture the error output)
-- **SKIP** — Docker is not available (`command not found` or similar)
+Record the result as check D1. **The Details column MUST include a concrete reason** — the skill renders this verbatim when presenting build status to the user, and a missing reason forces the user to open the raw log.
+
+- **PASS** — build succeeded (exit code 0). Details: one line confirming the image tag built successfully (e.g. `Built image google-drive-mcp:validation-test in 42s`).
+- **FAIL** — build failed (nonzero exit code). Details MUST include:
+  - The Dockerfile stage or line that failed (e.g. `Stage 2: RUN uv sync --frozen`)
+  - A short excerpt of the error output — the last ~15 lines of stderr is usually right, trimmed to the failing command and its error message
+  - A plain-language one-liner on what to try (e.g. "Missing `httpx` in `pyproject.toml` dependencies", "Base image `dhi.io/...` requires `docker login dhi.io`")
+- **SKIP** — the build could not be attempted. Details MUST state the concrete reason, not just "skipped":
+  - `Docker CLI not installed on host` (command not found)
+  - `Docker daemon not running` (CLI present but daemon unreachable)
+  - `Base image <image> requires authenticated pull (run docker login <registry>)` (auth-gated registry like `dhi.io`)
+  - `Skipped per user instruction` (explicit --skip-build flag)
+  - Any other concrete blocker — never leave the reason as "SKIP" without text
+
+Treat SKIP as "status unknown, not status failed." The user may still want to know and act on the cause.
 
 Include the result as check D1 in the report.
 
