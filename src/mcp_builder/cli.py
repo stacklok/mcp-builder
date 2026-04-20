@@ -34,6 +34,7 @@ from mcp_builder.codegen.renderers.server_wiring import (
 from mcp_builder.codegen.renderers.tools import render_tools_module
 from mcp_builder.codegen.spec_analyzer import analyze_spec
 from mcp_builder.codegen.validator import validate_scope
+from mcp_builder.log import configure_logging
 from mcp_builder.schema.models import load_scope
 from mcp_builder.spec import load_openapi_spec
 
@@ -204,13 +205,7 @@ def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
 
-    if args.log_level:
-        level = getattr(logging, args.log_level.upper())
-    elif args.verbose:
-        level = logging.DEBUG
-    else:
-        level = logging.INFO
-    logging.basicConfig(level=level, format="%(levelname)s: %(message)s")
+    configure_logging(verbose=args.verbose, level=args.log_level)
 
     try:
         args.func(args)
