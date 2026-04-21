@@ -284,8 +284,8 @@ class TestExtractSchemaType:
         with pytest.raises(ValueError, match="no inline schema"):
             get_parameters(spec, "GET", "/x")
 
-    def test_raises_on_ref_schema(self, tmp_path):
-        """Parameter whose schema is a $ref raises ValueError."""
+    def test_resolves_ref_schema(self, tmp_path):
+        """Parameter whose schema is a $ref is resolved against components.schemas."""
         raw = {
             "openapi": "3.0.3",
             "info": {"title": "T", "version": "0.1"},
@@ -314,7 +314,73 @@ class TestExtractSchemaType:
         spec_file = tmp_path / "ref_schema.yaml"
         spec_file.write_text(yaml.dump(raw))
         spec = load_openapi_spec(spec_file)
-        with pytest.raises(ValueError, match="no inline schema"):
+        params = get_parameters(spec, "GET", "/x")
+        assert len(params) == 1
+        assert params[0].name == "q"
+        assert params[0].schema_type == "string"
+
+    def test_resolves_nested_ref_chain(self, tmp_path):
+        """Parameter schema $ref → $ref → inline is followed to the end."""
+        raw = {
+            "openapi": "3.0.3",
+            "info": {"title": "T", "version": "0.1"},
+            "paths": {
+                "/x": {
+                    "get": {
+                        "operationId": "op",
+                        "parameters": [
+                            {
+                                "name": "q",
+                                "in": "query",
+                                "required": False,
+                                "schema": {"$ref": "#/components/schemas/Foo"},
+                            }
+                        ],
+                        "responses": {"200": {"description": "OK"}},
+                    }
+                }
+            },
+            "components": {
+                "schemas": {
+                    "Foo": {"$ref": "#/components/schemas/Bar"},
+                    "Bar": {"type": "integer"},
+                }
+            },
+        }
+        spec_file = tmp_path / "nested_ref.yaml"
+        spec_file.write_text(yaml.dump(raw))
+        spec = load_openapi_spec(spec_file)
+        params = get_parameters(spec, "GET", "/x")
+        assert len(params) == 1
+        assert params[0].schema_type == "integer"
+
+    def test_raises_on_missing_ref_target(self, tmp_path):
+        """Parameter $ref pointing at a nonexistent component raises ValueError."""
+        raw = {
+            "openapi": "3.0.3",
+            "info": {"title": "T", "version": "0.1"},
+            "paths": {
+                "/x": {
+                    "get": {
+                        "operationId": "op",
+                        "parameters": [
+                            {
+                                "name": "q",
+                                "in": "query",
+                                "required": False,
+                                "schema": {"$ref": "#/components/schemas/Missing"},
+                            }
+                        ],
+                        "responses": {"200": {"description": "OK"}},
+                    }
+                }
+            },
+            "components": {"schemas": {}},
+        }
+        spec_file = tmp_path / "missing_ref.yaml"
+        spec_file.write_text(yaml.dump(raw))
+        spec = load_openapi_spec(spec_file)
+        with pytest.raises(ValueError, match="not found in components.schemas"):
             get_parameters(spec, "GET", "/x")
 
 
