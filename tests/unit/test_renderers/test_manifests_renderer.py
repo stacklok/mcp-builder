@@ -11,6 +11,7 @@ from mcp_builder.codegen.renderers.manifests import (
     render_external_auth_config,
     render_ingress,
     render_manifests,
+    render_mcpoidc_config,
     render_mcpserver,
     render_secret,
 )
@@ -100,19 +101,23 @@ class TestRenderMcpserver:
         assert "REPLACE_ME_OTEL_ENDPOINT" in telemetry["openTelemetry"]["endpoint"]
         assert telemetry["prometheus"]["enabled"] is True
 
-    def test_oidc_config_when_oauth(self) -> None:
+    def test_oidc_config_ref_when_oauth(self) -> None:
         doc = yaml.safe_load(render_mcpserver(OAUTH_PLAN))
-        oidc = doc["spec"]["oidcConfig"]
-        assert "REPLACE_ME_DOMAIN" in oidc["issuer"]
-        assert "test-api" in oidc["issuer"]
-        assert len(oidc["audiences"]) == 1
-
-    def test_no_oidc_config_when_api_key(self) -> None:
-        doc = yaml.safe_load(render_mcpserver(API_KEY_PLAN))
+        ref = doc["spec"]["oidcConfigRef"]
+        assert ref["name"] == "test-api-oidc"
+        assert "REPLACE_ME_DOMAIN" in ref["audience"]
+        assert "REPLACE_ME_DOMAIN" in ref["resourceUrl"]
+        # The inline spec.oidcConfig shape is not accepted by the current CRD.
         assert "oidcConfig" not in doc["spec"]
 
-    def test_no_oidc_config_when_none(self) -> None:
+    def test_no_oidc_config_ref_when_api_key(self) -> None:
+        doc = yaml.safe_load(render_mcpserver(API_KEY_PLAN))
+        assert "oidcConfigRef" not in doc["spec"]
+        assert "oidcConfig" not in doc["spec"]
+
+    def test_no_oidc_config_ref_when_none(self) -> None:
         doc = yaml.safe_load(render_mcpserver(NONE_PLAN))
+        assert "oidcConfigRef" not in doc["spec"]
         assert "oidcConfig" not in doc["spec"]
 
     def test_deterministic(self, plan: ServerPlan) -> None:
@@ -347,6 +352,39 @@ class TestRenderIngress:
 
 
 # ---------------------------------------------------------------------------
+# render_mcpoidc_config
+# ---------------------------------------------------------------------------
+
+
+class TestRenderMcpoidcConfig:
+    def test_valid_yaml(self) -> None:
+        doc = yaml.safe_load(render_mcpoidc_config(OAUTH_PLAN))
+        assert isinstance(doc, dict)
+
+    def test_api_version_and_kind(self) -> None:
+        doc = yaml.safe_load(render_mcpoidc_config(OAUTH_PLAN))
+        assert doc["apiVersion"] == "toolhive.stacklok.dev/v1alpha1"
+        assert doc["kind"] == "MCPOIDCConfig"
+
+    def test_metadata_name_matches_ref(self) -> None:
+        doc = yaml.safe_load(render_mcpoidc_config(OAUTH_PLAN))
+        assert doc["metadata"]["name"] == "test-api-oidc"
+
+    def test_inline_issuer(self) -> None:
+        doc = yaml.safe_load(render_mcpoidc_config(OAUTH_PLAN))
+        assert doc["spec"]["type"] == "inline"
+        assert "REPLACE_ME_DOMAIN" in doc["spec"]["inline"]["issuer"]
+
+    def test_raises_for_api_key(self) -> None:
+        with pytest.raises(ValueError, match="oauth_bearer"):
+            render_mcpoidc_config(API_KEY_PLAN)
+
+    def test_raises_for_none(self) -> None:
+        with pytest.raises(ValueError, match="oauth_bearer"):
+            render_mcpoidc_config(NONE_PLAN)
+
+
+# ---------------------------------------------------------------------------
 # render_manifests (convenience wrapper)
 # ---------------------------------------------------------------------------
 
@@ -356,9 +394,9 @@ class TestRenderManifests:
         result = render_manifests(API_KEY_PLAN)
         assert len(result) == 4
 
-    def test_oauth_returns_three_files(self) -> None:
+    def test_oauth_returns_four_files(self) -> None:
         result = render_manifests(OAUTH_PLAN)
-        assert len(result) == 3
+        assert len(result) == 4
 
     def test_none_returns_two_files(self) -> None:
         result = render_manifests(NONE_PLAN)
@@ -379,6 +417,7 @@ class TestRenderManifests:
             "mcpserver.yaml",
             "ingress.yaml",
             "mcpexternalauthconfig.yaml",
+            "mcpoidcconfig.yaml",
         }
 
     def test_filenames_without_auth(self) -> None:

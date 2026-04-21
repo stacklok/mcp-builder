@@ -27,10 +27,10 @@ spec:
     name: {{ server_name }}-auth
 {% endif %}
 {% if auth_type == "oauth_bearer" %}
-  oidcConfig:
-    issuer: https://mcp.REPLACE_ME_DOMAIN/{{ server_name }}
-    audiences:
-    - https://mcp.REPLACE_ME_DOMAIN/{{ server_name }}
+  oidcConfigRef:
+    name: {{ server_name }}-oidc
+    audience: https://mcp.REPLACE_ME_DOMAIN/{{ server_name }}
+    resourceUrl: https://mcp.REPLACE_ME_DOMAIN/{{ server_name }}
 {% endif %}
   resources:
     requests:

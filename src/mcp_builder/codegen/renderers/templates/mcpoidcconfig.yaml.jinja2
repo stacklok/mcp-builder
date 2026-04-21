@@ -1,0 +1,22 @@
+# MCPOIDCConfig — OIDC issuer configuration for {{ server_name }}.
+#
+# Referenced by the MCPServer via spec.oidcConfigRef. Split into its own
+# resource because this operator version does not accept an inline
+# spec.oidcConfig on MCPServer.
+#
+# Before applying:
+#   1. Replace REPLACE_ME_DOMAIN with your actual domain.
+#
+# Namespace must match the MCPServer that references this config.
+#
+# Docs: https://docs.stacklok.com/toolhive/reference/crd-spec
+---
+apiVersion: {{ api_version }}
+kind: MCPOIDCConfig
+metadata:
+  name: {{ server_name }}-oidc
+  namespace: {{ namespace }}
+spec:
+  type: inline
+  inline:
+    issuer: https://mcp.REPLACE_ME_DOMAIN/{{ server_name }}

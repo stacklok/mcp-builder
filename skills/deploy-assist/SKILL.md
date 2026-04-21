@@ -78,6 +78,24 @@ The cluster repo likely contains existing deployments, config files, or values f
 
 Determine the deployment mechanism: Flux, ArgoCD, Helm, plain `kubectl apply`, or something else. This shapes the final guidance about how the user should trigger deployment after the manifests are in place.
 
+**Question 4: What shape do existing MCPServer resources in this repo use?**
+
+The generator emits manifests against a known CRD version, but the target cluster may pin a different operator version or follow local conventions (shared-ALB ingress, telemetryConfigRef, oidcConfigRef patterns, etc.). Silent mismatches here are the single largest source of first-deploy failures.
+
+If the cluster repo contains one or more existing `MCPServer` YAMLs, pick the nearest sibling (same directory, same namespace) and extract:
+
+- The set of top-level keys under `spec` (e.g. `image`, `transport`, `oidcConfigRef`, `telemetryConfigRef`, `externalAuthConfigRef`).
+- The set of sibling CRD kinds referenced — e.g. does this repo use a shared `MCPTelemetryConfig`, standalone `MCPOIDCConfig`, inline blocks, or something else?
+- Any ingress pattern differences (shared ALB group, URL-rewrite transforms, backend service naming — operator-managed `mcp-{name}-proxy` vs. plain `{name}`).
+
+Diff those sets against what's in the generated `deploy/` directory. Flag each of these to surface at the Step 3 gate:
+
+- **Keys present in generated but NOT in sibling** — likely to be rejected by the cluster's CRD. Most common class of failure.
+- **Keys present in sibling but NOT in generated** — the cluster expects something the generator didn't emit. Usually requires adding a ref or annotation.
+- **Kinds referenced by sibling but NOT emitted by generator** — e.g. sibling uses `telemetryConfigRef: shared-telemetry` and the generator emits an inline `telemetry:` block. Requires an adapter rewrite.
+
+If there are no existing `MCPServer` YAMLs in the repo, note that this is the first — no diff possible — and proceed.
+
 ---
 
 ### Step 3: Confirm Inferred Values (USER GATE)
@@ -94,6 +112,7 @@ Present what you found to the user:
 4. **Auth type** detected from the generated manifests (oauth_bearer / api_key / none)
 5. **Deployment mechanism** (Flux, ArgoCD, plain manifests, etc.)
 6. **Files to copy** (list of manifests from `deploy/`)
+7. **Sibling-diff findings** (from Step 2 Question 4): any `spec.*` keys or referenced CRD kinds that diverge between the generated manifests and the nearest existing `MCPServer` in the target repo. Each divergence should be one of: **keep as-generated**, **rewrite to match sibling pattern before copying**, or **ask user**. Default to rewriting when the sibling uses a cluster-wide convention (shared-ALB ingress, shared telemetry/OIDC refs), and ask the user when the divergence could be either the generator's bug or the sibling's convention.
 
 If any values could not be inferred from the cluster repo, ask the user to provide them.
 

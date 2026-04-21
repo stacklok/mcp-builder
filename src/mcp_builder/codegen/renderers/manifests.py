@@ -50,10 +50,11 @@ def render_manifests(plan: ServerPlan) -> dict[str, str]:
     Pipeline stage: rendering (plan -> {filename: YAML string}).
     Called by: cli.run_pipeline().
 
-    Returns a dict with 2-4 entries depending on auth type:
+    Returns a dict with 2-5 entries depending on auth type:
         - "mcpserver.yaml" — always present
         - "ingress.yaml" — always present
         - "mcpexternalauthconfig.yaml" — present when auth.type != "none"
+        - "mcpoidcconfig.yaml" — present when auth.type == "oauth_bearer"
         - "secret.yaml" — present only when auth.type == "api_key"
     """
     logger.info("Rendering deployment manifests for '%s'", plan.server_name)
@@ -65,6 +66,9 @@ def render_manifests(plan: ServerPlan) -> dict[str, str]:
 
     if plan.auth.type != "none":
         manifests["mcpexternalauthconfig.yaml"] = render_external_auth_config(plan)
+
+    if plan.auth.type == "oauth_bearer":
+        manifests["mcpoidcconfig.yaml"] = render_mcpoidc_config(plan)
 
     if plan.auth.type == "api_key":
         manifests["secret.yaml"] = render_secret(plan)
@@ -90,6 +94,27 @@ def render_mcpserver(plan: ServerPlan) -> str:
         namespace=DEFAULT_NAMESPACE,
         has_auth=plan.auth.type != "none",
         auth_type=plan.auth.type,
+    )
+
+
+def render_mcpoidc_config(plan: ServerPlan) -> str:
+    """Render the MCPOIDCConfig CRD manifest.
+
+    Emitted only for oauth_bearer — MCPServer references this resource via
+    spec.oidcConfigRef instead of carrying an inline spec.oidcConfig block.
+
+    Raises ValueError if called with auth.type != "oauth_bearer".
+    """
+    if plan.auth.type != "oauth_bearer":
+        raise ValueError(
+            f"MCPOIDCConfig only applies to oauth_bearer, got {plan.auth.type!r}"
+        )
+    logger.debug("Rendering MCPOIDCConfig for '%s'", plan.server_name)
+    tmpl = _env.get_template("mcpoidcconfig.yaml.jinja2")
+    return tmpl.render(
+        server_name=plan.server_name,
+        api_version=TOOLHIVE_API_VERSION,
+        namespace=DEFAULT_NAMESPACE,
     )
 
 
