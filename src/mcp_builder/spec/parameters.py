@@ -177,11 +177,14 @@ def get_response_content_types(
 ) -> dict[str, list[str]]:
     """Extract declared media types for each 2xx response of an operation.
 
+    "2xx" refers to HTTP status codes in the 200–299 range — the success
+    family (200 OK, 201 Created, 204 No Content, etc.). Those are the
+    only responses that shape the return type of a generated tool, so
+    we ignore 4xx/5xx (errors) and 3xx (redirects) here.
+
     Walks ``operation.responses`` and returns a mapping of 2xx status code
     (or ``"default"``) to the sorted list of media types declared under
     that response's ``content``. Resolves ``$ref`` on Response objects.
-    Status codes outside 2xx (errors, redirects, etc.) are ignored because
-    code generation only cares about the success shape.
 
     An empty return means the spec declares no 2xx responses at all —
     callers should treat that as "spec is incomplete" rather than "not JSON."

@@ -7,6 +7,8 @@ it's a domain operation that consumes the low-level spec/ and schema/ packages.
 
 from __future__ import annotations
 
+import re
+
 import structlog
 from pydantic import BaseModel, Field
 
@@ -127,8 +129,12 @@ def validate_scope(
                                 f"str. The spec may be incomplete."
                             )
 
-                # Check 2xx response content types. The generated client
-                # only handles JSON today, so a non-JSON response (e.g.
+                # Check success-response content types. "2xx" refers to
+                # HTTP status codes in the 200–299 range (the success
+                # family: 200 OK, 201 Created, 204 No Content, etc.) —
+                # those are the only responses that shape the return
+                # type of the generated tool. The generated client only
+                # handles JSON today, so a non-JSON response (e.g.
                 # image/jpeg, application/octet-stream) produces a server
                 # that crashes at runtime with JSONDecodeError. Surface
                 # it as an error here so the user/scoping model can
@@ -146,17 +152,27 @@ def validate_scope(
     return ValidationResult(errors=errors, warnings=warnings)
 
 
-def _is_json_media_type(media_type: str) -> bool:
-    """True for application/json and any structured-suffix JSON type.
+# Matches application/json, text/json, and any RFC 6839 structured-suffix
+# JSON type like application/vnd.api+json or application/ld+json. Python's
+# stdlib has no built-in primitive for the "+json" structured suffix, so
+# we use a small regex rather than a chain of string operations — it's
+# more declarative and keeps the RFC 6839 rule in one place.
+_JSON_MEDIA_RE = re.compile(
+    r"^(?:application|text)/(?:[\w.+-]+\+)?json$", re.IGNORECASE
+)
 
-    Matches ``application/json``, ``application/vnd.api+json``, and any
-    other ``*/*+json`` variant defined by RFC 6839. Also accepts
-    ``text/json`` which some legacy specs use.
+
+def _is_json_media_type(media_type: str) -> bool:
+    """Return True if the media type is JSON-decodable.
+
+    Accepts ``application/json``, ``text/json`` (legacy), and any
+    ``application/foo+json`` / ``text/foo+json`` structured-suffix
+    variant per RFC 6839.
     """
-    mt = media_type.split(";", 1)[0].strip().lower()
-    if mt in ("application/json", "text/json"):
-        return True
-    return mt.endswith("+json")
+    # Strip any parameters (e.g. "; charset=utf-8"). Content-type keys in
+    # OpenAPI specs occasionally include them, though most omit the params.
+    bare = media_type.split(";", 1)[0].strip()
+    return bool(_JSON_MEDIA_RE.match(bare))
 
 
 def _check_response_content_types(
