@@ -95,12 +95,28 @@ def validate_scope(
                 for param in tool.parameters:
                     if param.location == ParamLocation.BODY:
                         if param.name not in spec_body_names:
-                            warnings.append(
-                                f"Tool '{tool.tool_name}': body parameter "
-                                f"'{param.name}' not found in spec's "
-                                f"requestBody — type will default to str. "
-                                f"The spec may be incomplete."
-                            )
+                            if spec_body_names:
+                                # Spec declares body properties but the YAML
+                                # param doesn't match any of them — typically
+                                # a YAML authoring issue (e.g. a `body`
+                                # catch-all), not an incomplete spec.
+                                available = ", ".join(sorted(spec_body_names))
+                                warnings.append(
+                                    f"Tool '{tool.tool_name}': body parameter "
+                                    f"'{param.name}' not found in spec's "
+                                    f"requestBody properties "
+                                    f"(available: {available}). Type will "
+                                    f"default to str. Consider expanding "
+                                    f"this into per-field body parameters "
+                                    f"to match the spec schema."
+                                )
+                            else:
+                                warnings.append(
+                                    f"Tool '{tool.tool_name}': body parameter "
+                                    f"'{param.name}' not found in spec's "
+                                    f"requestBody — type will default to str. "
+                                    f"The spec may be incomplete."
+                                )
                     else:
                         if param.name not in spec_param_names:
                             warnings.append(
