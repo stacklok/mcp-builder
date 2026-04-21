@@ -27,13 +27,13 @@ OpenAPI terminology for newcomers:
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Annotated, Literal
 
 from openapi_pydantic.v3.v3_0 import OpenAPI as OpenAPI30
 from openapi_pydantic.v3.v3_0 import Schema as Schema30
 from openapi_pydantic.v3.v3_1 import OpenAPI as OpenAPI31
 from openapi_pydantic.v3.v3_1 import Schema as Schema31
-from pydantic import BaseModel
+from pydantic import BaseModel, StringConstraints
 
 # Union of both OpenAPI versions. The field interfaces are identical
 # (same names, same types) so downstream code can treat them uniformly.
@@ -57,6 +57,12 @@ OPENAPI_TYPE_MAP: dict[str, PythonType] = {
     "object": "dict",
 }
 SchemaType = Literal["string", "integer", "number", "boolean", "array", "object"]
+
+# Valid OpenAPI response status-code keys: three-digit codes (200, 404, …),
+# the 3.1 range patterns (1XX–5XX), and the "default" fallback. Enforced at
+# pydantic model construction; downstream code keeps treating the value as
+# a string (``.startswith("2")`` etc.) rather than an int.
+StatusCode = Annotated[str, StringConstraints(pattern=r"^(\d{3}|[1-5]XX|default)$")]
 
 
 class ExtractedParameter(BaseModel):
@@ -114,5 +120,10 @@ class ExtractedResponse(BaseModel):
         ExtractedResponse(status_code="200", media_types=["image/jpeg"])
     """
 
-    status_code: str
+    status_code: StatusCode
+    # media_types stays ``list[str]`` deliberately. Media-type grammar
+    # (RFC 6838) allows arbitrary vendor types, so a narrower Literal or
+    # enum would reject valid inputs. Shape parsing isn't useful here —
+    # _is_json_media_type() only asks "is this JSON?", which is a cheap
+    # regex, not a grammar walk.
     media_types: list[str]

@@ -508,6 +508,29 @@ class TestComposedBodyFields:
 # ---------------------------------------------------------------------------
 
 
+class TestExtractedResponseValidation:
+    """The StatusCode pattern constraint is the data-boundary guard
+    against malformed status codes leaking into downstream code."""
+
+    @pytest.mark.parametrize(
+        "code",
+        ["200", "201", "204", "404", "500", "1XX", "2XX", "5XX", "default"],
+    )
+    def test_accepts_valid_codes(self, code):
+        # Should not raise.
+        ExtractedResponse(status_code=code, media_types=[])
+
+    @pytest.mark.parametrize(
+        "code",
+        ["20", "2000", "6XX", "default ", "abc", "", "2xx"],
+    )
+    def test_rejects_malformed_codes(self, code):
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            ExtractedResponse(status_code=code, media_types=[])
+
+
 class TestGetResponseContentTypes:
     """Exercise the response-media-type extraction helper.
 

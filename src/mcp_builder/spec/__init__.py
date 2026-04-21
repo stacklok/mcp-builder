@@ -39,7 +39,7 @@ Public API (re-exported here for convenience):
     - schema_to_type() — get the schema type from a schema object
     - Type aliases: OpenAPISpec, OpenAPISchema, ExtractedParameter,
       ExtractedBodyField, ExtractedResponse, ParameterLocation,
-      PythonType, SchemaType
+      PythonType, SchemaType, StatusCode
     - Constants: OPENAPI_TYPE_MAP
 """
 
@@ -69,6 +69,7 @@ from mcp_builder.spec.types import (
     ParameterLocation,
     PythonType,
     SchemaType,
+    StatusCode,
 )
 
 __all__ = [
@@ -81,6 +82,7 @@ __all__ = [
     "ParameterLocation",
     "PythonType",
     "SchemaType",
+    "StatusCode",
     "extract_schema_type",
     "get_body_fields",
     "resolve_composed_schema",
