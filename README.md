@@ -116,13 +116,20 @@ MCP server project plus ToolHive deployment manifests in `./out`.
 verifies structural and behavioral correctness (every scoped tool is
 present, HTTP methods match the spec, auth is wired correctly), builds the
 Docker image, and suggests improvements driven by the hints in the scope
-(response shaping for large payloads, pagination helpers, API quirks).
+(response shaping for large payloads, pagination helpers, API quirks). Tip:
+before moving on, run the built image locally (`docker run` with real
+credentials) and hit `/mcp` once — structural validation catches shape
+bugs, but not runtime behavior.
 
-**Optional — Deploy.** Launch your AI coding tool and type `/deploy-assist
-<generated-project-dir> <cluster-repo-path>`. The skill drops the generated
-manifests into your cluster repo, fills placeholders by inferring values
-from existing cluster configuration, and lists the manual steps that remain
-(for example, creating the K8s Secret with real credentials).
+**Optional — Deploy.** Before deploying you need the container image in a
+registry your cluster can reach. Phase 4 builds the image locally; tag and
+push it to your registry of choice ([ttl.sh](https://ttl.sh) works without
+auth for quick iteration). Then launch your AI coding tool and type
+`/deploy-assist <generated-project-dir> <cluster-repo-path>`. The skill
+drops the generated manifests into your cluster repo, fills placeholders by
+inferring values from existing cluster configuration, and lists the manual
+steps that remain (for example, creating the K8s Secret with real
+credentials).
 
 Example OpenAPI specs you can run the pipeline against live in
 `e2e/fixtures/` (Google Drive, GitHub, Jira, BambooHR, Stripe, Slack, and
