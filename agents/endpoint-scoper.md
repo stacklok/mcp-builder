@@ -108,6 +108,49 @@ For each tool, review ALL parameters from the spec and decide which to include. 
 - Decide required vs. optional status. If the spec marks it as required, keep it required. If the spec marks it as optional but workflows always need it, flag this ambiguity for human review (do NOT change required to true — just note it).
 - Note any parameters that need description rewrites (covered in the next step).
 
+#### Request body expansion
+
+`spec-analysis.md` only reports whether an endpoint has a body (`Body: yes/no`), not the body's fields. For every endpoint where `Body: yes`, you MUST open the OpenAPI spec file (path provided as `OPENAPI SPEC FILE PATH` in your CONTEXT) and expand the body into one parameter per top-level property. Do **not** emit a single catch-all parameter named `body` — that output is explicitly wrong and will be flagged by the downstream validator.
+
+Expansion procedure:
+
+1. In the spec file, locate the operation's `requestBody.content`. Prefer `application/json`; if absent, use the declared media type.
+2. Read `content.<media-type>.schema`. If it is a `$ref`, follow it into `components.schemas` and keep resolving until you reach a concrete object schema. If the schema uses `allOf` / `oneOf` / `anyOf`, merge the referenced property sets.
+3. If the resolved schema has `type: object` with declared `properties`, emit one YAML parameter per top-level property:
+   - `name`: the property key exactly as written in the schema (do not rename — the generator matches on this).
+   - `description`: the property's `description` if present. If missing, synthesize a short one from `type`, `format`, `enum`, and any example — and flag it in the "Parameters excluded / notes" section so the user knows the spec was thin.
+   - `required`: `true` iff the property key appears in the schema's `required` array (or in any merged `required` for composed schemas); otherwise `false`.
+   - `location: body`.
+4. Apply the same curation rules as query/path params to body fields: exclude rarely-used or clearly-internal fields, flag anything questionable, and record exclusions under "Parameters excluded" with a rationale.
+5. **Only** fall back to a single `body` parameter when the body schema is genuinely free-form — i.e., `type: object` with no `properties`, an untyped schema, or a `multipart/form-data` body whose sole field is a binary/file upload. In that case, explain the fallback in "Parameters excluded / notes" so the reason is preserved.
+6. If the schema cannot be resolved (broken `$ref`, unrecognized composition), flag the tool for user review rather than guessing — do not silently emit `body`.
+
+**Shape of the output** — given a spec `requestBody` schema with declared properties, you produce one parameter per property, not one catch-all. High level:
+
+```
+❌ Wrong
+parameters:
+  - name: body
+    description: "Summary of the request payload in prose."
+    required: true
+    location: body
+
+✅ Right
+parameters:
+  - name: <path_param>
+    ...
+    location: path
+  - name: <body_property_1>   # from schema.properties.<property_1>
+    description: "<from schema.properties.<property_1>.description>"
+    required: true            # because it appears in schema.required
+    location: body
+  - name: <body_property_2>
+    description: "..."
+    required: false
+    location: body
+  ... (one entry per top-level property in the resolved body schema)
+```
+
 Document your decisions in the tool-scoping.md output. For each tool, list included parameters and any excluded parameters with rationale.
 
 ### Step 4: Description Writing
@@ -194,6 +237,7 @@ The following endpoints are flagged for your review. They are included by defaul
 - **Parameters:**
   - {name} ({required|optional}, {path|query|body}): {description}
   - {name} ({required|optional}, {path|query|body}): {description}
+  - (for endpoints with a requestBody, include one line per top-level body property with `location: body` — never a single catch-all `body`; see "Request body expansion" in Step 3)
 - **Parameters excluded:**
   - {name}: {reason for exclusion}
   - (or "None — all spec parameters included" if nothing was excluded)
