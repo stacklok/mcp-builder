@@ -109,7 +109,7 @@ The code-validator agent will read all files, run the Docker build check, and wr
 
 1. Read `{working_dir}/validation-report.md` — pay particular attention to the `Build Verification` row and any error-severity failures.
 
-2. Present the validation summary to the user using the structure below. **Build status is a first-class block, not a footnote** — it must be visible at a glance even when the rest of the report is green.
+2. Present the validation summary to the user using the structure below.
 
    ```markdown
    ## Validation Summary
@@ -120,14 +120,7 @@ The code-validator agent will read all files, run the Docker build check, and wr
 
    ### 🏗️ Docker build: {✅ PASS / ❌ FAIL / ⏭️ SKIP}
 
-   {Copy the reason from the Build Verification row's Details column verbatim.
-    If the status is FAIL, render any multi-line error output as a fenced code
-    block so it stays readable. If the status is SKIP, state the concrete cause
-    the validator recorded.}
-
-   **This is not a blocker for proceeding** — polish suggestions and
-   deployment review still work regardless of build status. But you
-   should know it happened.
+   <copy reason build failed or skipped>
    ```
 
    If there are `error`-severity failures from other checks, list each one prominently under a separate `### ❌ Errors` heading with the check ID, file, and one-line fix description from Detailed Findings.
@@ -235,7 +228,7 @@ The polish-suggester agent will read all files and write `{working_dir}/polish-s
 
 1. Read `{working_dir}/polish-suggestions.md`.
 
-2. Present the suggestions to the user. **Do not flatten the report into one-line bullets** — the user needs to be able to judge severity and decide fix-or-skip from the chat output alone. Render the report in chat using the format below.
+2. Present the suggestions to the user using the format below. Do not flatten the report into one-line bullets — the user needs to be able to judge severity and decide fix-or-skip from the chat output alone.
 
    **2a. Overview block** — a severity-count table plus an at-a-glance index table:
 

@@ -167,26 +167,25 @@ Keep docstring additions concise. One or two sentences per quirk.
 
 ### Step 4: Filter and Classify Severity
 
-Before writing output, filter your suggestions:
+Before writing output, filter and classify your suggestions:
 
 1. **Remove low-value suggestions.** If a suggestion only adds a comment restating what's already in the method name, drop it.
 2. **Remove conflicting suggestions.** If the validation report has a FAIL for a tool, don't suggest polish on the same code — the fix should come first.
+3. **Classify by severity.** Assign each remaining suggestion one of three tiers. Severity is about the consequence of NOT applying the fix, not about how invasive the diff is.
 
-Then classify each remaining suggestion on a three-tier **severity** scale. Severity is about the consequence of NOT applying the fix, not about how invasive the diff is.
+   | Severity | Meaning |
+   |---|---|
+   | `high`   | The tool is broken or an LLM caller is very likely to misuse it / get unusable output. Use this for functional bugs the validator missed AND for cases like missing pagination guidance or context-overrun responses. |
+   | `medium` | Noticeable robustness or quality-of-life improvement, but the tool is usable without it. |
+   | `low`    | Minor polish — doc wording, small parameter defaults. |
 
-| Severity | Meaning |
-|---|---|
-| `high`   | The tool is broken or an LLM caller is very likely to misuse it / get unusable output. Use this for functional bugs the validator missed AND for cases like missing pagination guidance or context-overrun responses. |
-| `medium` | Noticeable robustness or quality-of-life improvement, but the tool is usable without it. |
-| `low`    | Minor polish — doc wording, small parameter defaults. |
-
-When the suggestion is a functional bug (runtime failure, deployment-critical wrong assumption), it MUST be classified as `high` AND the **Problem** paragraph MUST open by calling it out as a functional bug. The severity stays three-tiered so ordering remains unambiguous; the prose carries the "this is broken, not just a nit" signal.
+   When the suggestion is a functional bug (runtime failure, deployment-critical wrong assumption), it MUST be classified as `high` AND the **Problem** paragraph MUST open by calling it out as a functional bug. The severity stays three-tiered so ordering remains unambiguous; the prose carries the "this is broken, not just a nit" signal.
 
 ### Step 5: Write polish-suggestions.md
 
-Write the suggestions to `{working_dir}/polish-suggestions.md` using the format below. The canonical copy of this template lives at `{skill_base_dir}/assets/polish-suggestions-template.md` — prefer reading that file if it is present.
+Write the suggestions to `{working_dir}/polish-suggestions.md` using the format below. The canonical copy of this template lives at `{skill_base_dir}/assets/polish-suggestions-template.md` for you to read.
 
-Each suggestion has three required prose fields — **Problem**, **Impact if unfixed**, and **Proposed fix** — plus a metadata table and the before/after diff. Do not collapse them; the skill's chat presentation renders these fields directly.
+Each suggestion has three required prose fields — **Problem**, **Impact if unfixed**, and **Proposed fix** — plus a metadata table and the before/after diff. Do not collapse them.
 
 ```markdown
 # Polish Suggestions: {server_name}
