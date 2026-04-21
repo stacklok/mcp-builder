@@ -145,7 +145,26 @@ def _cmd_validate(args: argparse.Namespace) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """Build the argument parser for the mcp-builder CLI."""
+    """Build the argument parser for the mcp-builder CLI.
+
+    Three subcommands, each backed by one domain function:
+
+        generate <scope.yaml> <openapi.yaml> <template-dir> [-o OUT]
+            Run the full Phase-3 pipeline — scaffold + render + patch +
+            deploy manifests. Dispatches to ``run_pipeline``.
+
+        analyze <openapi.yaml>
+            Emit the Phase-1 ``SpecAnalysis`` JSON to stdout. Dispatches
+            to ``analyze_spec``.
+
+        validate <scope.yaml> [--openapi-spec SPEC]
+            Check the scope against its schema (and, if a spec is given,
+            cross-check that every endpoint/parameter exists). Dispatches
+            to ``validate_scope``. Exits non-zero on errors.
+
+    Verbosity is controlled by ``-v``/``--verbose`` or ``--log-level``,
+    applied globally before the subcommand runs.
+    """
     parser = argparse.ArgumentParser(
         prog="mcp-builder",
         description="Generate a ToolHive-ready MCP server from an OpenAPI spec.",
