@@ -61,7 +61,6 @@ Read all input files yourself:
    - `src/{module_name}/api/tools.py`
    - `src/{module_name}/api/mcp_builder.py`
    - `src/{module_name}/client.py`
-   - `src/{module_name}/models.py` (may not exist if no tools have request bodies)
    - `deploy/mcpserver.yaml`
    - `deploy/mcpexternalauthconfig.yaml` (may not exist if auth.type is none)
    - `deploy/secret.yaml` (may not exist if auth.type is none)
@@ -83,19 +82,7 @@ For each tool in the YAML:
 **PASS** if every YAML tool has exactly one corresponding method and no extra methods exist.
 **FAIL** if any tool is missing or extra. List each missing/extra tool by name.
 
-#### S2: Parameter Model Completeness
-
-For each tool in the YAML that has body parameters (from a POST/PUT/PATCH endpoint):
-- The tool's class name is derived by converting tool_name to PascalCase (e.g., `create_file` → `CreateFile`)
-- Search `models.py` for `class {ClassName}Params(BaseModel)`
-- Verify each body field from the YAML appears as a field in the model
-
-For tools with only path/query parameters (no body): verify NO model class is generated (the generator doesn't create models for path/query-only tools).
-
-**PASS** if all body-bearing tools have correct models and fields match.
-**FAIL** if models are missing or fields don't match. List specific mismatches.
-
-#### S3: Import Resolution
+#### S2: Import Resolution
 
 Check that the import chain is consistent with the module name:
 - `tools.py` must contain `from {module_name}.client import APIClient`
@@ -109,7 +96,7 @@ Cross-reference with the mcp-template-py repo to verify expected import patterns
 **PASS** if all imports reference the correct module name and expected modules.
 **FAIL** if any import references a wrong module or the template placeholder name.
 
-#### S4: Tool Registration
+#### S3: Tool Registration
 
 For each tool in the YAML:
 - Search `mcp_builder.py` for `mcp.add_tool(tools.{tool_name})`

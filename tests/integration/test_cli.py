@@ -48,9 +48,12 @@ class TestRunPipeline:
         assert tools.exists()
         assert "class Tools" in tools.read_text()
 
-    def test_writes_models(self, project_dir: Path) -> None:
+    def test_removes_template_models(self, project_dir: Path) -> None:
+        # The generator flattens tool args (no typed params model) and returns
+        # raw dicts, so the template's sample models.py is dead code and must
+        # be deleted.
         models = project_dir / "src" / "test_api_mcp" / "api" / "models.py"
-        assert models.exists()
+        assert not models.exists()
 
     def test_patches_mcp_builder(self, project_dir: Path) -> None:
         mcp_builder = project_dir / "src" / "test_api_mcp" / "api" / "mcp_builder.py"
