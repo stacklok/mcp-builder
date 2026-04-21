@@ -82,7 +82,7 @@ For each tool in the YAML:
 **PASS** if every YAML tool has exactly one corresponding method and no extra methods exist.
 **FAIL** if any tool is missing or extra. List each missing/extra tool by name.
 
-#### S3: Import Resolution
+#### S2: Import Resolution
 
 Check that the import chain is consistent with the module name:
 - `tools.py` must contain `from {module_name}.client import APIClient`
@@ -96,7 +96,7 @@ Cross-reference with the mcp-template-py repo to verify expected import patterns
 **PASS** if all imports reference the correct module name and expected modules.
 **FAIL** if any import references a wrong module or the template placeholder name.
 
-#### S4: Tool Registration
+#### S3: Tool Registration
 
 For each tool in the YAML:
 - Search `mcp_builder.py` for `mcp.add_tool(tools.{tool_name})`
