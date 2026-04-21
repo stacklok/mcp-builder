@@ -38,10 +38,16 @@ from mcp_builder.spec.resolver import (
     resolve_composed_schema,
     resolve_parameter_ref,
     resolve_request_body_ref,
+    resolve_response_ref,
     resolve_schema_ref,
     schema_to_type,
 )
-from mcp_builder.spec.types import ExtractedBodyField, ExtractedParameter, OpenAPISpec
+from mcp_builder.spec.types import (
+    ExtractedBodyField,
+    ExtractedParameter,
+    ExtractedResponse,
+    OpenAPISpec,
+)
 
 logger = structlog.get_logger()
 
@@ -168,6 +174,77 @@ def get_parameters(
             path=path,
             count=len(result),
         )
+    return result
+
+
+def get_response_content_types(
+    spec: OpenAPISpec, method: str, path: str
+) -> list[ExtractedResponse]:
+    """Extract declared media types for each 2xx response of an operation.
+
+    "2xx" refers to HTTP status codes in the 200–299 range — the success
+    family (200 OK, 201 Created, 204 No Content, etc.). Those are the
+    only responses that shape the return type of a generated tool, so
+    we ignore 4xx/5xx (errors) and 3xx (redirects) here.
+
+    Walks ``operation.responses`` and returns one ``ExtractedResponse``
+    per matching status code, with sorted media types from the
+    response's ``content`` block. Resolves ``$ref`` on Response objects.
+
+    OpenAPI's ``"default"`` key is the fallback for status codes not
+    otherwise listed. It's only included here when no explicit 2xx
+    status exists — otherwise ``default`` is conventionally the error
+    shape and including it would conflate error and success bodies.
+
+    Return-shape semantics:
+
+    - Empty list: spec declares no 2xx responses at all.
+    - ``ExtractedResponse`` with empty ``media_types``: response is
+      declared with no ``content`` block (204 No Content-style).
+
+    Args:
+        spec: Typed OpenAPI spec.
+        method: HTTP method (e.g., "GET").
+        path: URL path (e.g., "/employees/{id}/photo").
+
+    Returns:
+        List of ExtractedResponse records, one per 2xx status code.
+
+    Raises:
+        KeyError: If the path or method is not found in the spec.
+    """
+    _, operation = _get_operation(spec, method, path)
+    responses = getattr(operation, "responses", None) or {}
+
+    has_explicit_2xx = any(code.startswith("2") for code in responses)
+
+    result: list[ExtractedResponse] = []
+    for status_code, response in responses.items():
+        is_2xx = status_code.startswith("2")
+        is_default_success = status_code == "default" and not has_explicit_2xx
+        if not (is_2xx or is_default_success):
+            continue
+        if isinstance(response, Ref30 | Ref31):
+            logger.debug(
+                "resolving response $ref",
+                ref=response.ref,
+                method=method,
+                path=path,
+                status=status_code,
+            )
+            response = resolve_response_ref(spec, response.ref)
+        media_types = sorted((response.content or {}).keys())
+        result.append(
+            ExtractedResponse(status_code=status_code, media_types=media_types)
+        )
+        logger.debug(
+            "extracted response content types",
+            method=method,
+            path=path,
+            status=status_code,
+            media_types=media_types,
+        )
+
     return result
 
 

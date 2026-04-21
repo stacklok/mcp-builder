@@ -7,14 +7,18 @@ it's a domain operation that consumes the low-level spec/ and schema/ packages.
 
 from __future__ import annotations
 
+import re
+
 import structlog
 from pydantic import BaseModel, Field
 
 from mcp_builder.schema.models import MCPScope, ParamLocation
 from mcp_builder.spec import (
+    ExtractedResponse,
     OpenAPISpec,
     get_body_fields,
     get_parameters,
+    get_response_content_types,
     parse_endpoint,
 )
 
@@ -126,9 +130,95 @@ def validate_scope(
                                 f"str. The spec may be incomplete."
                             )
 
+                # Generated client calls response.json() unconditionally;
+                # a non-JSON 2xx body crashes at runtime. Surface it so
+                # the scoping model can drop the endpoint.
+                responses = get_response_content_types(spec, method, path)
+                _check_response_content_types(
+                    tool.tool_name, responses, errors, warnings
+                )
+
     logger.info(
         "validation complete",
         error_count=len(errors),
         warning_count=len(warnings),
     )
     return ValidationResult(errors=errors, warnings=warnings)
+
+
+# Matches application/json, text/json, and any RFC 6839 structured-suffix
+# JSON type (application/vnd.api+json, application/ld+json, etc.).
+_JSON_MEDIA_RE = re.compile(
+    r"^(?:application|text)/(?:[\w.+-]+\+)?json$", re.IGNORECASE
+)
+
+
+def _is_json_media_type(media_type: str) -> bool:
+    """Return True if the media type is JSON-decodable.
+
+    Accepts ``application/json``, ``text/json`` (legacy), and any
+    ``application/foo+json`` / ``text/foo+json`` structured-suffix
+    variant per RFC 6839.
+    """
+    # Strip media-type parameters like "; charset=utf-8" before matching.
+    bare = media_type.split(";", 1)[0].strip()
+    return bool(_JSON_MEDIA_RE.match(bare))
+
+
+def _check_response_content_types(
+    tool_name: str,
+    responses: list[ExtractedResponse],
+    errors: list[str],
+    warnings: list[str],
+) -> None:
+    """Error if any 2xx status can return a body the JSON-only client cannot decode.
+
+    Four outcomes:
+
+    - No 2xx responses declared at all → warning (spec is incomplete;
+      we can't prove anything).
+    - Every 2xx response has an empty ``media_types`` list (e.g. 204 No
+      Content) → silent pass; no body to decode.
+    - Every 2xx response with content includes at least one JSON media
+      type → silent pass.
+    - Any 2xx response declares content without a JSON option → error,
+      naming the offending status codes and media types.
+
+    The rule is per-status, not flattened: a spec that returns
+    ``application/pdf`` on 200 and ``application/json`` on 201 still
+    errors, because the server will crash on 200.
+    """
+    if not responses:
+        warnings.append(
+            f"Tool '{tool_name}': spec declares no 2xx responses — "
+            "unable to verify the generated client can decode the "
+            "response body. The spec may be incomplete."
+        )
+        return
+
+    offending: list[ExtractedResponse] = []
+    any_with_content = False
+    for resp in responses:
+        if not resp.media_types:
+            continue
+        any_with_content = True
+        if not any(_is_json_media_type(mt) for mt in resp.media_types):
+            offending.append(resp)
+
+    if not any_with_content:
+        return  # All 2xx responses are 204-style; no body to decode.
+
+    if offending:
+        detail = "; ".join(
+            f"{resp.status_code} returns {', '.join(resp.media_types)}"
+            for resp in sorted(offending, key=lambda r: r.status_code)
+        )
+        errors.append(
+            f"Tool '{tool_name}': 2xx response(s) declare non-JSON content "
+            f"type(s) ({detail}), but the generated client only handles "
+            "application/json. The resulting server will crash at "
+            "runtime when calling this endpoint. Exclude this tool from "
+            "the scope, or track the gap in "
+            "https://github.com/StacklokLabs/mcp-builder/issues/81 "
+            "(binary/non-JSON response support)."
+        )

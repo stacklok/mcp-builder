@@ -21,9 +21,11 @@ import structlog
 from openapi_pydantic.v3.v3_0 import Parameter as OAParam30
 from openapi_pydantic.v3.v3_0 import Reference as Ref30
 from openapi_pydantic.v3.v3_0 import RequestBody as ReqBody30
+from openapi_pydantic.v3.v3_0 import Response as Resp30
 from openapi_pydantic.v3.v3_1 import Parameter as OAParam31
 from openapi_pydantic.v3.v3_1 import Reference as Ref31
 from openapi_pydantic.v3.v3_1 import RequestBody as ReqBody31
+from openapi_pydantic.v3.v3_1 import Response as Resp31
 
 from mcp_builder.spec.types import (
     OPENAPI_TYPE_MAP,
@@ -116,6 +118,46 @@ def resolve_request_body_ref(spec: OpenAPISpec, ref: str) -> ReqBody30 | ReqBody
         )
     logger.debug("resolved requestBody $ref", body_name=body_name)
     return body
+
+
+def resolve_response_ref(spec: OpenAPISpec, ref: str) -> Resp30 | Resp31:
+    """Look up an OpenAPI ``$ref`` string in ``spec.components.responses``.
+
+    OpenAPI specs may factor out shared response definitions under
+    ``components.responses`` and reference them from operations. This
+    function resolves a pointer like ``#/components/responses/BinaryImage``
+    to the actual Response object.
+
+    Raises:
+        ValueError: If the ref is external/non-component, the components
+            section is missing, the named response doesn't exist, or it
+            is itself a nested ``$ref``.
+    """
+    if not ref.startswith("#/components/responses/"):
+        raise ValueError(
+            f"Cannot resolve response $ref '{ref}': "
+            "only local '#/components/responses/...' refs are supported."
+        )
+    resp_name = ref.rsplit("/", 1)[-1]
+    logger.debug("resolving response $ref", ref=ref, component=resp_name)
+    if spec.components is None:
+        raise ValueError(
+            f"Cannot resolve response $ref '{ref}': spec has no 'components' section."
+        )
+    responses = spec.components.responses or {}
+    resp = responses.get(resp_name)
+    if resp is None:
+        raise ValueError(
+            f"Cannot resolve response $ref '{ref}': "
+            f"'{resp_name}' not found in components.responses."
+        )
+    if isinstance(resp, Ref30 | Ref31):
+        raise ValueError(
+            f"Cannot resolve response $ref '{ref}': "
+            f"'{resp_name}' is itself a nested $ref, which is not supported."
+        )
+    logger.debug("resolved response $ref", resp_name=resp_name)
+    return resp
 
 
 def resolve_schema_ref(spec: OpenAPISpec, ref: str) -> OpenAPISchema:
