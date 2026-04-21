@@ -103,21 +103,11 @@ def _replace_in_files(root: Path, glob_pattern: str, old: str, new: str) -> None
 
 
 def _update_pyproject(pyproject_path: Path, plan: ServerPlan) -> None:
-    """Rewrite the scaffolded ``pyproject.toml`` in place to match the plan.
+    """Rewrite the scaffolded ``pyproject.toml`` in place.
 
-    Three targeted edits, each guarded so it doesn't clobber unrelated
-    content elsewhere in the file:
-
-        1. ``name`` — swap the template's package name for
-           ``{server_name}-mcp`` (e.g. ``google-drive-mcp``).
-        2. ``description`` — replace with the scope's description,
-           escaped for TOML string-literal safety.
-        3. ``dependencies`` — append ``httpx`` if it isn't already
-           present, matched strictly inside the dependencies array to
-           avoid false positives from other fields.
-
-    The description field is matched non-greedily so this works on
-    templates that happen to have other quoted strings on nearby lines.
+    - ``name`` → ``{server_name}-mcp``
+    - ``description`` → scope description (TOML-escaped, non-greedy match)
+    - ``dependencies`` → append ``httpx`` if missing (scoped to the deps array)
     """
     text = pyproject_path.read_text(encoding="utf-8")
 

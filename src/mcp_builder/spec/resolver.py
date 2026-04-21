@@ -181,20 +181,12 @@ def resolve_composed_schema(
             allof_required.update(sub.required or [])
 
     def _resolve_sub(sub: Ref30 | Ref31 | OpenAPISchema, from_allof: bool) -> None:
-        """Resolve one sub-schema (possibly a ``$ref``) and fold it into the merged result.
+        """Resolve one sub-schema and fold it into the merged result.
 
-        Handles three cases:
-          1. A ``$ref`` — resolve it (skipping if we've already seen that
-             pointer on this call chain to break cycles).
-          2. A nested composition (the resolved schema itself has
-             ``allOf``/``oneOf``/``anyOf``) — recurse via
-             ``resolve_composed_schema``.
-          3. A plain inline schema — merge directly via ``_collect``.
-
-        The ``from_allof`` flag controls whether the sub-schema's
-        ``required`` list contributes to the merged ``required`` — only
-        ``allOf`` members do, since ``oneOf``/``anyOf`` members are
-        alternatives rather than conjunctions.
+        Three cases: ``$ref`` (resolve, skip on cycle), nested composition
+        (recurse via ``resolve_composed_schema``), plain inline (merge
+        directly). ``from_allof`` gates whether ``required`` contributes —
+        only ``allOf`` members do, since ``oneOf``/``anyOf`` are alternatives.
         """
         nonlocal _seen
         # Resolve $ref pointers

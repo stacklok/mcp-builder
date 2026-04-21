@@ -145,25 +145,13 @@ def _cmd_validate(args: argparse.Namespace) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """Build the argument parser for the mcp-builder CLI.
+    """Build the CLI parser. Three subcommands:
 
-    Three subcommands, each backed by one domain function:
+    - ``generate <scope> <spec> <template-dir> [-o OUT]`` → ``run_pipeline``
+    - ``analyze <spec>`` → ``analyze_spec`` (emits JSON)
+    - ``validate <scope> [--openapi-spec SPEC]`` → ``validate_scope`` (non-zero exit on errors)
 
-        generate <scope.yaml> <openapi.yaml> <template-dir> [-o OUT]
-            Run the full Phase-3 pipeline — scaffold + render + patch +
-            deploy manifests. Dispatches to ``run_pipeline``.
-
-        analyze <openapi.yaml>
-            Emit the Phase-1 ``SpecAnalysis`` JSON to stdout. Dispatches
-            to ``analyze_spec``.
-
-        validate <scope.yaml> [--openapi-spec SPEC]
-            Check the scope against its schema (and, if a spec is given,
-            cross-check that every endpoint/parameter exists). Dispatches
-            to ``validate_scope``. Exits non-zero on errors.
-
-    Verbosity is controlled by ``-v``/``--verbose`` or ``--log-level``,
-    applied globally before the subcommand runs.
+    Global flags: ``-v`` / ``--log-level`` control verbosity.
     """
     parser = argparse.ArgumentParser(
         prog="mcp-builder",
