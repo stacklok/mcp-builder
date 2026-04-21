@@ -42,7 +42,12 @@ from mcp_builder.spec.resolver import (
     resolve_schema_ref,
     schema_to_type,
 )
-from mcp_builder.spec.types import ExtractedBodyField, ExtractedParameter, OpenAPISpec
+from mcp_builder.spec.types import (
+    ExtractedBodyField,
+    ExtractedParameter,
+    ExtractedResponse,
+    OpenAPISpec,
+)
 
 logger = structlog.get_logger()
 
@@ -174,7 +179,7 @@ def get_parameters(
 
 def get_response_content_types(
     spec: OpenAPISpec, method: str, path: str
-) -> dict[str, list[str]]:
+) -> list[ExtractedResponse]:
     """Extract declared media types for each 2xx response of an operation.
 
     "2xx" refers to HTTP status codes in the 200–299 range — the success
@@ -182,9 +187,9 @@ def get_response_content_types(
     only responses that shape the return type of a generated tool, so
     we ignore 4xx/5xx (errors) and 3xx (redirects) here.
 
-    Walks ``operation.responses`` and returns a mapping of 2xx status code
-    to the sorted list of media types declared under that response's
-    ``content``. Resolves ``$ref`` on Response objects.
+    Walks ``operation.responses`` and returns one ``ExtractedResponse``
+    per matching status code, with sorted media types from the
+    response's ``content`` block. Resolves ``$ref`` on Response objects.
 
     OpenAPI's ``"default"`` key is the fallback for status codes not
     otherwise listed. It's only included here when no explicit 2xx
@@ -193,9 +198,9 @@ def get_response_content_types(
 
     Return-shape semantics:
 
-    - Empty dict: spec declares no 2xx responses at all.
-    - Status mapped to empty list: response is declared with no
-      ``content`` block (204 No Content-style).
+    - Empty list: spec declares no 2xx responses at all.
+    - ``ExtractedResponse`` with empty ``media_types``: response is
+      declared with no ``content`` block (204 No Content-style).
 
     Args:
         spec: Typed OpenAPI spec.
@@ -203,7 +208,7 @@ def get_response_content_types(
         path: URL path (e.g., "/employees/{id}/photo").
 
     Returns:
-        Dict mapping status code string to sorted list of media types.
+        List of ExtractedResponse records, one per 2xx status code.
 
     Raises:
         KeyError: If the path or method is not found in the spec.
@@ -213,7 +218,7 @@ def get_response_content_types(
 
     has_explicit_2xx = any(code.startswith("2") for code in responses)
 
-    result: dict[str, list[str]] = {}
+    result: list[ExtractedResponse] = []
     for status_code, response in responses.items():
         is_2xx = status_code.startswith("2")
         is_default_success = status_code == "default" and not has_explicit_2xx
@@ -229,7 +234,9 @@ def get_response_content_types(
             )
             response = resolve_response_ref(spec, response.ref)
         media_types = sorted((response.content or {}).keys())
-        result[status_code] = media_types
+        result.append(
+            ExtractedResponse(status_code=status_code, media_types=media_types)
+        )
         logger.debug(
             "extracted response content types",
             method=method,

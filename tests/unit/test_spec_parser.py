@@ -8,6 +8,7 @@ import yaml
 from mcp_builder.spec import (
     ExtractedBodyField,
     ExtractedParameter,
+    ExtractedResponse,
     get_body_fields,
     get_parameters,
     get_response_content_types,
@@ -516,86 +517,95 @@ class TestGetResponseContentTypes:
     """
 
     def test_json_response(self, spec):
-        """Plain application/json response maps status -> [media]."""
+        """Plain application/json response → single ExtractedResponse."""
         result = get_response_content_types(spec, "GET", "/items/{itemId}")
-        assert result == {"200": ["application/json"]}
+        assert result == [
+            ExtractedResponse(status_code="200", media_types=["application/json"])
+        ]
 
     def test_binary_only_response(self, spec):
         """Binary-only endpoint reports its media type."""
         result = get_response_content_types(
             spec, "GET", "/employees/{employeeId}/photo"
         )
-        assert result == {"200": ["image/jpeg"]}
+        assert result == [
+            ExtractedResponse(status_code="200", media_types=["image/jpeg"])
+        ]
 
     def test_mixed_response_sorted(self, spec):
         """Mixed content types are returned sorted for stable output."""
         result = get_response_content_types(spec, "GET", "/reports/{reportId}/download")
-        assert result == {"200": ["application/json", "application/pdf"]}
+        assert result == [
+            ExtractedResponse(
+                status_code="200",
+                media_types=["application/json", "application/pdf"],
+            )
+        ]
 
     def test_response_without_content_block(self, spec):
-        """A 2xx response with no content block yields an empty list,
-        not a missing key — that distinguishes '204 No Content' from
+        """A 2xx response with no content block yields an empty
+        ``media_types`` list — that distinguishes '204 No Content' from
         'spec omits responses entirely'."""
         # GET /items declares 200 with no content block
         result = get_response_content_types(spec, "GET", "/items")
-        assert result == {"200": []}
+        assert result == [ExtractedResponse(status_code="200", media_types=[])]
 
     def test_response_ref_resolved(self, spec):
         """A $ref'd 2xx Response resolves to its underlying content types."""
         result = get_response_content_types(spec, "GET", "/shared-binary")
-        assert result == {"200": ["image/png"]}
+        assert result == [
+            ExtractedResponse(status_code="200", media_types=["image/png"])
+        ]
 
     def test_ignores_non_2xx_responses(self, tmp_path):
         """Error/redirect responses don't shape the generated return type."""
-        from mcp_builder.spec import load_openapi_spec as _load
-
-        doc = {
-            "openapi": "3.0.3",
-            "info": {"title": "T", "version": "1"},
-            "paths": {
-                "/ok": {
-                    "get": {
-                        "responses": {
-                            "200": {
-                                "description": "ok",
-                                "content": {"application/json": {}},
-                            },
-                            "404": {
-                                "description": "not found",
-                                "content": {"text/plain": {}},
-                            },
+        small_spec = _load_inline_spec(
+            {
+                "openapi": "3.0.3",
+                "info": {"title": "T", "version": "1"},
+                "paths": {
+                    "/ok": {
+                        "get": {
+                            "responses": {
+                                "200": {
+                                    "description": "ok",
+                                    "content": {"application/json": {}},
+                                },
+                                "404": {
+                                    "description": "not found",
+                                    "content": {"text/plain": {}},
+                                },
+                            }
                         }
                     }
-                }
+                },
             },
-        }
-        f = tmp_path / "spec.yaml"
-        f.write_text(yaml.safe_dump(doc))
-        small_spec = _load(f)
+            tmp_path,
+        )
         result = get_response_content_types(small_spec, "GET", "/ok")
-        assert result == {"200": ["application/json"]}
-        assert "404" not in result
+        assert result == [
+            ExtractedResponse(status_code="200", media_types=["application/json"])
+        ]
+        assert not any(r.status_code == "404" for r in result)
 
     def test_missing_responses_returns_empty(self, tmp_path):
-        """An operation with no 'responses' key returns an empty dict —
+        """An operation with no 'responses' key returns an empty list —
         callers treat this as 'spec is incomplete'."""
-        from mcp_builder.spec import load_openapi_spec as _load
-
-        doc = {
-            "openapi": "3.0.3",
-            "info": {"title": "T", "version": "1"},
-            "paths": {
-                "/no-responses": {
-                    "get": {
-                        "responses": {},
+        small_spec = _load_inline_spec(
+            {
+                "openapi": "3.0.3",
+                "info": {"title": "T", "version": "1"},
+                "paths": {
+                    "/no-responses": {
+                        "get": {
+                            "responses": {},
+                        }
                     }
-                }
+                },
             },
-        }
-        f = tmp_path / "spec.yaml"
-        f.write_text(yaml.safe_dump(doc))
-        small_spec = _load(f)
-        assert get_response_content_types(small_spec, "GET", "/no-responses") == {}
+            tmp_path,
+        )
+        assert get_response_content_types(small_spec, "GET", "/no-responses") == []
 
     def test_unknown_path_raises(self, spec):
         with pytest.raises(KeyError):
@@ -628,7 +638,9 @@ class TestGetResponseContentTypes:
             tmp_path,
         )
         result = get_response_content_types(small_spec, "GET", "/x")
-        assert result == {"default": ["application/json"]}
+        assert result == [
+            ExtractedResponse(status_code="default", media_types=["application/json"])
+        ]
 
     def test_default_ignored_when_2xx_present(self, tmp_path):
         """When an explicit 2xx exists, ``default`` is the error
@@ -657,8 +669,10 @@ class TestGetResponseContentTypes:
             tmp_path,
         )
         result = get_response_content_types(small_spec, "GET", "/x")
-        assert result == {"200": ["application/json"]}
-        assert "default" not in result
+        assert result == [
+            ExtractedResponse(status_code="200", media_types=["application/json"])
+        ]
+        assert not any(r.status_code == "default" for r in result)
 
 
 class TestResolveResponseRef:

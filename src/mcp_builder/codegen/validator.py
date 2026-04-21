@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 
 from mcp_builder.schema.models import MCPScope, ParamLocation
 from mcp_builder.spec import (
+    ExtractedResponse,
     OpenAPISpec,
     get_body_fields,
     get_parameters,
@@ -132,9 +133,9 @@ def validate_scope(
                 # Generated client calls response.json() unconditionally;
                 # a non-JSON 2xx body crashes at runtime. Surface it so
                 # the scoping model can drop the endpoint.
-                response_types = get_response_content_types(spec, method, path)
+                responses = get_response_content_types(spec, method, path)
                 _check_response_content_types(
-                    tool.tool_name, response_types, errors, warnings
+                    tool.tool_name, responses, errors, warnings
                 )
 
     logger.info(
@@ -166,7 +167,7 @@ def _is_json_media_type(media_type: str) -> bool:
 
 def _check_response_content_types(
     tool_name: str,
-    response_types: dict[str, list[str]],
+    responses: list[ExtractedResponse],
     errors: list[str],
     warnings: list[str],
 ) -> None:
@@ -176,7 +177,7 @@ def _check_response_content_types(
 
     - No 2xx responses declared at all → warning (spec is incomplete;
       we can't prove anything).
-    - Every 2xx response has an empty ``content`` block (e.g. 204 No
+    - Every 2xx response has an empty ``media_types`` list (e.g. 204 No
       Content) → silent pass; no body to decode.
     - Every 2xx response with content includes at least one JSON media
       type → silent pass.
@@ -187,7 +188,7 @@ def _check_response_content_types(
     ``application/pdf`` on 200 and ``application/json`` on 201 still
     errors, because the server will crash on 200.
     """
-    if not response_types:
+    if not responses:
         warnings.append(
             f"Tool '{tool_name}': spec declares no 2xx responses — "
             "unable to verify the generated client can decode the "
@@ -195,22 +196,22 @@ def _check_response_content_types(
         )
         return
 
-    offending: dict[str, list[str]] = {}
+    offending: list[ExtractedResponse] = []
     any_with_content = False
-    for status, media_types in response_types.items():
-        if not media_types:
+    for resp in responses:
+        if not resp.media_types:
             continue
         any_with_content = True
-        if not any(_is_json_media_type(mt) for mt in media_types):
-            offending[status] = media_types
+        if not any(_is_json_media_type(mt) for mt in resp.media_types):
+            offending.append(resp)
 
     if not any_with_content:
         return  # All 2xx responses are 204-style; no body to decode.
 
     if offending:
         detail = "; ".join(
-            f"{status} returns {', '.join(sorted(offending[status]))}"
-            for status in sorted(offending)
+            f"{resp.status_code} returns {', '.join(resp.media_types)}"
+            for resp in sorted(offending, key=lambda r: r.status_code)
         )
         errors.append(
             f"Tool '{tool_name}': 2xx response(s) declare non-JSON content "

@@ -38,7 +38,8 @@ Public API (re-exported here for convenience):
     - extract_schema_type() — get the schema type from a parameter
     - schema_to_type() — get the schema type from a schema object
     - Type aliases: OpenAPISpec, OpenAPISchema, ExtractedParameter,
-      ExtractedBodyField, ParameterLocation, PythonType, SchemaType
+      ExtractedBodyField, ExtractedResponse, ParameterLocation,
+      PythonType, SchemaType
     - Constants: OPENAPI_TYPE_MAP
 """
 
@@ -62,6 +63,7 @@ from mcp_builder.spec.types import (
     OPENAPI_TYPE_MAP,
     ExtractedBodyField,
     ExtractedParameter,
+    ExtractedResponse,
     OpenAPISchema,
     OpenAPISpec,
     ParameterLocation,
@@ -73,6 +75,7 @@ __all__ = [
     "OPENAPI_TYPE_MAP",
     "ExtractedBodyField",
     "ExtractedParameter",
+    "ExtractedResponse",
     "OpenAPISchema",
     "OpenAPISpec",
     "ParameterLocation",

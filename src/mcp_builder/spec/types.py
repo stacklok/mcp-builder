@@ -95,3 +95,24 @@ class ExtractedBodyField(BaseModel):
     schema_type: SchemaType = "string"
     description: str = ""
     required: bool = False
+
+
+class ExtractedResponse(BaseModel):
+    """Declared media types for a single 2xx response of an operation.
+
+    Consumed by: codegen.validator._check_response_content_types() to
+    decide whether the generated (JSON-only) client can decode the
+    operation's success body.
+
+    ``media_types`` is sorted for stable error messages. An empty list
+    means the response is declared with no ``content`` block (e.g. 204
+    No Content) — distinct from "no 2xx response declared at all",
+    which is represented by an empty list of ``ExtractedResponse`` at
+    the caller level.
+
+    Example (from GET /employees/{id}/photo):
+        ExtractedResponse(status_code="200", media_types=["image/jpeg"])
+    """
+
+    status_code: str
+    media_types: list[str]
