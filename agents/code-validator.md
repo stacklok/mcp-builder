@@ -276,12 +276,13 @@ Run the Docker build check from the project directory:
 cd {project_dir} && docker build -t {server_name}-mcp:validation-test . 2>&1
 ```
 
-Record the result:
-- **PASS** — build succeeded (exit code 0)
-- **FAIL** — build failed (capture the error output)
-- **SKIP** — Docker is not available (`command not found` or similar)
+Record the result in the `Build Verification` table of the report:
 
-Include the result as check D1 in the report.
+- **PASS** — build succeeded (exit code 0)
+- **FAIL** — build failed (nonzero exit code)
+- **SKIP** — the build could not be attempted
+
+**The Details column is required for every outcome and MUST state the concrete reason** — the skill renders this text verbatim when presenting build status to the user. Do not leave the status bare. For FAIL, include enough of the error output (the failing command and its error message) for the user to understand what broke without reopening the log. For SKIP, state the actual cause, not the word "skipped".
 
 ### Step 9: Write Validation Report
 

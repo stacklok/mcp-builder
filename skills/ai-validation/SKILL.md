@@ -107,32 +107,50 @@ The code-validator agent will read all files, run the Docker build check, and wr
 
 ### Step 3: Validation Gate
 
-1. Read `{working_dir}/validation-report.md`
+1. Read `{working_dir}/validation-report.md` — pay particular attention to the `Build Verification` row and any error-severity failures.
 
-2. Present the validation summary to the user:
-   - Total checks: X passed, Y failed
-   - Build status: PASS/FAIL/SKIP
-   - If there are `error`-severity failures, highlight each one prominently
+2. Present the validation summary to the user using the structure below.
 
-3. Based on the results:
+   ```markdown
+   ## Validation Summary
 
-   **If there are error-severity failures (USER GATE — wait for response):**
+   **Report:** {path to validation-report.md}
 
-   Use AskUserQuestion to offer choices:
+   - Total checks: {X} passed, {Y} failed, {Z} skipped
+
+   ### 🏗️ Docker build: {✅ PASS / ❌ FAIL / ⏭️ SKIP}
+
+   <copy reason build failed or skipped>
    ```
-   Validation found {N} error(s) that would cause runtime or deployment failures.
 
-   Options:
-   1. Have AI fix the errors — spawns an agent to edit the generated code, then re-validates
-   2. Proceed to polish — continue to polish suggestions despite errors (all issues presented together)
-   3. Fix manually — you fix the errors and re-run the skill later
-   ```
+   If there are `error`-severity failures from other checks, list each one prominently under a separate `### ❌ Errors` heading with the check ID, file, and one-line fix description from Detailed Findings.
+
+3. Run the appropriate user gate based on what the report contains:
+
+   **Case A — error-severity failures exist (USER GATE — wait for response):**
+
+   Use AskUserQuestion. Explain how many errors were found and — if the build also failed or was skipped — mention that. Ask how the user wants to proceed. Offer these paths:
+
+   - Have AI fix the errors (spawn the fix agent, then re-validate)
+   - Proceed to polish despite the errors
+   - Fix manually and re-run the skill later
 
    **Do NOT proceed past this step until the user responds.**
 
-   **If all checks pass (no errors):**
+   **Case B — no error-severity failures, but build is FAIL or SKIP (USER GATE — wait for response):**
 
-   Tell the user all checks passed and automatically proceed to Step 4 (polish suggestions). No gate needed — polish is always useful.
+   Use AskUserQuestion. Explain the situation (build failed or was skipped, include the reason from the Build Verification row) and make clear this is not a blocker for the rest of the flow. Ask what the user wants to do. Offer these paths:
+
+   - Retry the build (re-run the code-validator agent, but instruct it to re-run only the build check and reuse the existing report for everything else)
+   - Have AI investigate and fix the build (only when the build actually FAILED — spawn the fix agent scoped to the build, then re-validate)
+   - Acknowledge and continue to polish
+   - Stop here
+
+   **Do NOT proceed past this step until the user responds.**
+
+   **Case C — no errors and build is PASS:**
+
+   Tell the user all checks passed (including build) and automatically proceed to Step 4 (polish suggestions). No gate needed.
 
 ---
 
@@ -208,24 +226,78 @@ The polish-suggester agent will read all files and write `{working_dir}/polish-s
 
 ### Step 5: Polish Application Gate (USER GATE)
 
-1. Read `{working_dir}/polish-suggestions.md`
+1. Read `{working_dir}/polish-suggestions.md`.
 
-2. Present the suggestions to the user:
-   - Summary: N suggestions across M categories
-   - Each suggestion with its category, priority, affected tool(s), and the code diff
-   - If there are no suggestions, skip to Step 6
+2. Present the suggestions to the user using the format below. Do not flatten the report into one-line bullets — the user needs to be able to judge severity and decide fix-or-skip from the chat output alone.
 
-3. Use AskUserQuestion to offer choices:
+   **2a. Overview block** — a severity-count table plus an at-a-glance index table:
 
+   ```markdown
+   ## Polish Suggestions ({N} total)
+
+   **Report:** {path to polish-suggestions.md}
+
+   | Severity | Count | What it means |
+   |----------|-------|---------------|
+   | 🟠 high     | {N} | Tool is broken OR LLM callers are very likely to misuse it |
+   | 🟡 medium   | {N} | Robustness / quality improvement |
+   | ⚪ low      | {N} | Minor polish |
+
+   | #  | Severity | Category | Tool(s) | Summary |
+   |----|----------|----------|---------|---------|
+   | P1 | 🟠 high   | ... | ... | ... |
+   | P2 | 🟡 medium | ... | ... | ... |
+   | …  | …        | …        | …       | …       |
    ```
-   {N} polish suggestions generated.
 
-   Options:
-   1. Have AI apply all suggestions — spawns an agent to edit the generated code
-   2. Have AI apply selected suggestions — choose which ones to apply
-   3. Review manually — apply the diffs yourself
-   4. Skip — no polish needed
+   **2b. Per-suggestion detail** — for EACH suggestion in the report, render:
+
+   ```markdown
+   ### P{n}: {title}  —  {severity emoji} {severity}
+
+   | Field | Value |
+   |-------|-------|
+   | Category | {category} |
+   | Affected | `{tool(s)}` |
+   | File(s)  | `{paths}` |
+   | Hint     | {hint text or "AI-analyzed"} |
+
+   **Problem:** {copy the Problem paragraph from the report verbatim}
+
+   **Impact if unfixed:** {copy verbatim}
+
+   **Proposed fix:** {copy verbatim}
+
+   <details><summary>View diff</summary>
+
+   ```python
+   # Before
+   {before snippet}
    ```
+
+   ```python
+   # After
+   {after snippet}
+   ```
+   </details>
+   ```
+
+   **Required fields per suggestion:** severity, category, affected tool(s), file(s), problem, impact, proposed fix. If the report is missing any of these fields, say so explicitly to the user instead of silently omitting — it means the polish-suggester agent produced an incomplete suggestion and should be re-run.
+
+   **Ordering:** render high-severity suggestions first, then medium, then low. Within a severity tier, preserve the P-number order from the report. When a `high`-severity suggestion flags a functional bug in its Problem paragraph, mention that fact when you introduce it so the user understands it isn't just a docstring nit.
+
+   **Length:** do not truncate Problem / Impact / Proposed fix — they are the whole point. DO wrap long diffs in `<details>` so the chat stays scannable.
+
+   If there are no suggestions, say so briefly and skip to Step 6.
+
+3. Use AskUserQuestion to ask the user how they want to handle the suggestions. Summarize the counts by severity, then offer these paths:
+
+   - Have AI apply all suggestions
+   - Have AI apply selected suggestions (user names the P-numbers)
+   - Review manually
+   - Skip
+
+   If any `high`-severity suggestions flagged themselves as functional bugs in the Problem paragraph, mention that in the question so the user knows skipping will leave those behind. Otherwise keep the framing neutral.
 
 **Do NOT proceed past this step until the user responds.**
 

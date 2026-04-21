@@ -165,22 +165,27 @@ async def create_file(self, name: str, mime_type: str) -> dict:
 
 Keep docstring additions concise. One or two sentences per quirk.
 
-### Step 4: Filter and Prioritize
+### Step 4: Filter and Classify Severity
 
-Before writing output, filter your suggestions:
+Before writing output, filter and classify your suggestions:
 
 1. **Remove low-value suggestions.** If a suggestion only adds a comment restating what's already in the method name, drop it.
 2. **Remove conflicting suggestions.** If the validation report has a FAIL for a tool, don't suggest polish on the same code — the fix should come first.
-3. **Prioritize by impact:**
-   - **High**: pagination documentation (LLM will otherwise not know about pagination)
-   - **High**: response shaping with field selection defaults (reduces noise for LLM)
-   - **Medium**: error normalization (improves debugging experience)
-   - **Medium**: quirk documentation (prevents LLM mistakes)
-   - **Low**: minor docstring improvements
+3. **Classify by severity.** Assign each remaining suggestion one of three tiers. Severity is about the consequence of NOT applying the fix, not about how invasive the diff is.
+
+   | Severity | Meaning |
+   |---|---|
+   | `high`   | The tool is broken or an LLM caller is very likely to misuse it / get unusable output. Use this for functional bugs the validator missed AND for cases like missing pagination guidance or context-overrun responses. |
+   | `medium` | Noticeable robustness or quality-of-life improvement, but the tool is usable without it. |
+   | `low`    | Minor polish — doc wording, small parameter defaults. |
+
+   When the suggestion is a functional bug (runtime failure, deployment-critical wrong assumption), it MUST be classified as `high` AND the **Problem** paragraph MUST open by calling it out as a functional bug. The severity stays three-tiered so ordering remains unambiguous; the prose carries the "this is broken, not just a nit" signal.
 
 ### Step 5: Write polish-suggestions.md
 
-Write the suggestions to `{working_dir}/polish-suggestions.md` using this format:
+Write the suggestions to `{working_dir}/polish-suggestions.md` using the format below. The canonical copy of this template lives at `{skill_base_dir}/assets/polish-suggestions-template.md` for you to read.
+
+Each suggestion has three required prose fields — **Problem**, **Impact if unfixed**, and **Proposed fix** — plus a metadata table and the before/after diff. Do not collapse them.
 
 ```markdown
 # Polish Suggestions: {server_name}
@@ -190,41 +195,54 @@ Write the suggestions to `{working_dir}/polish-suggestions.md` using this format
 
 ## Summary
 
-| Category | Count | Priority |
-|----------|-------|----------|
-| Pagination | {N} | high |
-| Response shaping | {N} | high |
-| Error normalization | {N} | medium |
-| API quirks | {N} | medium |
+| Severity | Count | What it means |
+|----------|-------|---------------|
+| high     | {N} | Tool is broken OR LLM callers are very likely to misuse it / get unusable output |
+| medium   | {N} | Noticeable robustness / quality improvement |
+| low      | {N} | Minor polish |
+
+| #  | Severity | Category | Tool(s) | One-line summary |
+|----|----------|----------|---------|------------------|
+| P1 | high   | ... | ... | ... |
+| P2 | medium | ... | ... | ... |
+| ... | ... | ... | ... | ... |
 
 ## Suggestions
 
-### P1: {Short title}
+### P1: {Short imperative title}
 
-**Category:** {pagination / response-shaping / error-normalization / api-quirks}
-**Priority:** {high / medium / low}
-**Tool(s):** {tool_name(s) affected}
-**Hint:** {triggering hint text, or "AI-analyzed" if not hint-driven}
+|  |  |
+|---|---|
+| **Severity**         | `{high / medium / low}` |
+| **Category**         | {pagination / response-shaping / error-normalization / api-quirks} |
+| **Affected tool(s)** | `{tool_name}` (or `all` for shared-client changes) |
+| **File(s)**          | `{relative path(s)}` |
+| **Hint source**      | {triggering hint text, or "AI-analyzed" if not hint-driven} |
 
-**Description:** {one-paragraph explanation of what this improves and why}
+**Problem**
+{2–4 sentences stating exactly what is wrong or suboptimal in the generated code today. Reference concrete behavior. If this is a functional bug (runtime failure, broken deployment assumption), open the paragraph by saying so — e.g. "Functional bug: the shared client unconditionally calls ...".}
 
-**Before:**
+**Impact if unfixed**
+{1–2 sentences on the concrete consequence. For functional bugs: what breaks. For LLM-usability issues: how the LLM misuses the tool. For lower-severity: what degrades.}
+
+**Proposed fix**
+{2–4 sentences describing the change at a conceptual level — what function to add, what behavior to switch to, what docstring content to add. The reader should be able to decide yes/no from this paragraph alone, without reading the diff.}
+
+**Before**
 ```python
-{existing code snippet}
+{existing code snippet — keep it minimal, just the affected lines}
 ```
 
-**After:**
+**After**
 ```python
 {improved code snippet}
 ```
 
-**File:** {relative path to the file to modify}
-
 ---
 
-### P2: {Short title}
+### P2: {Short imperative title}
 
-{same format}
+{same structure}
 
 ---
 
@@ -252,9 +270,9 @@ Output confirmation:
 **Output:** {absolute path to polish-suggestions.md}
 
 Summary: {N} suggestions across {M} categories.
-- {X} high priority
-- {Y} medium priority
-- {Z} low priority
+- {X} high
+- {Y} medium
+- {Z} low
 ```
 
 ---
