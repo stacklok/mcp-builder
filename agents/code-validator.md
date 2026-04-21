@@ -203,7 +203,10 @@ In `client.py`:
 
 #### T1: MCPServer CRD
 
-Parse `mcpserver.yaml` and verify against ToolHive's MCPServer CRD definition:
+Parse `mcpserver.yaml` and verify against ToolHive's MCPServer CRD definition. Locate the CRD in the ToolHive repo path you were given — start with `deploy/crds/*.yaml` or `pkg/api/v1alpha1/mcpserver_types.go` — and extract the set of keys declared under `spec.properties` (OpenAPI schema) or the fields on `MCPServerSpec` (Go struct tags). Use that set, not a hardcoded list.
+
+Check:
+
 - Valid YAML (no parse errors)
 - `apiVersion` matches the CRD's group/version from ToolHive source
 - `kind` is `MCPServer`
@@ -212,9 +215,14 @@ Parse `mcpserver.yaml` and verify against ToolHive's MCPServer CRD definition:
 - `spec.transport` is set appropriately (check ToolHive source for valid values)
 - If auth != none: `spec.externalAuthConfig.name` is `{server_name}-auth`
 - If auth == none: no `externalAuthConfig` field
+- **Every top-level key under `spec` is declared in the CRD schema.** Hand-picked checks leave room for drift — the generator can emit a field the operator has since renamed or removed (e.g., inline `spec.oidcConfig` replaced by `spec.oidcConfigRef`). For each unknown key, report the closest declared key by simple string similarity so drift is obvious.
 
-**PASS** if all fields are correct.
-**FAIL** if any field is wrong or missing. List each.
+Apply the same CRD-declared-keys enumeration to every other CRD kind the generator emits (`MCPExternalAuthConfig`, `MCPOIDCConfig`, etc.) — one CRD lookup and one diff per kind.
+
+**Severity:** `error` for any unknown field — server-side apply will reject the resource with `field not declared in schema`, blocking deployment.
+
+**PASS** if all fields are correct and every `spec.*` key in every generated CRD is declared in its CRD schema.
+**FAIL** if any field is wrong, missing, or an unknown key is found. List each, and for unknown keys include the closest declared match.
 
 #### T2: Auth Config Alignment
 
