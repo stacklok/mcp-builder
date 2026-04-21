@@ -183,16 +183,19 @@ def get_response_content_types(
     we ignore 4xx/5xx (errors) and 3xx (redirects) here.
 
     Walks ``operation.responses`` and returns a mapping of 2xx status code
-    (or ``"default"``) to the sorted list of media types declared under
-    that response's ``content``. Resolves ``$ref`` on Response objects.
+    to the sorted list of media types declared under that response's
+    ``content``. Resolves ``$ref`` on Response objects.
 
-    An empty return means the spec declares no 2xx responses at all —
-    callers should treat that as "spec is incomplete" rather than "not JSON."
+    OpenAPI's ``"default"`` key is the fallback for status codes not
+    otherwise listed. It's only included here when no explicit 2xx
+    status exists — otherwise ``default`` is conventionally the error
+    shape and including it would conflate error and success bodies.
 
-    A status code mapped to an empty list means the 2xx response is
-    declared with no ``content`` block (common for 204 No Content and for
-    thinly-specified APIs). Callers should treat this as "no body" rather
-    than "not JSON."
+    Return-shape semantics:
+
+    - Empty dict: spec declares no 2xx responses at all.
+    - Status mapped to empty list: response is declared with no
+      ``content`` block (204 No Content-style).
 
     Args:
         spec: Typed OpenAPI spec.
@@ -208,12 +211,13 @@ def get_response_content_types(
     _, operation = _get_operation(spec, method, path)
     responses = getattr(operation, "responses", None) or {}
 
+    has_explicit_2xx = any(code.startswith("2") for code in responses)
+
     result: dict[str, list[str]] = {}
     for status_code, response in responses.items():
-        # Only success responses inform the generated return type.
-        # "default" is OpenAPI's fallback; include it so thinly-spec'd
-        # APIs don't look empty when callers rely on it for 2xx.
-        if not (status_code.startswith("2") or status_code == "default"):
+        is_2xx = status_code.startswith("2")
+        is_default_success = status_code == "default" and not has_explicit_2xx
+        if not (is_2xx or is_default_success):
             continue
         if isinstance(response, Ref30 | Ref31):
             logger.debug(

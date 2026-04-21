@@ -13,7 +13,18 @@ from mcp_builder.spec import (
     get_response_content_types,
     load_openapi_spec,
     parse_endpoint,
+    resolve_response_ref,
 )
+
+
+def _load_inline_spec(doc, tmp_path):
+    """Serialize a dict to YAML and load it as an OpenAPI spec.
+
+    Used by the error-path tests that need a minimal in-memory spec.
+    """
+    f = tmp_path / "spec.yaml"
+    f.write_text(yaml.safe_dump(doc))
+    return load_openapi_spec(f)
 
 
 # ---------------------------------------------------------------------------
@@ -593,3 +604,130 @@ class TestGetResponseContentTypes:
     def test_unknown_method_raises(self, spec):
         with pytest.raises(KeyError):
             get_response_content_types(spec, "DELETE", "/items/{itemId}")
+
+    def test_default_included_when_no_2xx(self, tmp_path):
+        """Thinly-spec'd APIs sometimes declare only ``default``.
+        Treat it as the success shape in that narrow case."""
+        small_spec = _load_inline_spec(
+            {
+                "openapi": "3.0.3",
+                "info": {"title": "T", "version": "1"},
+                "paths": {
+                    "/x": {
+                        "get": {
+                            "responses": {
+                                "default": {
+                                    "description": "ok",
+                                    "content": {"application/json": {}},
+                                }
+                            }
+                        }
+                    }
+                },
+            },
+            tmp_path,
+        )
+        result = get_response_content_types(small_spec, "GET", "/x")
+        assert result == {"default": ["application/json"]}
+
+    def test_default_ignored_when_2xx_present(self, tmp_path):
+        """When an explicit 2xx exists, ``default`` is the error
+        fallback and must not contaminate the success analysis."""
+        small_spec = _load_inline_spec(
+            {
+                "openapi": "3.0.3",
+                "info": {"title": "T", "version": "1"},
+                "paths": {
+                    "/x": {
+                        "get": {
+                            "responses": {
+                                "200": {
+                                    "description": "ok",
+                                    "content": {"application/json": {}},
+                                },
+                                "default": {
+                                    "description": "error",
+                                    "content": {"text/plain": {}},
+                                },
+                            }
+                        }
+                    }
+                },
+            },
+            tmp_path,
+        )
+        result = get_response_content_types(small_spec, "GET", "/x")
+        assert result == {"200": ["application/json"]}
+        assert "default" not in result
+
+
+class TestResolveResponseRef:
+    """Error-path coverage for resolve_response_ref.
+
+    The happy path is already exercised transitively via
+    TestGetResponseContentTypes.test_response_ref_resolved. Each
+    rejection branch has its own non-obvious failure mode — in
+    particular the nested-$ref case, which a future "helpful" refactor
+    might silently loosen.
+    """
+
+    def test_rejects_external_ref(self, tmp_path):
+        small_spec = _load_inline_spec(
+            {
+                "openapi": "3.0.3",
+                "info": {"title": "T", "version": "1"},
+                "paths": {"/x": {"get": {"responses": {"200": {"description": "ok"}}}}},
+            },
+            tmp_path,
+        )
+        with pytest.raises(ValueError, match="only local"):
+            resolve_response_ref(small_spec, "https://example.com/r/Foo")
+
+    def test_rejects_when_components_missing(self, tmp_path):
+        small_spec = _load_inline_spec(
+            {
+                "openapi": "3.0.3",
+                "info": {"title": "T", "version": "1"},
+                "paths": {"/x": {"get": {"responses": {"200": {"description": "ok"}}}}},
+            },
+            tmp_path,
+        )
+        with pytest.raises(ValueError, match="no 'components' section"):
+            resolve_response_ref(small_spec, "#/components/responses/Missing")
+
+    def test_rejects_missing_component_name(self, tmp_path):
+        small_spec = _load_inline_spec(
+            {
+                "openapi": "3.0.3",
+                "info": {"title": "T", "version": "1"},
+                "paths": {"/x": {"get": {"responses": {"200": {"description": "ok"}}}}},
+                "components": {
+                    "responses": {
+                        "Other": {"description": "ok"},
+                    }
+                },
+            },
+            tmp_path,
+        )
+        with pytest.raises(ValueError, match="'NotThere' not found"):
+            resolve_response_ref(small_spec, "#/components/responses/NotThere")
+
+    def test_rejects_nested_ref(self, tmp_path):
+        """A components.responses entry that is itself a $ref should be
+        rejected — the resolver does not walk chains."""
+        small_spec = _load_inline_spec(
+            {
+                "openapi": "3.0.3",
+                "info": {"title": "T", "version": "1"},
+                "paths": {"/x": {"get": {"responses": {"200": {"description": "ok"}}}}},
+                "components": {
+                    "responses": {
+                        "Chained": {"$ref": "#/components/responses/Target"},
+                        "Target": {"description": "ok"},
+                    }
+                },
+            },
+            tmp_path,
+        )
+        with pytest.raises(ValueError, match="nested"):
+            resolve_response_ref(small_spec, "#/components/responses/Chained")

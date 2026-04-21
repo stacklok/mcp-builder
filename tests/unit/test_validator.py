@@ -2,7 +2,9 @@
 
 from pathlib import Path
 
-from mcp_builder.codegen.validator import validate_scope
+import pytest
+
+from mcp_builder.codegen.validator import _is_json_media_type, validate_scope
 from mcp_builder.schema.models import load_scope
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -291,3 +293,96 @@ class TestResponseContentTypes:
         )
         result = validate_scope(self._scope_with_tool(tool), small_spec)
         assert not any("get_vendor" in e for e in result.errors)
+
+    def test_mixed_status_codes_with_non_json_errors(self, tmp_path):
+        """Per-status check: a spec that returns PDF on 200 and JSON on
+        201 still errors. The generated client crashes whenever the API
+        returns 200, even though some peer status declares JSON."""
+        import yaml as _yaml
+
+        from mcp_builder.schema.models import Tool
+        from mcp_builder.spec import load_openapi_spec as _load
+
+        doc = {
+            "openapi": "3.0.3",
+            "info": {"title": "T", "version": "1"},
+            "servers": [{"url": "https://x"}],
+            "paths": {
+                "/mixed": {
+                    "get": {
+                        "responses": {
+                            "200": {
+                                "description": "pdf",
+                                "content": {"application/pdf": {}},
+                            },
+                            "201": {
+                                "description": "json",
+                                "content": {"application/json": {}},
+                            },
+                        }
+                    }
+                }
+            },
+        }
+        f = tmp_path / "spec.yaml"
+        f.write_text(_yaml.safe_dump(doc))
+        small_spec = _load(f)
+
+        tool = Tool(
+            tool_name="get_mixed",
+            endpoint="GET /mixed",
+            description="Mixed statuses.",
+            parameters=[],
+        )
+        result = validate_scope(self._scope_with_tool(tool), small_spec)
+        matching = [e for e in result.errors if "get_mixed" in e]
+        assert matching, result.errors
+        # Error must cite the offending status (200) and media type,
+        # not hide them behind a flattened "some JSON exists somewhere".
+        assert "200" in matching[0]
+        assert "application/pdf" in matching[0]
+
+
+class TestIsJsonMediaType:
+    """Direct coverage of the JSON-media-type predicate.
+
+    The validator's error/pass decision hinges on this predicate. If it
+    miscategorizes a type, validate_scope silently passes a scope that
+    should have errored (or vice versa) — the existing validator tests
+    only exercise two media types transitively.
+    """
+
+    @pytest.mark.parametrize(
+        "media_type",
+        [
+            "application/json",
+            "text/json",  # legacy
+            "Application/JSON",  # case-insensitive
+            "APPLICATION/JSON",
+            "application/json; charset=utf-8",  # parameter stripped
+            "application/json ; charset=utf-8",  # whitespace ok
+            "application/vnd.api+json",  # RFC 6839 structured suffix
+            "application/problem+json",  # RFC 7807
+            "application/ld+json",
+            "text/foo+json",
+        ],
+    )
+    def test_accepts(self, media_type):
+        assert _is_json_media_type(media_type) is True
+
+    @pytest.mark.parametrize(
+        "media_type",
+        [
+            "application/xml",
+            "application/octet-stream",
+            "image/jpeg",
+            "text/plain",
+            "multipart/form-data",
+            "application/jsonl",  # JSON Lines, not JSON
+            "application/json-seq",  # JSON text sequences
+            "application/json-patch",  # not +json suffixed
+            "application/+json",  # malformed: empty prefix before +
+        ],
+    )
+    def test_rejects(self, media_type):
+        assert _is_json_media_type(media_type) is False

@@ -129,16 +129,9 @@ def validate_scope(
                                 f"str. The spec may be incomplete."
                             )
 
-                # Check success-response content types. "2xx" refers to
-                # HTTP status codes in the 200–299 range (the success
-                # family: 200 OK, 201 Created, 204 No Content, etc.) —
-                # those are the only responses that shape the return
-                # type of the generated tool. The generated client only
-                # handles JSON today, so a non-JSON response (e.g.
-                # image/jpeg, application/octet-stream) produces a server
-                # that crashes at runtime with JSONDecodeError. Surface
-                # it as an error here so the user/scoping model can
-                # exclude the endpoint or track the gap.
+                # Generated client calls response.json() unconditionally;
+                # a non-JSON 2xx body crashes at runtime. Surface it so
+                # the scoping model can drop the endpoint.
                 response_types = get_response_content_types(spec, method, path)
                 _check_response_content_types(
                     tool.tool_name, response_types, errors, warnings
@@ -153,10 +146,7 @@ def validate_scope(
 
 
 # Matches application/json, text/json, and any RFC 6839 structured-suffix
-# JSON type like application/vnd.api+json or application/ld+json. Python's
-# stdlib has no built-in primitive for the "+json" structured suffix, so
-# we use a small regex rather than a chain of string operations — it's
-# more declarative and keeps the RFC 6839 rule in one place.
+# JSON type (application/vnd.api+json, application/ld+json, etc.).
 _JSON_MEDIA_RE = re.compile(
     r"^(?:application|text)/(?:[\w.+-]+\+)?json$", re.IGNORECASE
 )
@@ -169,8 +159,7 @@ def _is_json_media_type(media_type: str) -> bool:
     ``application/foo+json`` / ``text/foo+json`` structured-suffix
     variant per RFC 6839.
     """
-    # Strip any parameters (e.g. "; charset=utf-8"). Content-type keys in
-    # OpenAPI specs occasionally include them, though most omit the params.
+    # Strip media-type parameters like "; charset=utf-8" before matching.
     bare = media_type.split(";", 1)[0].strip()
     return bool(_JSON_MEDIA_RE.match(bare))
 
@@ -181,17 +170,22 @@ def _check_response_content_types(
     errors: list[str],
     warnings: list[str],
 ) -> None:
-    """Validate that a tool's 2xx responses are JSON-compatible.
+    """Error if any 2xx status can return a body the JSON-only client cannot decode.
 
-    Three signals (the generated client only handles JSON today):
+    Four outcomes:
 
-    - No 2xx responses declared at all → warning (spec is incomplete; we
-      can't know whether it will work).
-    - All 2xx responses declare media types and none are JSON → error
-      (server will crash at runtime on response.json()). Points the user
-      at the fix: exclude the endpoint, or track the gap upstream.
-    - All 2xx responses have no ``content`` block (e.g. 204 No Content)
-      → silent pass; the generated code's empty-dict fallback is fine.
+    - No 2xx responses declared at all → warning (spec is incomplete;
+      we can't prove anything).
+    - Every 2xx response has an empty ``content`` block (e.g. 204 No
+      Content) → silent pass; no body to decode.
+    - Every 2xx response with content includes at least one JSON media
+      type → silent pass.
+    - Any 2xx response declares content without a JSON option → error,
+      naming the offending status codes and media types.
+
+    The rule is per-status, not flattened: a spec that returns
+    ``application/pdf`` on 200 and ``application/json`` on 201 still
+    errors, because the server will crash on 200.
     """
     if not response_types:
         warnings.append(
@@ -201,29 +195,29 @@ def _check_response_content_types(
         )
         return
 
-    has_any_content = False
-    has_json = False
-    observed_types: set[str] = set()
-    for media_types in response_types.values():
+    offending: dict[str, list[str]] = {}
+    any_with_content = False
+    for status, media_types in response_types.items():
         if not media_types:
             continue
-        has_any_content = True
-        for mt in media_types:
-            observed_types.add(mt)
-            if _is_json_media_type(mt):
-                has_json = True
-                break
-        if has_json:
-            break
+        any_with_content = True
+        if not any(_is_json_media_type(mt) for mt in media_types):
+            offending[status] = media_types
 
-    if has_any_content and not has_json:
-        type_list = ", ".join(sorted(observed_types))
+    if not any_with_content:
+        return  # All 2xx responses are 204-style; no body to decode.
+
+    if offending:
+        detail = "; ".join(
+            f"{status} returns {', '.join(sorted(offending[status]))}"
+            for status in sorted(offending)
+        )
         errors.append(
-            f"Tool '{tool_name}': 2xx response declares non-JSON content "
-            f"type(s) ({type_list}), but the generated client only "
-            "handles application/json. The resulting server will crash "
-            "at runtime when calling this endpoint. Exclude this tool "
-            "from the scope, or track the gap in "
+            f"Tool '{tool_name}': 2xx response(s) declare non-JSON content "
+            f"type(s) ({detail}), but the generated client only handles "
+            "application/json. The resulting server will crash at "
+            "runtime when calling this endpoint. Exclude this tool from "
+            "the scope, or track the gap in "
             "https://github.com/StacklokLabs/mcp-builder/issues/81 "
             "(binary/non-JSON response support)."
         )
