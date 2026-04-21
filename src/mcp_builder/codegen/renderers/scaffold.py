@@ -103,7 +103,12 @@ def _replace_in_files(root: Path, glob_pattern: str, old: str, new: str) -> None
 
 
 def _update_pyproject(pyproject_path: Path, plan: ServerPlan) -> None:
-    """Update project name, description, and add httpx dependency."""
+    """Rewrite the scaffolded ``pyproject.toml`` in place.
+
+    - ``name`` → ``{server_name}-mcp``
+    - ``description`` → scope description (TOML-escaped, non-greedy match)
+    - ``dependencies`` → append ``httpx`` if missing (scoped to the deps array)
+    """
     text = pyproject_path.read_text(encoding="utf-8")
 
     # Replace package name.

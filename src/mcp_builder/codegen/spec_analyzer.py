@@ -38,6 +38,8 @@ logger = structlog.get_logger()
 
 
 class AnalyzedParameter(BaseModel):
+    """One flattened parameter. ``schema_type`` is raw OpenAPI type; Python-type inference happens later in ``codegen.plan``."""
+
     name: str
     # "in" is a Python keyword, so the field is stored as ``location`` but
     # serialised as "in" for JSON output.
@@ -49,12 +51,21 @@ class AnalyzedParameter(BaseModel):
 
 
 class AnalyzedRequestBody(BaseModel):
+    """Summary of ``requestBody`` — enough for scoping to judge the endpoint. Full body extraction is in ``codegen.plan``."""
+
     content_type: str
     required: bool
     description: str
 
 
 class AnalyzedEndpoint(BaseModel):
+    """One flattened HTTP operation.
+
+    ``errors`` holds per-endpoint extraction failures (e.g. unresolvable
+    ``$ref``) so one bad operation doesn't poison the analysis. See the
+    module docstring's SOFT error policy.
+    """
+
     method: str
     path: str
     operation_id: str | None
@@ -68,6 +79,8 @@ class AnalyzedEndpoint(BaseModel):
 
 
 class OAuthFlowInfo(BaseModel):
+    """One OAuth 2.0 flow. Scoping uses ``flow_type`` + ``scopes`` to pick a ToolHive auth type."""
+
     flow_type: str
     authorization_url: str | None
     token_url: str | None
@@ -75,6 +88,12 @@ class OAuthFlowInfo(BaseModel):
 
 
 class SecuritySchemeInfo(BaseModel):
+    """One flattened ``components.securitySchemes`` entry.
+
+    ``type`` + ``scheme`` cover HTTP bearer/basic; ``parameter_name`` +
+    ``location`` cover API keys; ``flows`` is populated only for OAuth 2.0.
+    """
+
     type: str
     scheme: str | None
     parameter_name: str | None
@@ -84,6 +103,8 @@ class SecuritySchemeInfo(BaseModel):
 
 
 class QualityMetrics(BaseModel):
+    """Description-coverage counters. Low ratios signal scoping will need heavy human editing."""
+
     endpoint_count: int
     endpoints_with_descriptions: int
     total_parameters: int
@@ -91,6 +112,8 @@ class QualityMetrics(BaseModel):
 
 
 class SpecAnalysis(BaseModel):
+    """Root of the JSON emitted by ``mcp-builder analyze``; consumed by the scoping skill and spec-analyzer sub-agent."""
+
     spec_version: str
     base_url: str
     security_schemes: dict[str, SecuritySchemeInfo]
@@ -135,6 +158,13 @@ HTTP_METHODS = ("get", "put", "post", "delete", "options", "head", "patch", "tra
 
 
 def _analyze_endpoints(spec: OpenAPISpec) -> list[AnalyzedEndpoint]:
+    """Flatten every path/operation into ``AnalyzedEndpoint``s (one per method per path).
+
+    Merges path-level and operation-level parameters (dedup on
+    ``(name, location)``; operation-level wins). Schema-type extraction
+    errors are captured per endpoint, not raised. Unresolved ``$ref``
+    params are skipped.
+    """
     endpoints: list[AnalyzedEndpoint] = []
     for path, path_item in (spec.paths or {}).items():
         # Collect path-level parameters once per path
@@ -224,6 +254,12 @@ def _extract_request_body(operation: object) -> AnalyzedRequestBody | None:
 
 
 def _extract_security_schemes(spec: OpenAPISpec) -> dict[str, SecuritySchemeInfo]:
+    """Flatten ``components.securitySchemes``.
+
+    Emits one ``OAuthFlowInfo`` per OAuth flow present (``implicit``,
+    ``password``, ``clientCredentials``, ``authorizationCode``). Skips
+    ``$ref`` entries. ``{}`` if the spec has no ``components``.
+    """
     if spec.components is None:
         return {}
     raw_schemes = spec.components.securitySchemes or {}
@@ -262,6 +298,7 @@ def _extract_security_schemes(spec: OpenAPISpec) -> dict[str, SecuritySchemeInfo
 
 
 def _compute_quality(endpoints: list[AnalyzedEndpoint]) -> QualityMetrics:
+    """Count description coverage. Empty strings count as missing."""
     endpoint_count = len(endpoints)
     endpoints_with_desc = sum(1 for e in endpoints if e.description)
     all_params = [p for e in endpoints for p in e.parameters]

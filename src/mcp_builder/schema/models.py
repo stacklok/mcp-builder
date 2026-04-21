@@ -76,6 +76,10 @@ class ServerConfig(BaseModel):
     @field_validator("name")
     @classmethod
     def validate_dns_label(cls, v: str) -> str:
+        """Enforce RFC 1123 DNS-label rules (K8s name, image tag, URL segment all need this).
+
+        ``google-drive`` ok; ``Google_Drive`` and ``-drive`` fail.
+        """
         if not re.fullmatch(r"[a-z0-9]([a-z0-9-]*[a-z0-9])?", v) or len(v) > 63:
             raise ValueError(
                 f"Server name '{v}' is not a valid DNS label. "
@@ -86,7 +90,25 @@ class ServerConfig(BaseModel):
 
 
 class Tool(BaseModel):
-    """A single tool definition within a group."""
+    """A single tool = one MCP tool = one HTTP call into the upstream API.
+
+    ``endpoint`` (``"METHOD /path"``) is what codegen resolves against the
+    OpenAPI spec. ``hints`` are free-form notes from scoping that Phase 4
+    uses to suggest polish (pagination, response shaping, quirks).
+
+    Example:
+
+        - tool_name: list_drive_files
+          endpoint: GET /files
+          description: List files visible to the authenticated user.
+          parameters:
+            - name: q
+              description: Drive query string.
+              required: false
+              location: query
+          hints:
+            - "Paginated via nextPageToken; 100 items default."
+    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -99,6 +121,11 @@ class Tool(BaseModel):
     @field_validator("tool_name")
     @classmethod
     def validate_tool_name(cls, v: str) -> str:
+        """snake_case, max 40 chars.
+
+        The cap is practical: longer names crowd the LLM's tool-selection
+        context and usually mean the name wasn't curated.
+        """
         if len(v) > 40:
             raise ValueError(f"Tool name '{v}' exceeds 40 characters ({len(v)} chars)")
         if not re.fullmatch(r"[a-z][a-z0-9_]*", v):
@@ -111,6 +138,12 @@ class Tool(BaseModel):
     @field_validator("endpoint")
     @classmethod
     def validate_endpoint(cls, v: str) -> str:
+        """Enforce ``"METHOD /path"`` shape.
+
+        Codegen splits on the first space to look the operation up in the
+        spec; anything that doesn't parse breaks that lookup. Method
+        allowlist is what the generator can emit HTTP calls for.
+        """
         if not re.fullmatch(r"(GET|POST|PUT|PATCH|DELETE) /\S+", v):
             raise ValueError(
                 f"Endpoint '{v}' must match 'METHOD /path' where METHOD is "
@@ -120,7 +153,11 @@ class Tool(BaseModel):
 
     @model_validator(mode="after")
     def validate_path_params_declared(self) -> Self:
-        """Every {placeholder} in the endpoint path must have a parameter with location=path."""
+        """Every ``{placeholder}`` in the endpoint path must appear in ``parameters`` with ``location=path``.
+
+        Otherwise the generated client would have no way to fill the URL
+        template — catch it at load time, not request time.
+        """
         _, path = self.endpoint.split(" ", 1)
         placeholders = set(re.findall(r"\{(\w+)\}", path))
         if not placeholders:
@@ -156,6 +193,11 @@ class AuthConfig(BaseModel):
 
     @model_validator(mode="after")
     def validate_oauth_required(self) -> Self:
+        """``oauth`` block required when ``type == "oauth_bearer"``.
+
+        Codegen emits an ``MCPExternalAuthConfig`` that needs a concrete
+        issuer and scopes — no sensible default for either.
+        """
         if self.type == "oauth_bearer" and self.oauth is None:
             raise ValueError("'oauth' is required when auth type is 'oauth_bearer'")
         return self
@@ -175,6 +217,11 @@ class MCPScope(BaseModel):
 
     @model_validator(mode="after")
     def validate_unique_tool_names(self) -> Self:
+        """``tool_name`` must be unique across all groups.
+
+        Groups are a scoping aid, not a namespace — the server exposes
+        one flat tool list. The error names both offending groups.
+        """
         seen: dict[str, str] = {}
         for group in self.groups:
             for tool in group.tools:

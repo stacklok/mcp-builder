@@ -150,7 +150,14 @@ def _cmd_validate(args: argparse.Namespace) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """Build the argument parser for the mcp-builder CLI."""
+    """Build the CLI parser. Three subcommands:
+
+    - ``generate <scope> <spec> <template-dir> [-o OUT]`` → ``run_pipeline``
+    - ``analyze <spec>`` → ``analyze_spec`` (emits JSON)
+    - ``validate <scope> [--openapi-spec SPEC]`` → ``validate_scope`` (non-zero exit on errors)
+
+    Global flags: ``-v`` / ``--log-level`` control verbosity.
+    """
     parser = argparse.ArgumentParser(
         prog="mcp-builder",
         description="Generate a ToolHive-ready MCP server from an OpenAPI spec.",
