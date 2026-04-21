@@ -25,7 +25,6 @@ from pydantic import ValidationError
 from mcp_builder.codegen.plan import ServerPlan, build_server_plan
 from mcp_builder.codegen.renderers.client import render_client_module
 from mcp_builder.codegen.renderers.manifests import render_manifests
-from mcp_builder.codegen.renderers.models import render_parameter_models
 from mcp_builder.codegen.renderers.scaffold import scaffold_project
 from mcp_builder.codegen.renderers.server_wiring import (
     patch_app_builder,
@@ -61,7 +60,7 @@ def run_pipeline(
         1. Load and validate the mcp-scope.yaml and OpenAPI spec.
         2. Build the typed ServerPlan from scope + spec.
         3. Scaffold the project from the template directory.
-        4. Render and write generated source files (models, client, tools).
+        4. Render and write generated source files (client, tools).
         5. Patch scaffolded server wiring files.
         6. Write deployment manifests to deploy/.
 
@@ -88,9 +87,14 @@ def run_pipeline(
     module_dir = project_dir / "src" / plan.module_name
 
     # Render and write generated source files
-    _write_file(module_dir / "api" / "models.py", render_parameter_models(plan))
     _write_file(module_dir / "client.py", render_client_module(plan))
     _write_file(module_dir / "api" / "tools.py", render_tools_module(plan))
+
+    # The template ships a sample api/models.py (HelloRequest/HelloResponse)
+    # that the generated tools.py doesn't import — generated tool methods take
+    # flattened Annotated args so FastMCP can expose a per-param input schema.
+    # Leaving the file behind ships dead code to generated projects.
+    (module_dir / "api" / "models.py").unlink(missing_ok=True)
 
     # Patch scaffolded wiring files
     _patch_file(module_dir / "api" / "mcp_builder.py", patch_mcp_builder, plan)

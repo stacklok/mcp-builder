@@ -7,7 +7,6 @@ or YAML). Renderers never access the raw OpenAPI spec directly.
 Modules:
     client         — render_client_module() (textwrap.dedent)
     manifests      — render_manifests() (yaml.dump, ToolHive deployment CRDs)
-    models         — render_parameter_models() (Jinja2)
     scaffold       — scaffold_project() (copy template + rename)
     server_wiring  — patch_mcp_builder(), patch_app_builder()
     tools          — render_tools_module() (Jinja2)

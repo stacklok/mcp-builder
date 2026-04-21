@@ -16,7 +16,6 @@
 | Check | Status | Severity | Details |
 |-------|--------|----------|---------|
 | S1: Tool completeness | {PASS/FAIL} | error | {details — list any missing or extra tools} |
-| S2: Parameter models | {PASS/FAIL} | error | {details — list any mismatched models/fields} |
 | S3: Import resolution | {PASS/FAIL} | error | {details — list any broken imports} |
 | S4: Tool registration | {PASS/FAIL} | error | {details — list any unregistered or extra tools} |
 
