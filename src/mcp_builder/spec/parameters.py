@@ -141,7 +141,7 @@ def get_parameters(
 
     result = []
     for param in merged.values():
-        schema_type = extract_schema_type(param)
+        schema_type = extract_schema_type(param, spec)
         result.append(
             ExtractedParameter(
                 name=param.name,

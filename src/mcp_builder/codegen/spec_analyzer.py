@@ -193,7 +193,7 @@ def _analyze_endpoints(spec: OpenAPISpec) -> list[AnalyzedEndpoint]:
 
             for param in merged.values():
                 try:
-                    schema_type = extract_schema_type(param)
+                    schema_type = extract_schema_type(param, spec)
                 except ValueError as exc:
                     errors.append(str(exc))
                     schema_type = "string"

@@ -232,22 +232,72 @@ def resolve_composed_schema(
     )
 
 
-def extract_schema_type(param: OAParam30 | OAParam31) -> SchemaType:
+def extract_schema_type(param: OAParam30 | OAParam31, spec: OpenAPISpec) -> SchemaType:
     """Extract the schema type string from a parameter's schema.
 
+    If the schema is a ``$ref`` (common in specs that share component
+    schemas across parameters, e.g. BambooHR, Stripe, GitHub), the ref
+    is resolved against ``spec.components.schemas`` before type extraction.
+    Nested ref chains (ref → ref → inline) are followed with cycle
+    detection.
+
     Raises:
-        ValueError: If the parameter has no inline schema (None or $ref),
-            or the schema type is missing, null-only, or unknown.
+        ValueError: If the parameter has no schema, the ``$ref`` cannot be
+            resolved, a ref cycle is detected, or the resolved schema's
+            type is missing, null-only, or unknown.
     """
-    if param.param_schema is None or isinstance(param.param_schema, Ref30 | Ref31):
-        schema_kind = (
-            type(param.param_schema).__name__ if param.param_schema else "None"
-        )
+    schema = param.param_schema
+    if schema is None:
         raise ValueError(
             f"Parameter '{param.name}' has no inline schema "
-            f"(schema_kind={schema_kind}). Cannot determine type."
+            f"(schema_kind=None). Cannot determine type."
         )
-    return schema_to_type(param.param_schema)
+
+    if isinstance(schema, Ref30 | Ref31):
+        seen: set[str] = set()
+        while isinstance(schema, Ref30 | Ref31):
+            if schema.ref in seen:
+                raise ValueError(
+                    f"Parameter '{param.name}' has a circular $ref chain "
+                    f"through '{schema.ref}'."
+                )
+            seen.add(schema.ref)
+            schema = resolve_schema_ref_allow_chain(spec, schema.ref)
+
+    return schema_to_type(schema)
+
+
+def resolve_schema_ref_allow_chain(
+    spec: OpenAPISpec, ref: str
+) -> Ref30 | Ref31 | OpenAPISchema:
+    """Resolve a schema ``$ref`` without rejecting nested refs.
+
+    Unlike :func:`resolve_schema_ref`, this returns the component as-is —
+    if it's another ``$ref``, the caller is expected to keep walking.
+    Used by callers that handle ref chains themselves (with cycle detection).
+
+    Raises:
+        ValueError: If the ref is external/non-component, the components
+            section is missing, or the named schema doesn't exist.
+    """
+    if not ref.startswith("#/components/schemas/"):
+        raise ValueError(
+            f"Cannot resolve schema $ref '{ref}': "
+            "only local '#/components/schemas/...' refs are supported."
+        )
+    schema_name = ref.rsplit("/", 1)[-1]
+    if spec.components is None:
+        raise ValueError(
+            f"Cannot resolve schema $ref '{ref}': spec has no 'components' section."
+        )
+    schemas = spec.components.schemas or {}
+    schema = schemas.get(schema_name)
+    if schema is None:
+        raise ValueError(
+            f"Cannot resolve schema $ref '{ref}': "
+            f"'{schema_name}' not found in components.schemas."
+        )
+    return schema
 
 
 def schema_to_type(schema: OpenAPISchema) -> SchemaType:
