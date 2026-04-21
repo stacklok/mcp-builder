@@ -41,6 +41,11 @@ from mcp_builder.spec import load_openapi_spec
 logger = logging.getLogger(__name__)
 
 
+# Note: unlike analyze_spec() and validate_scope() (which live in codegen/ as
+# pure functions), run_pipeline stays here because it is the orchestration
+# layer itself — it does filesystem I/O and ties renderers, patchers, and
+# scaffolding together. codegen/ is kept side-effect-free; cli.py owns the
+# I/O glue. If this grows further, lift it into mcp_builder/pipeline.py.
 def run_pipeline(
     scope_yaml: Path,
     openapi_spec: Path,
