@@ -28,9 +28,11 @@ Public API (re-exported here for convenience):
     - load_openapi_spec() — load a spec from a JSON/YAML file
     - get_parameters() — extract URL parameters from an operation
     - get_body_fields() — extract request body fields from an operation
+    - get_response_content_types() — extract 2xx response media types
     - parse_endpoint() — split "METHOD /path" into components
     - resolve_parameter_ref() — resolve a $ref to a parameter component
     - resolve_request_body_ref() — resolve a $ref to a requestBody component
+    - resolve_response_ref() — resolve a $ref to a response component
     - resolve_schema_ref() — resolve a $ref to a schema component
     - resolve_composed_schema() — flatten allOf/oneOf/anyOf into merged properties
     - extract_schema_type() — get the schema type from a parameter
@@ -41,12 +43,18 @@ Public API (re-exported here for convenience):
 """
 
 from mcp_builder.spec.loader import load_openapi_spec
-from mcp_builder.spec.parameters import get_body_fields, get_parameters, parse_endpoint
+from mcp_builder.spec.parameters import (
+    get_body_fields,
+    get_parameters,
+    get_response_content_types,
+    parse_endpoint,
+)
 from mcp_builder.spec.resolver import (
     extract_schema_type,
     resolve_composed_schema,
     resolve_parameter_ref,
     resolve_request_body_ref,
+    resolve_response_ref,
     resolve_schema_ref,
     schema_to_type,
 )
@@ -74,10 +82,12 @@ __all__ = [
     "get_body_fields",
     "resolve_composed_schema",
     "get_parameters",
+    "get_response_content_types",
     "load_openapi_spec",
     "parse_endpoint",
     "resolve_parameter_ref",
     "resolve_request_body_ref",
+    "resolve_response_ref",
     "resolve_schema_ref",
     "schema_to_type",
 ]

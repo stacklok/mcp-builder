@@ -38,6 +38,7 @@ from mcp_builder.spec.resolver import (
     resolve_composed_schema,
     resolve_parameter_ref,
     resolve_request_body_ref,
+    resolve_response_ref,
     resolve_schema_ref,
     schema_to_type,
 )
@@ -168,6 +169,68 @@ def get_parameters(
             path=path,
             count=len(result),
         )
+    return result
+
+
+def get_response_content_types(
+    spec: OpenAPISpec, method: str, path: str
+) -> dict[str, list[str]]:
+    """Extract declared media types for each 2xx response of an operation.
+
+    Walks ``operation.responses`` and returns a mapping of 2xx status code
+    (or ``"default"``) to the sorted list of media types declared under
+    that response's ``content``. Resolves ``$ref`` on Response objects.
+    Status codes outside 2xx (errors, redirects, etc.) are ignored because
+    code generation only cares about the success shape.
+
+    An empty return means the spec declares no 2xx responses at all —
+    callers should treat that as "spec is incomplete" rather than "not JSON."
+
+    A status code mapped to an empty list means the 2xx response is
+    declared with no ``content`` block (common for 204 No Content and for
+    thinly-specified APIs). Callers should treat this as "no body" rather
+    than "not JSON."
+
+    Args:
+        spec: Typed OpenAPI spec.
+        method: HTTP method (e.g., "GET").
+        path: URL path (e.g., "/employees/{id}/photo").
+
+    Returns:
+        Dict mapping status code string to sorted list of media types.
+
+    Raises:
+        KeyError: If the path or method is not found in the spec.
+    """
+    _, operation = _get_operation(spec, method, path)
+    responses = getattr(operation, "responses", None) or {}
+
+    result: dict[str, list[str]] = {}
+    for status_code, response in responses.items():
+        # Only success responses inform the generated return type.
+        # "default" is OpenAPI's fallback; include it so thinly-spec'd
+        # APIs don't look empty when callers rely on it for 2xx.
+        if not (status_code.startswith("2") or status_code == "default"):
+            continue
+        if isinstance(response, Ref30 | Ref31):
+            logger.debug(
+                "resolving response $ref",
+                ref=response.ref,
+                method=method,
+                path=path,
+                status=status_code,
+            )
+            response = resolve_response_ref(spec, response.ref)
+        media_types = sorted((response.content or {}).keys())
+        result[status_code] = media_types
+        logger.debug(
+            "extracted response content types",
+            method=method,
+            path=path,
+            status=status_code,
+            media_types=media_types,
+        )
+
     return result
 
 

@@ -15,6 +15,7 @@ from mcp_builder.spec import (
     OpenAPISpec,
     get_body_fields,
     get_parameters,
+    get_response_content_types,
     parse_endpoint,
 )
 
@@ -126,9 +127,87 @@ def validate_scope(
                                 f"str. The spec may be incomplete."
                             )
 
+                # Check 2xx response content types. The generated client
+                # only handles JSON today, so a non-JSON response (e.g.
+                # image/jpeg, application/octet-stream) produces a server
+                # that crashes at runtime with JSONDecodeError. Surface
+                # it as an error here so the user/scoping model can
+                # exclude the endpoint or track the gap.
+                response_types = get_response_content_types(spec, method, path)
+                _check_response_content_types(
+                    tool.tool_name, response_types, errors, warnings
+                )
+
     logger.info(
         "validation complete",
         error_count=len(errors),
         warning_count=len(warnings),
     )
     return ValidationResult(errors=errors, warnings=warnings)
+
+
+def _is_json_media_type(media_type: str) -> bool:
+    """True for application/json and any structured-suffix JSON type.
+
+    Matches ``application/json``, ``application/vnd.api+json``, and any
+    other ``*/*+json`` variant defined by RFC 6839. Also accepts
+    ``text/json`` which some legacy specs use.
+    """
+    mt = media_type.split(";", 1)[0].strip().lower()
+    if mt in ("application/json", "text/json"):
+        return True
+    return mt.endswith("+json")
+
+
+def _check_response_content_types(
+    tool_name: str,
+    response_types: dict[str, list[str]],
+    errors: list[str],
+    warnings: list[str],
+) -> None:
+    """Validate that a tool's 2xx responses are JSON-compatible.
+
+    Three signals (the generated client only handles JSON today):
+
+    - No 2xx responses declared at all → warning (spec is incomplete; we
+      can't know whether it will work).
+    - All 2xx responses declare media types and none are JSON → error
+      (server will crash at runtime on response.json()). Points the user
+      at the fix: exclude the endpoint, or track the gap upstream.
+    - All 2xx responses have no ``content`` block (e.g. 204 No Content)
+      → silent pass; the generated code's empty-dict fallback is fine.
+    """
+    if not response_types:
+        warnings.append(
+            f"Tool '{tool_name}': spec declares no 2xx responses — "
+            "unable to verify the generated client can decode the "
+            "response body. The spec may be incomplete."
+        )
+        return
+
+    has_any_content = False
+    has_json = False
+    observed_types: set[str] = set()
+    for media_types in response_types.values():
+        if not media_types:
+            continue
+        has_any_content = True
+        for mt in media_types:
+            observed_types.add(mt)
+            if _is_json_media_type(mt):
+                has_json = True
+                break
+        if has_json:
+            break
+
+    if has_any_content and not has_json:
+        type_list = ", ".join(sorted(observed_types))
+        errors.append(
+            f"Tool '{tool_name}': 2xx response declares non-JSON content "
+            f"type(s) ({type_list}), but the generated client only "
+            "handles application/json. The resulting server will crash "
+            "at runtime when calling this endpoint. Exclude this tool "
+            "from the scope, or track the gap in "
+            "https://github.com/StacklokLabs/mcp-builder/issues/81 "
+            "(binary/non-JSON response support)."
+        )

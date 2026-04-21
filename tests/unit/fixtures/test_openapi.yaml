@@ -243,6 +243,54 @@ paths:
       responses:
         "200":
           description: Updated
+  /employees/{employeeId}/photo:
+    get:
+      operationId: getEmployeePhoto
+      summary: Get an employee's photo (binary JPEG)
+      parameters:
+        - name: employeeId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: "The employee ID."
+      responses:
+        "200":
+          description: The employee photo.
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+  /reports/{reportId}/download:
+    get:
+      operationId: downloadReport
+      summary: Download a report with a mix of content types
+      parameters:
+        - name: reportId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: "The report ID."
+      responses:
+        "200":
+          description: Report content.
+          content:
+            application/json:
+              schema:
+                type: object
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+  /shared-binary:
+    get:
+      operationId: getSharedBinary
+      summary: Fetch a shared binary response via components.responses $ref
+      responses:
+        "200":
+          $ref: "#/components/responses/BinaryImage"
   /files/{fileId}/comments:
     post:
       operationId: createComment
@@ -280,6 +328,14 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/CreateItemRequest"
+  responses:
+    BinaryImage:
+      description: A shared binary image response definition.
+      content:
+        image/png:
+          schema:
+            type: string
+            format: binary
   schemas:
     Item:
       type: object
