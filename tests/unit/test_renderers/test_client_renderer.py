@@ -29,37 +29,8 @@ class TestRenderClientModule:
         assert "async def request_bytes(" in source
         # Signature must promise bytes, not dict.
         assert "-> bytes:" in source
-
-    def test_request_bytes_streams_with_size_cap(self, plan: ServerPlan) -> None:
-        """Binary path streams via aiter_bytes and rejects responses that
-        exceed the cap. Reading the full body up-front would OOM on
-        multi-GB PDFs."""
-        source = render_client_module(plan)
-        assert "client.stream(" in source
-        assert "aiter_bytes" in source
-        assert "exceeded cap" in source
         # JSON path is still a single .json() read.
         assert "return response.json()" in source
-
-    def test_request_bytes_honors_content_length(self, plan: ServerPlan) -> None:
-        """A declared Content-Length greater than the cap rejects before
-        streaming, so servers that tell the truth fail fast."""
-        source = render_client_module(plan)
-        assert "Content-Length" in source
-
-    def test_size_cap_default_is_32_mib(self, plan: ServerPlan) -> None:
-        """Default cap: 32 MiB. Overridable via MCP_MAX_BINARY_RESPONSE_BYTES."""
-        source = render_client_module(plan)
-        assert "32 * 1024 * 1024" in source
-        assert "MCP_MAX_BINARY_RESPONSE_BYTES" in source
-
-    def test_json_path_sends_accept_header(self, plan: ServerPlan) -> None:
-        """Content negotiation: the JSON path declares Accept so a server
-        offering both JSON and non-JSON on the same 2xx hands us JSON,
-        not a PDF that would crash response.json()."""
-        source = render_client_module(plan)
-        assert '"Accept"' in source
-        assert "application/json" in source
 
     def test_json_path_handles_empty_body(self, plan: ServerPlan) -> None:
         """204 / empty-body 2xx responses must not invoke ``.json()`` —

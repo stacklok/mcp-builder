@@ -153,6 +153,7 @@ The endpoint-scoper agent will:
 - Assign tool names — keeping originals when possible, renaming only bad ones
 - Write LLM-optimized descriptions focused on separability between tools
 - Add hints for pagination, large responses, quirks
+- Set each tool's `response_kind` (`json` or `binary`) from the spec's 2xx responses, and flag any endpoint whose 2xx responses mix JSON and non-JSON media types for the user's decision
 - Write `tool-scoping.md` to the working directory
 
 ---
@@ -163,8 +164,8 @@ Once the endpoint-scoper agent completes:
 
 1. Read `{working_dir}/tool-scoping.md`
 2. Present to the user:
-   - **Flagged endpoints**: which endpoints are flagged for potential exclusion and why — the user decides whether to remove them
-   - **Tool list**: for each tool, show the tool name, endpoint, description, parameters, and hints
+   - **Flagged endpoints**: which endpoints are flagged for potential exclusion and why — the user decides whether to remove them. This includes any mixed-media endpoints (2xx returning both JSON and non-JSON media types); for each, walk through the options the scoper recorded — exclude the endpoint, keep as `binary` (JSON responses would be base64-wrapped), or keep as `json` (non-JSON responses would crash at runtime) — and record the user's per-endpoint decision.
+   - **Tool list**: for each tool, show the tool name, endpoint, description, parameters, `response_kind`, and hints
    - **Renamed tools**: highlight any tools where the name was changed from the original operationId
 3. Ask the user to approve the tool list or request changes (including which flagged endpoints to remove, if any)
 4. Do a final audit of the user tool selections for consistency. Make sure tools that need to appear together are all selected or that the user understands the implications of removing certain tools (e.g., if they remove an endpoint that is a prerequisite for another tool, flag that for review).
@@ -259,21 +260,9 @@ auth:
     {auth notes — how the auth works, any caveats}
 ```
 
-For each tool, set `response_kind` by inspecting the spec's 2xx
-responses for that endpoint:
-
-- All 2xx responses with content declare at least one JSON media type
-  (or every 2xx is 204-style with no body) → `response_kind: json`.
-- Every 2xx response with content is non-JSON (PDF, image, octet-stream,
-  etc.) → `response_kind: binary`. The generated tool returns the raw
-  bytes base64-encoded as a string.
-- Mixed — some 2xx responses are JSON and some are not (e.g. 200 returns
-  `application/pdf`, 202 returns `application/json`) — **STOP. Do not
-  write the YAML yet.** Present the affected endpoints to the user with
-  three options each: (a) exclude the endpoint, (b) keep as binary
-  (one decode path, JSON responses would be base64-wrapped), (c) keep
-  as JSON (one decode path, non-JSON responses would crash at runtime).
-  Wait for the user's per-endpoint decision before writing the YAML.
+Copy each tool's `response_kind` from the approved `tool-scoping.md`
+output — Step 4 already resolved it (including any mixed-media
+decisions surfaced during the Step 5 user gate).
 
 Write the YAML to `{working_dir}/mcp-scope.yaml`.
 
@@ -293,11 +282,10 @@ This checks:
 
 If validation fails or warns:
 1. Read the error/warning output
-2. **Errors**: fix the YAML (common issues: tool name too long, endpoint path doesn't match spec, missing required auth config, path parameter not declared)
-3. **`response_kind` mismatch errors**: **STOP and present these to the user.** The spec conflicts with the scope's declared decode path. Do not silently flip the value — ask the user to confirm the intended shape or drop the endpoint.
-4. **Warnings about missing spec parameters**: **STOP and present these to the user before continuing.** These warnings mean the OpenAPI spec does not define these parameters, so codegen will default their types to `str`. This is often because the spec is incomplete (e.g., no `requestBody` on a POST endpoint). The user must confirm this is acceptable. If the param name is simply misspelled vs the spec, fix it and re-validate.
-5. Re-validate after fixes
-6. Repeat up to 3 times. If still failing after 3 attempts, present the errors to the user and ask for help.
+2. **Errors**: fix the YAML (common issues: tool name too long, endpoint path doesn't match spec, missing required auth config, path parameter not declared, `response_kind` mismatches what the spec declares). If a `response_kind` error appears at this late stage, the mixed-media surfacing in Step 5 was missed — re-present the affected endpoint to the user and record their decision before flipping the value.
+3. **Warnings about missing spec parameters**: **STOP and present these to the user before continuing.** These warnings mean the OpenAPI spec does not define these parameters, so codegen will default their types to `str`. This is often because the spec is incomplete (e.g., no `requestBody` on a POST endpoint). The user must confirm this is acceptable. If the param name is simply misspelled vs the spec, fix it and re-validate.
+4. Re-validate after fixes
+5. Repeat up to 3 times. If still failing after 3 attempts, present the errors to the user and ask for help.
 
 #### 6.5: Write Scoping Summary
 

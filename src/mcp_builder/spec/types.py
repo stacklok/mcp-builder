@@ -124,6 +124,6 @@ class ExtractedResponse(BaseModel):
     # media_types stays ``list[str]`` deliberately. Media-type grammar
     # (RFC 6838) allows arbitrary vendor types, so a narrower Literal or
     # enum would reject valid inputs. Shape parsing isn't useful here —
-    # _is_json_media_type() only asks "is this JSON?", which is a cheap
+    # is_json_media_type() only asks "is this JSON?", which is a cheap
     # regex, not a grammar walk.
     media_types: list[str]

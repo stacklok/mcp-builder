@@ -6,7 +6,7 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
-from mcp_builder.codegen.media import is_json_media_type
+from mcp_builder.spec.media import is_json_media_type
 from mcp_builder.codegen.validator import validate_scope
 from mcp_builder.schema.models import (
     Group,

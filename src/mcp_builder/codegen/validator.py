@@ -10,7 +10,7 @@ from __future__ import annotations
 import structlog
 from pydantic import BaseModel, Field
 
-from mcp_builder.codegen.media import is_json_media_type
+from mcp_builder.spec.media import is_json_media_type
 from mcp_builder.schema.models import MCPScope, ParamLocation
 from mcp_builder.spec import (
     ExtractedResponse,

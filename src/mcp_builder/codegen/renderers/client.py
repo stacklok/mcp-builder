@@ -29,29 +29,9 @@ _CLIENT_TEMPLATE = textwrap.dedent('''\
     Uses the project's auth middleware to obtain bearer tokens.
     """
 
-    import os
-
     import httpx
 
     from {module_name}.auth import get_bearer_token
-
-
-    # Cap on binary response size. Set MCP_MAX_BINARY_RESPONSE_BYTES to
-    # override. Base64 encoding expands payload ~1.33x, so a 32 MiB body
-    # becomes a ~43 MiB MCP message before transport overhead — callers
-    # hitting the cap should split the endpoint or stream out-of-band.
-    _DEFAULT_MAX_BINARY_BYTES = 32 * 1024 * 1024
-
-
-    def _max_binary_bytes() -> int:
-        raw = os.environ.get("MCP_MAX_BINARY_RESPONSE_BYTES")
-        if not raw:
-            return _DEFAULT_MAX_BINARY_BYTES
-        try:
-            value = int(raw)
-        except ValueError:
-            return _DEFAULT_MAX_BINARY_BYTES
-        return value if value > 0 else _DEFAULT_MAX_BINARY_BYTES
 
 
     class APIClient:
@@ -72,7 +52,7 @@ _CLIENT_TEMPLATE = textwrap.dedent('''\
             params: dict | None = None,
             json_body: dict | None = None,
         ) -> dict:
-            """Send an HTTP request to the upstream API.
+            """Send an HTTP request to a JSON endpoint.
 
             Args:
                 method: HTTP method (GET, POST, PUT, PATCH, DELETE).
@@ -86,18 +66,13 @@ _CLIENT_TEMPLATE = textwrap.dedent('''\
                 don't raise ``JSONDecodeError`` on a zero-length body.
             """
             params = _strip_none(params)
-            headers = _auth_headers()
-            # Force JSON on servers that honor content negotiation so an
-            # ambiguous spec like 200 returning application/json or
-            # application/pdf doesn't silently hand us PDF bytes.
-            headers["Accept"] = "application/json"
             async with httpx.AsyncClient(base_url=self._base_url) as client:
                 response = await client.request(
                     method,
                     path,
                     params=params,
                     json=json_body,
-                    headers=headers,
+                    headers=_auth_headers(),
                 )
                 response.raise_for_status()
                 if not response.content:
@@ -112,81 +87,50 @@ _CLIENT_TEMPLATE = textwrap.dedent('''\
             params: dict | None = None,
             json_body: dict | None = None,
         ) -> bytes:
-            """Stream a binary response body, bounded by a size cap.
+            """Send an HTTP request to a binary endpoint and return the raw bytes.
 
-            Used for endpoints whose success responses declare a
-            non-JSON media type (images, PDFs, octet-streams). Streams
-            the body via ``aiter_bytes`` so responses larger than the
-            cap are rejected before they OOM the process, even when
-            the server omits Content-Length (chunked transfer).
-
-            Returns the raw bytes; the caller is responsible for any
-            further encoding (e.g. base64 for MCP transport). Note that
-            base64 expands the payload ~1.33x, so the effective transport
-            size is larger than the returned bytes.
-
-            Raises:
-                ValueError: if the response body exceeds the configured
-                    cap (32 MiB by default; override with the
-                    ``MCP_MAX_BINARY_RESPONSE_BYTES`` env var).
+            Used for endpoints whose success responses declare a non-JSON
+            media type (images, PDFs, octet-streams). The caller is
+            responsible for any further encoding (e.g. base64 for MCP
+            transport).
             """
             params = _strip_none(params)
-            max_bytes = _max_binary_bytes()
             async with httpx.AsyncClient(base_url=self._base_url) as client:
-                async with client.stream(
+                response = await client.request(
                     method,
                     path,
                     params=params,
                     json=json_body,
                     headers=_auth_headers(),
-                ) as response:
-                    response.raise_for_status()
-                    declared = _parse_content_length(
-                        response.headers.get("content-length")
-                    )
-                    if declared is not None and declared > max_bytes:
-                        raise ValueError(
-                            f"Response body too large: Content-Length "
-                            f"{{declared}} exceeds cap {{max_bytes}}"
-                        )
-                    chunks: list[bytes] = []
-                    total = 0
-                    async for chunk in response.aiter_bytes():
-                        total += len(chunk)
-                        if total > max_bytes:
-                            raise ValueError(
-                                f"Response body too large: exceeded cap "
-                                f"{{max_bytes}} while streaming"
-                            )
-                        chunks.append(chunk)
-                    return b"".join(chunks)
+                )
+                response.raise_for_status()
+                return response.content
 
 
     def _strip_none(params: dict | None) -> dict | None:
-        # Strip None query params so unset optional args aren't sent
-        # as empty strings (e.g. driveId=&pageToken=) which cause 400s.
-        # Body is left as-is: some APIs distinguish null from absent.
+        """Drop query params whose value is None.
+
+        Unset optional args would otherwise be sent as empty strings
+        (e.g. ``driveId=&pageToken=``) which some APIs reject with 400.
+        Body payloads are left untouched: some APIs distinguish an
+        explicit ``null`` from an absent field.
+        """
         if not params:
             return params
         return {{k: v for k, v in params.items() if v is not None}}
 
 
     def _auth_headers() -> dict[str, str]:
+        """Build the Authorization header from the project's auth layer.
+
+        Returns an empty dict when no bearer token is available so the
+        call still reaches unauthenticated endpoints.
+        """
         headers: dict[str, str] = {{}}
         token = get_bearer_token()
         if token:
             headers["Authorization"] = f"Bearer {{token}}"
         return headers
-
-
-    def _parse_content_length(value: str | None) -> int | None:
-        if value is None:
-            return None
-        try:
-            parsed = int(value)
-        except ValueError:
-            return None
-        return parsed if parsed >= 0 else None
 ''')
 
 

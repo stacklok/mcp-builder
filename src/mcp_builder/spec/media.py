@@ -1,4 +1,4 @@
-"""Media-type predicates shared across codegen stages."""
+"""Media-type predicates shared across spec parsing and codegen stages."""
 
 from __future__ import annotations
 

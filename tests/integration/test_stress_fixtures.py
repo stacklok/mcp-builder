@@ -208,10 +208,9 @@ class TestBinaryResponses:
         assert item.response_kind == "json"
 
     def test_pipeline_renders_both_paths(self, tmp_path: Path) -> None:
-        """Single pipeline run covers: valid Python, tool fork (JSON vs
-        binary decode), and the client's streaming bytes path with size
-        cap. One pipeline invocation — not three — because later tests
-        used to duplicate the generation step."""
+        """Single pipeline run covers: valid Python and the tool fork
+        (JSON vs binary decode). One pipeline invocation — not three —
+        because later tests used to duplicate the generation step."""
         project = run_pipeline(
             FIXTURES / "binary_scope.yaml",
             FIXTURES / "binary_openapi.yaml",
@@ -236,10 +235,8 @@ class TestBinaryResponses:
         assert "self._client.request(" in get_item_section
         assert "-> dict:" in get_item_section
 
-        # Client module: bytes path streams via aiter_bytes with size cap.
+        # Client module exposes the bytes path used by binary tools.
         client_py = project / "src" / "binary_api_mcp" / "client.py"
         client_content = client_py.read_text()
         assert "async def request_bytes(" in client_content
-        assert "client.stream(" in client_content
-        assert "aiter_bytes" in client_content
-        assert "MCP_MAX_BINARY_RESPONSE_BYTES" in client_content
+        assert "-> bytes:" in client_content
