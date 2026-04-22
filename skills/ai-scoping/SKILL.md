@@ -240,6 +240,7 @@ groups:
         endpoint: {METHOD} {/path}
         description: >
           {LLM-optimized description}
+        response_kind: {json|binary}
         parameters:
           - name: {param_name}
             description: "{param description}"
@@ -258,6 +259,22 @@ auth:
     {auth notes — how the auth works, any caveats}
 ```
 
+For each tool, set `response_kind` by inspecting the spec's 2xx
+responses for that endpoint:
+
+- All 2xx responses with content declare at least one JSON media type
+  (or every 2xx is 204-style with no body) → `response_kind: json`.
+- Every 2xx response with content is non-JSON (PDF, image, octet-stream,
+  etc.) → `response_kind: binary`. The generated tool returns the raw
+  bytes base64-encoded as a string.
+- Mixed — some 2xx responses are JSON and some are not (e.g. 200 returns
+  `application/pdf`, 202 returns `application/json`) — **STOP. Do not
+  write the YAML yet.** Present the affected endpoints to the user with
+  three options each: (a) exclude the endpoint, (b) keep as binary
+  (one decode path, JSON responses would be base64-wrapped), (c) keep
+  as JSON (one decode path, non-JSON responses would crash at runtime).
+  Wait for the user's per-endpoint decision before writing the YAML.
+
 Write the YAML to `{working_dir}/mcp-scope.yaml`.
 
 #### 6.4: Validate
@@ -269,16 +286,18 @@ uv run mcp-builder validate {working_dir}/mcp-scope.yaml --openapi-spec <openapi
 ```
 
 This checks:
-- Schema compliance (tool names unique, snake_case, <=40 chars; server name is DNS label; auth config valid; path params declared)
+- Schema compliance (tool names unique, snake_case, <=40 chars; server name is DNS label; auth config valid; path params declared; `response_kind` set)
 - Cross-validation (every endpoint in the scope exists in the spec's paths)
 - Parameter coverage (every YAML parameter exists in the spec — warnings flag params missing from the spec whose types will default to `str`, which usually means the spec is incomplete)
+- Response-kind compatibility (scope's `response_kind` must match what the spec actually declares — e.g. `response_kind: json` against a PDF-only endpoint errors)
 
 If validation fails or warns:
 1. Read the error/warning output
 2. **Errors**: fix the YAML (common issues: tool name too long, endpoint path doesn't match spec, missing required auth config, path parameter not declared)
-3. **Warnings about missing spec parameters**: **STOP and present these to the user before continuing.** These warnings mean the OpenAPI spec does not define these parameters, so codegen will default their types to `str`. This is often because the spec is incomplete (e.g., no `requestBody` on a POST endpoint). The user must confirm this is acceptable. If the param name is simply misspelled vs the spec, fix it and re-validate.
-4. Re-validate after fixes
-5. Repeat up to 3 times. If still failing after 3 attempts, present the errors to the user and ask for help.
+3. **`response_kind` mismatch errors**: **STOP and present these to the user.** The spec conflicts with the scope's declared decode path. Do not silently flip the value — ask the user to confirm the intended shape or drop the endpoint.
+4. **Warnings about missing spec parameters**: **STOP and present these to the user before continuing.** These warnings mean the OpenAPI spec does not define these parameters, so codegen will default their types to `str`. This is often because the spec is incomplete (e.g., no `requestBody` on a POST endpoint). The user must confirm this is acceptable. If the param name is simply misspelled vs the spec, fix it and re-validate.
+5. Re-validate after fixes
+6. Repeat up to 3 times. If still failing after 3 attempts, present the errors to the user and ask for help.
 
 #### 6.5: Write Scoping Summary
 

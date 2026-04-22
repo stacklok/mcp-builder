@@ -16,6 +16,7 @@ groups:
       - tool_name: get_forecast
         endpoint: GET /forecast/{location}
         description: "Get weather forecast for a location."
+        response_kind: json
         parameters:
           - name: location
             description: "Location identifier (city name or coordinates)."

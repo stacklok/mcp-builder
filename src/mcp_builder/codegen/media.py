@@ -1,9 +1,4 @@
-"""Media-type helpers shared across codegen stages.
-
-The JSON-detection regex lives here rather than inside validator.py so
-that both plan-building and validation can ask "is this body JSON?"
-without a cross-module dependency. Keep this module tiny on purpose.
-"""
+"""Media-type predicates shared across codegen stages."""
 
 from __future__ import annotations
 

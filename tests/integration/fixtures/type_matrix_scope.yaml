@@ -16,6 +16,7 @@ groups:
       - tool_name: test_all_types
         endpoint: POST /types/{str_param}/{int_param}
         description: "Exercise every supported type in every param location."
+        response_kind: json
         parameters:
           - name: str_param
             description: "String path param."

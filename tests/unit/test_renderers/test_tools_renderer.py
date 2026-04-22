@@ -1,5 +1,7 @@
 """Tests for the tools module renderer."""
 
+from typing import Literal
+
 from mcp_builder.codegen.plan import ParamPlan, ToolPlan
 from mcp_builder.codegen.renderers.tools import render_tools_module
 from mcp_builder.schema.models import ParamLocation
@@ -16,8 +18,7 @@ def _make_tool(
     query_params: list[ParamPlan] | None = None,
     body_fields: list[ParamPlan] | None = None,
     hints: list[str] | None = None,
-    returns_binary: bool = False,
-    response_content_type: str = "application/json",
+    response_kind: Literal["json", "binary"] = "json",
 ) -> ToolPlan:
     return ToolPlan(
         tool_name=name,
@@ -30,8 +31,7 @@ def _make_tool(
         body_fields=body_fields or [],
         hints=hints or [],
         group_name="default",
-        returns_binary=returns_binary,
-        response_content_type=response_content_type,
+        response_kind=response_kind,
     )
 
 
@@ -362,8 +362,7 @@ class TestRenderToolsModuleBinaryBranch:
             path="/employees/{employeeId}/photo",
             path_params=[_make_param("employee_id", original_name="employeeId")],
             description="Fetch the employee photo.",
-            returns_binary=True,
-            response_content_type="image/jpeg",
+            response_kind="binary",
         )
 
     def test_binary_tool_returns_str(self) -> None:
@@ -391,12 +390,6 @@ class TestRenderToolsModuleBinaryBranch:
     def test_binary_tool_compiles(self) -> None:
         source = render_tools_module(make_plan(tools=[self._binary_tool()]))
         compile(source, "<test>", "exec")
-
-    def test_binary_tool_docstring_mentions_content_type(self) -> None:
-        """Docstring surfaces the upstream media type so reviewers know
-        what the base64 payload actually encodes."""
-        source = render_tools_module(make_plan(tools=[self._binary_tool()]))
-        assert "image/jpeg" in source
 
     def test_mixed_json_and_binary_tools_coexist(self) -> None:
         """A server with both tool shapes renders one JSON tool and one

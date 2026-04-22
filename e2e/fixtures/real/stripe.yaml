@@ -24,6 +24,7 @@ groups:
         description: >
           Retrieve the current account balance. Returns available and pending
           amounts broken down by currency and source type.
+        response_kind: json
 
   - name: accounts
     description: "Connected account and external account management"
@@ -33,6 +34,7 @@ groups:
         description: >
           Retrieve a connected account by ID. Returns the account's business
           profile, capabilities, settings, and verification status.
+        response_kind: json
         parameters:
           - name: account
             description: "The Stripe account ID (e.g., acct_1234)."
@@ -44,6 +46,7 @@ groups:
         description: >
           List all capabilities for a connected account. Returns each
           capability's status (active, pending, inactive) and requirements.
+        response_kind: json
         parameters:
           - name: account
             description: "The Stripe account ID."
@@ -55,6 +58,7 @@ groups:
         description: >
           Retrieve a specific capability for a connected account. Returns
           the capability's status and any outstanding requirements.
+        response_kind: json
         parameters:
           - name: account
             description: "The Stripe account ID."

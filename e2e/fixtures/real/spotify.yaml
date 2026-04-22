@@ -24,6 +24,7 @@ groups:
         description: >
           Search the Spotify catalog for tracks, albums, artists, or
           playlists. Returns paginated results grouped by content type.
+        response_kind: json
         parameters:
           - name: q
             description: >
@@ -54,6 +55,7 @@ groups:
         description: >
           Get detailed information about an artist by Spotify ID. Returns
           name, genres, popularity score, follower count, and image URLs.
+        response_kind: json
         parameters:
           - name: id
             description: "The Spotify ID of the artist."
@@ -68,6 +70,7 @@ groups:
         description: >
           Get a playlist by its Spotify ID. Returns the playlist name,
           description, owner, follower count, track listing, and images.
+        response_kind: json
         parameters:
           - name: playlist_id
             description: "The Spotify ID of the playlist."
@@ -85,6 +88,7 @@ groups:
         description: >
           Get the tracks in a playlist. Returns paginated track objects with
           artist, album, duration, and popularity.
+        response_kind: json
         parameters:
           - name: playlist_id
             description: "The Spotify ID of the playlist."

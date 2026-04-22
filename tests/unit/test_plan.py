@@ -6,12 +6,16 @@ import pytest
 
 from mcp_builder.codegen.plan import (
     GroupPlan,
+    ParamPlan,
     ServerPlan,
     ToolPlan,
+    _build_tool_plan,
+    _resolve_name_collisions,
+    _sanitize_name,
     build_server_plan,
     server_name_to_module,
 )
-from mcp_builder.schema.models import ParamLocation, load_scope
+from mcp_builder.schema.models import ParamLocation, Parameter, Tool, load_scope
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -211,13 +215,11 @@ class TestExplicitLocation:
 
     def test_body_location_routes_to_body_fields(self, spec):
         """location=ParamLocation.BODY params become body fields even without spec requestBody."""
-        from mcp_builder.codegen.plan import _build_tool_plan
-        from mcp_builder.schema.models import Parameter, Tool
-
         tool = Tool(
             tool_name="create_file",
             endpoint="POST /files",
             description="Create a file.",
+            response_kind="json",
             parameters=[
                 Parameter(
                     name="name",
@@ -246,13 +248,11 @@ class TestExplicitLocation:
 
     def test_body_fields_have_correct_location(self, spec):
         """Explicit body params have location='body' in the plan."""
-        from mcp_builder.codegen.plan import _build_tool_plan
-        from mcp_builder.schema.models import Parameter, Tool
-
         tool = Tool(
             tool_name="create_file",
             endpoint="POST /files",
             description="Create a file.",
+            response_kind="json",
             parameters=[
                 Parameter(
                     name="name",
@@ -267,13 +267,11 @@ class TestExplicitLocation:
 
     def test_body_fields_preserve_required(self, spec):
         """Explicit body params preserve YAML required flags."""
-        from mcp_builder.codegen.plan import _build_tool_plan
-        from mcp_builder.schema.models import Parameter, Tool
-
         tool = Tool(
             tool_name="create_file",
             endpoint="POST /files",
             description="Create a file.",
+            response_kind="json",
             parameters=[
                 Parameter(
                     name="name",
@@ -297,13 +295,11 @@ class TestExplicitLocation:
 
     def test_body_fields_preserve_description(self, spec):
         """Explicit body params use YAML descriptions."""
-        from mcp_builder.codegen.plan import _build_tool_plan
-        from mcp_builder.schema.models import Parameter, Tool
-
         tool = Tool(
             tool_name="create_file",
             endpoint="POST /files",
             description="Create a file.",
+            response_kind="json",
             parameters=[
                 Parameter(
                     name="name",
@@ -318,13 +314,11 @@ class TestExplicitLocation:
 
     def test_yaml_only_params_default_to_str(self, spec):
         """Params not in spec default to str type."""
-        from mcp_builder.codegen.plan import _build_tool_plan
-        from mcp_builder.schema.models import Parameter, Tool
-
         tool = Tool(
             tool_name="create_file",
             endpoint="POST /files",
             description="Create a file.",
+            response_kind="json",
             parameters=[
                 Parameter(
                     name="name",
@@ -339,13 +333,11 @@ class TestExplicitLocation:
 
     def test_post_with_path_param_and_body_location(self, spec):
         """POST with path param + explicit body params: path matched, body routed."""
-        from mcp_builder.codegen.plan import _build_tool_plan
-        from mcp_builder.schema.models import Parameter, Tool
-
         tool = Tool(
             tool_name="create_comment",
             endpoint="POST /files/{fileId}/comments",
             description="Create a comment.",
+            response_kind="json",
             parameters=[
                 Parameter(
                     name="fileId",
@@ -370,13 +362,11 @@ class TestExplicitLocation:
 
     def test_put_with_body_location(self, spec):
         """PUT with explicit body params works."""
-        from mcp_builder.codegen.plan import _build_tool_plan
-        from mcp_builder.schema.models import Parameter, Tool
-
         tool = Tool(
             tool_name="update_file",
             endpoint="PUT /files/{fileId}",
             description="Replace a file.",
+            response_kind="json",
             parameters=[
                 Parameter(
                     name="fileId",
@@ -407,13 +397,11 @@ class TestExplicitLocation:
 
     def test_patch_with_body_location(self, spec):
         """PATCH with explicit body params works."""
-        from mcp_builder.codegen.plan import _build_tool_plan
-        from mcp_builder.schema.models import Parameter, Tool
-
         tool = Tool(
             tool_name="patch_file",
             endpoint="PATCH /files/{fileId}",
             description="Partially update a file.",
+            response_kind="json",
             parameters=[
                 Parameter(
                     name="fileId",
@@ -438,15 +426,13 @@ class TestExplicitLocation:
 
     def test_mixed_spec_body_and_explicit_body(self, spec):
         """Spec body fields + explicit body params coexist."""
-        from mcp_builder.codegen.plan import _build_tool_plan
-        from mcp_builder.schema.models import Parameter, Tool
-
         # POST /items has body fields [name, description] in the spec.
         # YAML lists name (spec match, type from spec) + extra_field (no spec, defaults to str).
         tool = Tool(
             tool_name="create_item",
             endpoint="POST /items",
             description="Create an item.",
+            response_kind="json",
             parameters=[
                 Parameter(
                     name="name",
@@ -470,13 +456,11 @@ class TestExplicitLocation:
 
     def test_explicit_query_location(self, spec):
         """location=ParamLocation.QUERY params not in spec are included as query params."""
-        from mcp_builder.codegen.plan import _build_tool_plan
-        from mcp_builder.schema.models import Parameter, Tool
-
         tool = Tool(
             tool_name="create_file",
             endpoint="POST /files",
             description="Create a file.",
+            response_kind="json",
             parameters=[
                 Parameter(
                     name="uploadType",
@@ -501,14 +485,12 @@ class TestExplicitLocation:
 
     def test_spec_type_enrichment(self, spec):
         """When a YAML param matches a spec param, the spec type is used."""
-        from mcp_builder.codegen.plan import _build_tool_plan
-        from mcp_builder.schema.models import Parameter, Tool
-
         # GET /items has query param "fields" with type "string" in the spec.
         tool = Tool(
             tool_name="list_items",
             endpoint="GET /items",
             description="List items.",
+            response_kind="json",
             parameters=[
                 Parameter(
                     name="fields",
@@ -536,45 +518,29 @@ class TestParamNameSanitization:
         assert item_id.original_name == "itemId"
 
     def test_hyphenated_name(self):
-        from mcp_builder.codegen.plan import _sanitize_name
-
         assert _sanitize_name("page-size") == "page_size"
 
     def test_dollar_prefix(self):
-        from mcp_builder.codegen.plan import _sanitize_name
-
         assert _sanitize_name("$filter") == "filter"
 
     def test_dot_separated(self):
-        from mcp_builder.codegen.plan import _sanitize_name
-
         assert _sanitize_name("user.name") == "user_name"
 
     def test_brackets(self):
-        from mcp_builder.codegen.plan import _sanitize_name
-
         assert _sanitize_name("page[size]") == "page_size"
 
     def test_digit_prefix(self):
-        from mcp_builder.codegen.plan import _sanitize_name
-
         assert _sanitize_name("2fa_code") == "param_2fa_code"
 
     def test_empty_string(self):
-        from mcp_builder.codegen.plan import _sanitize_name
-
         assert _sanitize_name("$") == "param_"
 
     def test_python_keyword(self):
-        from mcp_builder.codegen.plan import _sanitize_name
-
         assert _sanitize_name("from") == "from_"
         assert _sanitize_name("class") == "class_"
         assert _sanitize_name("import") == "import_"
 
     def test_method_reserved_names(self):
-        from mcp_builder.codegen.plan import _sanitize_name
-
         assert _sanitize_name("self") == "self_"
         assert _sanitize_name("cls") == "cls_"
 
@@ -587,8 +553,6 @@ class TestParamNameSanitization:
 class TestNameCollisionResolution:
     def test_cross_location_collision(self):
         """Params with same name in different locations get location suffix."""
-        from mcp_builder.codegen.plan import ParamPlan, _resolve_name_collisions
-
         params = [
             ParamPlan(
                 name="id",
@@ -615,8 +579,6 @@ class TestNameCollisionResolution:
 
     def test_same_location_collision_gets_numeric_suffix(self):
         """Two params in the same location that sanitize to the same name get numeric suffix."""
-        from mcp_builder.codegen.plan import ParamPlan, _resolve_name_collisions
-
         # foo-bar and foo.bar both sanitize to foo_bar, both are query params
         params = [
             ParamPlan(
@@ -646,8 +608,6 @@ class TestNameCollisionResolution:
 
     def test_no_collision_unchanged(self):
         """Params with unique names are not modified."""
-        from mcp_builder.codegen.plan import ParamPlan, _resolve_name_collisions
-
         params = [
             ParamPlan(
                 name="id",
@@ -687,43 +647,39 @@ class TestDeterminism:
 
 
 # ---------------------------------------------------------------------------
-# Response body classification — drives client path selection in the renderer
+# response_kind propagation — scope YAML drives the renderer's decode path
 # ---------------------------------------------------------------------------
 
 
-class TestResponseBodyClassification:
-    """ToolPlan.returns_binary + response_content_type control whether the
-    renderer emits the JSON path (``request``) or the bytes path
-    (``request_bytes`` + base64 wrap)."""
+class TestResponseKindPropagation:
+    """``Tool.response_kind`` is copied verbatim into ``ToolPlan.response_kind``.
+    The plan carries no inference logic; ambiguous specs are caught at
+    scope-write time (ai-scoping) and at validator run, not here."""
 
-    def _build(self, tool, spec):
-        from mcp_builder.codegen.plan import _build_tool_plan
+    def test_json_response_kind_propagates(self, spec):
+        tool = Tool(
+            tool_name="get_item",
+            endpoint="GET /items/{itemId}",
+            description="Get an item.",
+            response_kind="json",
+            parameters=[
+                Parameter(
+                    name="itemId",
+                    description="Item ID.",
+                    required=True,
+                    location=ParamLocation.PATH,
+                ),
+            ],
+        )
+        built = _build_tool_plan(tool, spec, "test-group")
+        assert built.response_kind == "json"
 
-        return _build_tool_plan(tool, spec, "test-group")
-
-    def test_json_endpoint_is_not_binary(self, plan):
-        """Standard JSON endpoint: returns_binary=False,
-        response_content_type=application/json."""
-        tool = next(t for t in plan.tools if t.tool_name == "get_item")
-        assert tool.returns_binary is False
-        assert tool.response_content_type == "application/json"
-
-    def test_empty_content_response_defaults_to_json(self, plan):
-        """``list_items`` declares a 200 with no content block (204-style).
-        No evidence the body is non-JSON → stay on the JSON path."""
-        tool = next(t for t in plan.tools if t.tool_name == "list_items")
-        assert tool.returns_binary is False
-        assert tool.response_content_type == "application/json"
-
-    def test_binary_endpoint_flags_binary(self, spec):
-        """image/jpeg 2xx body → returns_binary=True with the non-JSON
-        media type surfaced for docstrings/logs."""
-        from mcp_builder.schema.models import ParamLocation, Parameter, Tool
-
+    def test_binary_response_kind_propagates(self, spec):
         tool = Tool(
             tool_name="get_employee_photo",
             endpoint="GET /employees/{employeeId}/photo",
             description="Fetch the employee photo.",
+            response_kind="binary",
             parameters=[
                 Parameter(
                     name="employeeId",
@@ -733,89 +689,5 @@ class TestResponseBodyClassification:
                 ),
             ],
         )
-        built = self._build(tool, spec)
-        assert built.returns_binary is True
-        assert built.response_content_type == "image/jpeg"
-
-    def test_json_plus_non_json_in_same_status_stays_json(self, spec):
-        """``/reports/{reportId}/download`` declares both application/json
-        and application/pdf on 200. When JSON is available for every 2xx
-        status, the generated tool stays on the JSON path."""
-        from mcp_builder.schema.models import ParamLocation, Parameter, Tool
-
-        tool = Tool(
-            tool_name="download_report",
-            endpoint="GET /reports/{reportId}/download",
-            description="Download a report.",
-            parameters=[
-                Parameter(
-                    name="reportId",
-                    description="Report ID.",
-                    required=True,
-                    location=ParamLocation.PATH,
-                ),
-            ],
-        )
-        built = self._build(tool, spec)
-        assert built.returns_binary is False
-        assert built.response_content_type == "application/json"
-
-    def test_ref_resolved_binary_flags_binary(self, spec):
-        """``$ref`` to a components.responses entry resolves before
-        classification, so ref-based binary responses still flip
-        returns_binary on."""
-        from mcp_builder.schema.models import Tool
-
-        tool = Tool(
-            tool_name="get_shared_binary",
-            endpoint="GET /shared-binary",
-            description="Fetch shared binary.",
-            parameters=[],
-        )
-        built = self._build(tool, spec)
-        assert built.returns_binary is True
-        assert built.response_content_type == "image/png"
-
-    def test_mixed_status_with_non_json_flags_binary(self, tmp_path):
-        """Per-status rule: 200=PDF, 201=JSON → any 2xx without JSON
-        flips returns_binary on. Matches the validator's Phase 1
-        semantics and keeps the renderer on a single code path."""
-        import yaml as _yaml
-
-        from mcp_builder.schema.models import Tool
-        from mcp_builder.spec import load_openapi_spec as _load
-
-        doc = {
-            "openapi": "3.0.3",
-            "info": {"title": "T", "version": "1"},
-            "servers": [{"url": "https://x"}],
-            "paths": {
-                "/mixed": {
-                    "get": {
-                        "responses": {
-                            "200": {
-                                "description": "pdf",
-                                "content": {"application/pdf": {}},
-                            },
-                            "201": {
-                                "description": "json",
-                                "content": {"application/json": {}},
-                            },
-                        }
-                    }
-                }
-            },
-        }
-        spec_path = tmp_path / "spec.yaml"
-        spec_path.write_text(_yaml.safe_dump(doc))
-        small_spec = _load(spec_path)
-
-        tool = Tool(
-            tool_name="get_mixed",
-            endpoint="GET /mixed",
-            description="Mixed statuses.",
-            parameters=[],
-        )
-        built = self._build(tool, small_spec)
-        assert built.returns_binary is True
-        assert built.response_content_type == "application/pdf"
+        built = _build_tool_plan(tool, spec, "test-group")
+        assert built.response_kind == "binary"

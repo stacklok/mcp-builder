@@ -18,6 +18,7 @@ groups:
       - tool_name: get_ep1
         endpoint: GET /ep1
         description: "First selected endpoint."
+        response_kind: json
         parameters:
           - name: q
             description: "Search query."
@@ -26,6 +27,7 @@ groups:
       - tool_name: get_ep5
         endpoint: GET /ep5
         description: "Fifth endpoint — has two query params."
+        response_kind: json
         parameters:
           - name: q
             description: "Search query."
@@ -38,6 +40,7 @@ groups:
       - tool_name: get_ep10
         endpoint: GET /ep10
         description: "Tenth endpoint — also has two query params."
+        response_kind: json
         parameters:
           - name: fields
             description: "Fields to include."

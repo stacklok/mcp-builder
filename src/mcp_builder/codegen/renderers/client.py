@@ -29,9 +29,29 @@ _CLIENT_TEMPLATE = textwrap.dedent('''\
     Uses the project's auth middleware to obtain bearer tokens.
     """
 
+    import os
+
     import httpx
 
     from {module_name}.auth import get_bearer_token
+
+
+    # Cap on binary response size. Set MCP_MAX_BINARY_RESPONSE_BYTES to
+    # override. Base64 encoding expands payload ~1.33x, so a 32 MiB body
+    # becomes a ~43 MiB MCP message before transport overhead — callers
+    # hitting the cap should split the endpoint or stream out-of-band.
+    _DEFAULT_MAX_BINARY_BYTES = 32 * 1024 * 1024
+
+
+    def _max_binary_bytes() -> int:
+        raw = os.environ.get("MCP_MAX_BINARY_RESPONSE_BYTES")
+        if not raw:
+            return _DEFAULT_MAX_BINARY_BYTES
+        try:
+            value = int(raw)
+        except ValueError:
+            return _DEFAULT_MAX_BINARY_BYTES
+        return value if value > 0 else _DEFAULT_MAX_BINARY_BYTES
 
 
     class APIClient:
@@ -61,52 +81,16 @@ _CLIENT_TEMPLATE = textwrap.dedent('''\
                 json_body: JSON request body.
 
             Returns:
-                Parsed JSON response as a dict.
+                Parsed JSON response as a dict. For 204 / empty-body
+                2xx responses, returns an empty dict so void endpoints
+                don't raise ``JSONDecodeError`` on a zero-length body.
             """
-            response = await self._send(
-                method, path, params=params, json_body=json_body
-            )
-            return response.json()
-
-        async def request_bytes(
-            self,
-            method: str,
-            path: str,
-            *,
-            params: dict | None = None,
-            json_body: dict | None = None,
-        ) -> bytes:
-            """Send an HTTP request and return the raw response body.
-
-            Used for endpoints whose success responses declare a
-            non-JSON media type (images, PDFs, octet-streams). The
-            caller is responsible for any further decoding (e.g.
-            base64 for MCP transport).
-            """
-            response = await self._send(
-                method, path, params=params, json_body=json_body
-            )
-            return response.content
-
-        async def _send(
-            self,
-            method: str,
-            path: str,
-            *,
-            params: dict | None,
-            json_body: dict | None,
-        ) -> httpx.Response:
-            # Strip None query params so unset optional args aren't sent
-            # as empty strings (e.g. driveId=&pageToken=) which cause 400s.
-            # Body is left as-is: some APIs distinguish null from absent.
-            if params:
-                params = {{k: v for k, v in params.items() if v is not None}}
-
-            headers: dict[str, str] = {{}}
-            token = get_bearer_token()
-            if token:
-                headers["Authorization"] = f"Bearer {{token}}"
-
+            params = _strip_none(params)
+            headers = _auth_headers()
+            # Force JSON on servers that honor content negotiation so an
+            # ambiguous spec like 200 returning application/json or
+            # application/pdf doesn't silently hand us PDF bytes.
+            headers["Accept"] = "application/json"
             async with httpx.AsyncClient(base_url=self._base_url) as client:
                 response = await client.request(
                     method,
@@ -116,7 +100,93 @@ _CLIENT_TEMPLATE = textwrap.dedent('''\
                     headers=headers,
                 )
                 response.raise_for_status()
-                return response
+                if not response.content:
+                    return {{}}
+                return response.json()
+
+        async def request_bytes(
+            self,
+            method: str,
+            path: str,
+            *,
+            params: dict | None = None,
+            json_body: dict | None = None,
+        ) -> bytes:
+            """Stream a binary response body, bounded by a size cap.
+
+            Used for endpoints whose success responses declare a
+            non-JSON media type (images, PDFs, octet-streams). Streams
+            the body via ``aiter_bytes`` so responses larger than the
+            cap are rejected before they OOM the process, even when
+            the server omits Content-Length (chunked transfer).
+
+            Returns the raw bytes; the caller is responsible for any
+            further encoding (e.g. base64 for MCP transport). Note that
+            base64 expands the payload ~1.33x, so the effective transport
+            size is larger than the returned bytes.
+
+            Raises:
+                ValueError: if the response body exceeds the configured
+                    cap (32 MiB by default; override with the
+                    ``MCP_MAX_BINARY_RESPONSE_BYTES`` env var).
+            """
+            params = _strip_none(params)
+            max_bytes = _max_binary_bytes()
+            async with httpx.AsyncClient(base_url=self._base_url) as client:
+                async with client.stream(
+                    method,
+                    path,
+                    params=params,
+                    json=json_body,
+                    headers=_auth_headers(),
+                ) as response:
+                    response.raise_for_status()
+                    declared = _parse_content_length(
+                        response.headers.get("content-length")
+                    )
+                    if declared is not None and declared > max_bytes:
+                        raise ValueError(
+                            f"Response body too large: Content-Length "
+                            f"{{declared}} exceeds cap {{max_bytes}}"
+                        )
+                    chunks: list[bytes] = []
+                    total = 0
+                    async for chunk in response.aiter_bytes():
+                        total += len(chunk)
+                        if total > max_bytes:
+                            raise ValueError(
+                                f"Response body too large: exceeded cap "
+                                f"{{max_bytes}} while streaming"
+                            )
+                        chunks.append(chunk)
+                    return b"".join(chunks)
+
+
+    def _strip_none(params: dict | None) -> dict | None:
+        # Strip None query params so unset optional args aren't sent
+        # as empty strings (e.g. driveId=&pageToken=) which cause 400s.
+        # Body is left as-is: some APIs distinguish null from absent.
+        if not params:
+            return params
+        return {{k: v for k, v in params.items() if v is not None}}
+
+
+    def _auth_headers() -> dict[str, str]:
+        headers: dict[str, str] = {{}}
+        token = get_bearer_token()
+        if token:
+            headers["Authorization"] = f"Bearer {{token}}"
+        return headers
+
+
+    def _parse_content_length(value: str | None) -> int | None:
+        if value is None:
+            return None
+        try:
+            parsed = int(value)
+        except ValueError:
+            return None
+        return parsed if parsed >= 0 else None
 ''')
 
 

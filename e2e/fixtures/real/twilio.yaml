@@ -25,6 +25,7 @@ groups:
           List SMS/MMS messages for an account. Returns message SID, to/from
           numbers, body preview, status, and timestamps. Supports filtering
           by recipient, sender, and date range.
+        response_kind: json
         parameters:
           - name: AccountSid
             description: "The Twilio Account SID that owns the messages."
@@ -44,6 +45,7 @@ groups:
         description: >
           Retrieve a single message by its SID. Returns the full message
           record including body text, media URLs, price, and error details.
+        response_kind: json
         parameters:
           - name: AccountSid
             description: "The Twilio Account SID."
@@ -63,6 +65,7 @@ groups:
           List TwiML applications for an account. Returns application SID,
           friendly name, voice/SMS URLs, and creation date. Supports
           filtering by friendly name.
+        response_kind: json
         parameters:
           - name: AccountSid
             description: "The Twilio Account SID."

@@ -191,7 +191,8 @@ class TestSelectiveScoping:
 
 
 # ---------------------------------------------------------------------------
-# Binary responses — image/jpeg endpoint renders the bytes path (#81 Phase 2)
+# Binary responses — response_kind=binary renders the bytes path,
+# response_kind=json leaves the JSON path alone.
 # ---------------------------------------------------------------------------
 
 
@@ -200,56 +201,45 @@ class TestBinaryResponses:
     def plan(self):
         return _load_plan("binary")
 
-    def test_binary_tool_flagged_in_plan(self, plan) -> None:
+    def test_response_kind_propagated(self, plan) -> None:
         photo = next(t for t in plan.tools if t.tool_name == "get_employee_photo")
-        assert photo.returns_binary is True
-        assert photo.response_content_type == "image/jpeg"
-
-    def test_json_tool_unaffected(self, plan) -> None:
         item = next(t for t in plan.tools if t.tool_name == "get_item")
-        assert item.returns_binary is False
-        assert item.response_content_type == "application/json"
+        assert photo.response_kind == "binary"
+        assert item.response_kind == "json"
 
-    def test_generated_code_is_valid_python(self, tmp_path: Path) -> None:
-        """End-to-end: run the pipeline and ensure every generated file
-        compiles. Guards against JSONDecodeError-at-runtime regressions
-        from shipping the JSON path for an image/jpeg endpoint."""
+    def test_pipeline_renders_both_paths(self, tmp_path: Path) -> None:
+        """Single pipeline run covers: valid Python, tool fork (JSON vs
+        binary decode), and the client's streaming bytes path with size
+        cap. One pipeline invocation — not three — because later tests
+        used to duplicate the generation step."""
         project = run_pipeline(
             FIXTURES / "binary_scope.yaml",
             FIXTURES / "binary_openapi.yaml",
             TEMPLATE_DIR,
             tmp_path,
         )
+
+        # Every generated file compiles.
         for py_file in project.rglob("*.py"):
             py_compile.compile(str(py_file), doraise=True)
 
-    def test_tools_module_has_both_paths(self, tmp_path: Path) -> None:
-        """The generated tools.py must wire the binary tool through
-        request_bytes + base64, while leaving the JSON tool on request."""
-        project = run_pipeline(
-            FIXTURES / "binary_scope.yaml",
-            FIXTURES / "binary_openapi.yaml",
-            TEMPLATE_DIR,
-            tmp_path,
-        )
+        # Tools module: JSON tool on .request(), binary tool on .request_bytes()
+        # with base64 wrapping.
         tools_py = project / "src" / "binary_api_mcp" / "api" / "tools.py"
-        content = tools_py.read_text()
-        assert "import base64" in content
-        assert "request_bytes(" in content
-        assert "base64.b64encode" in content
-        # JSON path still present for get_item.
-        get_item_section = content.split("async def get_item")[1].split("async def")[0]
+        tools_content = tools_py.read_text()
+        assert "import base64" in tools_content
+        assert "request_bytes(" in tools_content
+        assert "base64.b64encode" in tools_content
+        get_item_section = tools_content.split("async def get_item")[1].split(
+            "async def"
+        )[0]
         assert "self._client.request(" in get_item_section
         assert "-> dict:" in get_item_section
 
-    def test_client_module_has_request_bytes(self, tmp_path: Path) -> None:
-        project = run_pipeline(
-            FIXTURES / "binary_scope.yaml",
-            FIXTURES / "binary_openapi.yaml",
-            TEMPLATE_DIR,
-            tmp_path,
-        )
+        # Client module: bytes path streams via aiter_bytes with size cap.
         client_py = project / "src" / "binary_api_mcp" / "client.py"
-        content = client_py.read_text()
-        assert "async def request_bytes(" in content
-        assert "return response.content" in content
+        client_content = client_py.read_text()
+        assert "async def request_bytes(" in client_content
+        assert "client.stream(" in client_content
+        assert "aiter_bytes" in client_content
+        assert "MCP_MAX_BINARY_RESPONSE_BYTES" in client_content

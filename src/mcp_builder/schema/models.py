@@ -96,11 +96,18 @@ class Tool(BaseModel):
     OpenAPI spec. ``hints`` are free-form notes from scoping that Phase 4
     uses to suggest polish (pagination, response shaping, quirks).
 
+    ``response_kind`` declares how the generated tool decodes the response
+    body: ``"json"`` returns a ``dict``, ``"binary"`` returns a
+    base64-encoded ``str``. It is required at scoping time so the decision
+    is explicit in the scope YAML and cannot be silently inferred from an
+    ambiguous spec.
+
     Example:
 
         - tool_name: list_drive_files
           endpoint: GET /files
           description: List files visible to the authenticated user.
+          response_kind: json
           parameters:
             - name: q
               description: Drive query string.
@@ -115,6 +122,7 @@ class Tool(BaseModel):
     tool_name: str
     endpoint: str
     description: str
+    response_kind: Literal["json", "binary"]
     parameters: list[Parameter] = Field(default_factory=list)
     hints: list[str] | None = None
 

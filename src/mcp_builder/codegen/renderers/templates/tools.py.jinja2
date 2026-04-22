@@ -20,13 +20,13 @@ class Tools:
     def __init__(self, client: APIClient) -> None:
         self._client = client
 {% for tool in tools %}
-{% if tool.returns_binary %}
+{% if tool.response_kind == "binary" %}
 
     async def {{ tool.method_name }}(self{{ tool.signature }}) -> str:
         """{{ tool.description | py_string }}
 
-        Upstream returns {{ tool.response_content_type }}; the raw bytes
-        are base64-encoded so the value survives MCP transport.
+        Upstream returns a non-JSON body; the raw bytes are
+        base64-encoded so the value survives MCP transport.
         """
 {% for hint in tool.hints %}
         # Hint: {{ hint | py_string }}

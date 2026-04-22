@@ -59,6 +59,7 @@ def _make_tool(name: str = "get_item") -> ToolPlan:
         body_fields=[],
         hints=[],
         group_name="default",
+        response_kind="json",
     )
 
 

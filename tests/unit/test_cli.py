@@ -145,6 +145,7 @@ class TestCmdValidate:
                     "tool_name": "get_thing",
                     "endpoint": "GET /things",
                     "description": "Get a thing",
+                    "response_kind": "json",
                 }
             ]
         scope_data = {

@@ -25,6 +25,7 @@ groups:
           List files in the user's Drive or a specific folder. Returns file
           names, IDs, MIME types, and modification times. Supports query
           filtering via the 'q' parameter using Drive query syntax.
+        response_kind: json
         parameters:
           - name: q
             description: >
@@ -58,6 +59,7 @@ groups:
         description: >
           Get metadata for a single file by ID. Returns the full file
           resource including name, size, MIME type, and parent folders.
+        response_kind: json
         parameters:
           - name: fileId
             description: "The ID of the file to retrieve."
@@ -78,6 +80,7 @@ groups:
           Create a new file or folder. For folders, set mimeType to
           "application/vnd.google-apps.folder". This creates metadata only;
           file content requires a separate upload request.
+        response_kind: json
         parameters:
           - name: name
             description: "The name of the file or folder to create."
@@ -106,6 +109,7 @@ groups:
           List all comments on a file. Returns comment text, author, and
           timestamps. Use this to review feedback and discussion on a
           document.
+        response_kind: json
         parameters:
           - name: fileId
             description: "The ID of the file."
@@ -123,6 +127,7 @@ groups:
         description: >
           Add a comment to a file. Use this to leave feedback or start a
           discussion thread on a document.
+        response_kind: json
         parameters:
           - name: fileId
             description: "The ID of the file to comment on."

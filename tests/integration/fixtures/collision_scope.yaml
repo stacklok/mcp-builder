@@ -16,6 +16,7 @@ groups:
       - tool_name: get_resource
         endpoint: GET /resources/{id}
         description: "Cross-location and same-location collision test."
+        response_kind: json
         parameters:
           - name: id
             description: "Resource ID."
@@ -36,6 +37,7 @@ groups:
       - tool_name: list_filters
         endpoint: GET /filters
         description: "Triple collision and keyword collision test."
+        response_kind: json
         parameters:
           - name: a.b
             description: "Dotted."

@@ -25,6 +25,7 @@ groups:
           List meetings scheduled by a user. Returns meeting ID, topic,
           start time, duration, timezone, and join URL. Supports filtering
           by meeting type (scheduled, live, upcoming).
+        response_kind: json
         parameters:
           - name: userId
             description: >
@@ -49,6 +50,7 @@ groups:
           Get details of a specific meeting by ID. Returns the full meeting
           record including topic, agenda, settings, recurrence pattern, and
           dial-in numbers.
+        response_kind: json
         parameters:
           - name: meetingId
             description: "The meeting ID."
@@ -67,6 +69,7 @@ groups:
         description: >
           List users in the Zoom account. Returns user ID, email, name,
           type, and status. Supports filtering by status and role.
+        response_kind: json
         parameters:
           - name: status
             description: >
@@ -88,6 +91,7 @@ groups:
         description: >
           Get a user's profile by ID or email. Returns full profile including
           name, email, type, role, timezone, and department.
+        response_kind: json
         parameters:
           - name: userId
             description: "The user ID or email address."
