@@ -2,8 +2,8 @@
 
 from typing import Literal
 
-from mcp_builder.codegen.plan import ParamPlan, ToolPlan
-from mcp_builder.codegen.renderers.tools import render_tools_module
+from mcp_builder.generate.plan import ParamPlan, ToolPlan
+from mcp_builder.generate.renderers.tools import render_tools_module
 from mcp_builder.schema.models import ParamLocation
 from mcp_builder.spec import PythonType
 from tests.unit.test_renderers.conftest import make_plan

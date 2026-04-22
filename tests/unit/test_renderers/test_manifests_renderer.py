@@ -5,8 +5,8 @@ from __future__ import annotations
 import pytest
 import yaml
 
-from mcp_builder.codegen.plan import AuthPlan, ServerPlan
-from mcp_builder.codegen.renderers.manifests import (
+from mcp_builder.generate.plan import AuthPlan, ServerPlan
+from mcp_builder.generate.renderers.manifests import (
     _derive_provider_name,
     render_external_auth_config,
     render_ingress,

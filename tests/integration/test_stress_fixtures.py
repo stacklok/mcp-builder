@@ -12,8 +12,8 @@ from pathlib import Path
 
 import pytest
 
-from mcp_builder.cli import run_pipeline
-from mcp_builder.codegen.plan import build_server_plan
+from mcp_builder.pipeline import run_pipeline
+from mcp_builder.generate.plan import build_server_plan
 from mcp_builder.schema.models import load_scope
 from mcp_builder.spec.loader import load_openapi_spec
 

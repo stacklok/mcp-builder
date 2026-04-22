@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from mcp_builder.codegen.plan import (
+from mcp_builder.generate.plan import (
     GroupPlan,
     ParamPlan,
     ServerPlan,

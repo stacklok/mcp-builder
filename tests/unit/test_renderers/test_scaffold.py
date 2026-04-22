@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from mcp_builder.codegen.plan import AuthPlan, ServerPlan
-from mcp_builder.codegen.renderers.scaffold import scaffold_project
+from mcp_builder.generate.plan import AuthPlan, ServerPlan
+from mcp_builder.generate.scaffold import scaffold_project
 
 from .conftest import TEMPLATE_DIR
 

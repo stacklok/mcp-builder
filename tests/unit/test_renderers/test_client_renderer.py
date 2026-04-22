@@ -1,7 +1,7 @@
 """Tests for the client renderer."""
 
-from mcp_builder.codegen.plan import AuthPlan, ServerPlan
-from mcp_builder.codegen.renderers.client import render_client_module
+from mcp_builder.generate.plan import AuthPlan, ServerPlan
+from mcp_builder.generate.renderers.client import render_client_module
 
 
 class TestRenderClientModule:

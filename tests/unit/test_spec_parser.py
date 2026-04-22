@@ -14,8 +14,8 @@ from mcp_builder.spec import (
     get_response_content_types,
     load_openapi_spec,
     parse_endpoint,
-    resolve_response_ref,
 )
+from mcp_builder.spec.resolver import resolve_response_ref
 
 
 def _load_inline_spec(doc, tmp_path):
