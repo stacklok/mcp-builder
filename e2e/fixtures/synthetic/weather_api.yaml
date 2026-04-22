@@ -23,6 +23,7 @@ groups:
         description: >
           Get the weather forecast for a location. Returns temperature,
           conditions, humidity, and wind speed for the next 5 days.
+        response_kind: json
         parameters:
           - name: location
             description: "City name or postal code for the forecast."

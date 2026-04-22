@@ -26,6 +26,7 @@ groups:
           List issues in a repository. Returns issue title, number, state,
           labels, assignees, and timestamps. Supports filtering by state,
           labels, assignee, and sort order.
+        response_kind: json
         parameters:
           - name: owner
             description: "The account owner of the repository."
@@ -60,6 +61,7 @@ groups:
         description: >
           Get a single issue by number. Returns full issue details including
           body, labels, assignees, milestone, and timeline metadata.
+        response_kind: json
         parameters:
           - name: owner
             description: "The account owner of the repository."
@@ -79,6 +81,7 @@ groups:
         description: >
           Create a new issue in a repository. Requires at minimum a title.
           Can optionally include body text, labels, assignees, and milestone.
+        response_kind: json
         parameters:
           - name: owner
             description: "The account owner of the repository."
@@ -106,6 +109,7 @@ groups:
         description: >
           Add a comment to an existing issue. Use this to provide updates,
           ask questions, or discuss the issue with collaborators.
+        response_kind: json
         parameters:
           - name: owner
             description: "The account owner of the repository."
@@ -133,6 +137,7 @@ groups:
           Get the contents of a file in a repository. Returns the file
           content (base64 encoded), size, and SHA. For directories, returns
           a listing of entries.
+        response_kind: json
         parameters:
           - name: owner
             description: "The account owner of the repository."
@@ -162,6 +167,7 @@ groups:
           Search for code across all public repositories or within specific
           repositories. Uses GitHub's code search syntax for the query
           parameter.
+        response_kind: json
         parameters:
           - name: q
             description: >
@@ -188,6 +194,7 @@ groups:
           List all items on an organization project board. Returns issues,
           pull requests, and draft items with their field values (status,
           priority, iteration, etc.).
+        response_kind: json
         parameters:
           - name: org
             description: "The organization that owns the project."
@@ -211,6 +218,7 @@ groups:
           field names, types, and allowed values. Use this to understand
           what fields like Status, Priority, or Sprint are configured on
           the board.
+        response_kind: json
         parameters:
           - name: org
             description: "The organization that owns the project."

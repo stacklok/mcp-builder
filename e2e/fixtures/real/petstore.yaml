@@ -24,6 +24,7 @@ groups:
         description: >
           Find pets by availability status. Returns a list of pets matching
           the given status filter (available, pending, or sold).
+        response_kind: json
         parameters:
           - name: status
             description: >
@@ -37,6 +38,7 @@ groups:
         description: >
           Get a single pet by its numeric ID. Returns the full pet record
           including name, category, tags, photo URLs, and status.
+        response_kind: json
         parameters:
           - name: petId
             description: "The numeric ID of the pet to retrieve."
@@ -51,6 +53,7 @@ groups:
         description: >
           Place an order for a pet. Accepts pet ID, quantity, and ship date.
           Returns the created order with status and completion flag.
+        response_kind: json
         parameters:
           - name: petId
             description: "The ID of the pet being ordered."
@@ -66,6 +69,7 @@ groups:
         description: >
           Look up an order by its numeric ID. Returns order details including
           pet ID, quantity, ship date, status, and completion flag.
+        response_kind: json
         parameters:
           - name: orderId
             description: "The numeric ID of the order."
@@ -80,6 +84,7 @@ groups:
         description: >
           Get a user account by username. Returns the full user profile
           including name, email, phone, and account status.
+        response_kind: json
         parameters:
           - name: username
             description: "The username to look up."

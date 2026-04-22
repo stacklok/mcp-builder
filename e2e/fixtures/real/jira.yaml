@@ -26,6 +26,7 @@ groups:
           keys, summaries, statuses, assignees, and any requested fields.
           JQL supports complex filtering by project, status, assignee,
           labels, dates, and custom fields.
+        response_kind: json
         parameters:
           - name: jql
             description: >
@@ -62,6 +63,7 @@ groups:
           Get full details for a single issue by key or ID. Returns all
           fields including summary, description (in Atlassian Document
           Format), status, assignee, reporter, comments, and custom fields.
+        response_kind: json
         parameters:
           - name: issueIdOrKey
             description: "The issue key (e.g. PROJ-123) or numeric issue ID."
@@ -82,6 +84,7 @@ groups:
           Create a new issue in a project. Requires at minimum a project
           key, issue type, and summary. Description must be in Atlassian
           Document Format (ADF) for API v3.
+        response_kind: json
         parameters:
           - name: project
             description: "The project key (e.g. ENG) or project ID."
@@ -118,6 +121,7 @@ groups:
           Update fields on an existing issue. Only include the fields you
           want to change. Supports updating summary, description, labels,
           assignee, priority, and custom fields.
+        response_kind: json
         parameters:
           - name: issueIdOrKey
             description: "The issue key (e.g. PROJ-123) or numeric issue ID."
@@ -146,6 +150,7 @@ groups:
           Permanently delete an issue. This cannot be undone. If the issue
           has subtasks, they must be deleted first unless deleteSubtasks
           is set to true.
+        response_kind: json
         parameters:
           - name: issueIdOrKey
             description: "The issue key (e.g. PROJ-123) or numeric issue ID."
@@ -162,6 +167,7 @@ groups:
           Add a comment to an issue. In API v3, the comment body must be
           in Atlassian Document Format (ADF), a structured JSON format.
           Comments support visibility restrictions to specific roles.
+        response_kind: json
         parameters:
           - name: issueIdOrKey
             description: "The issue key (e.g. PROJ-123) or numeric issue ID."
@@ -183,6 +189,7 @@ groups:
           retrieve available transitions for the issue's current state,
           then POST with the target transition ID to execute it. Common
           transitions include "To Do" -> "In Progress" -> "Done".
+        response_kind: json
         parameters:
           - name: issueIdOrKey
             description: "The issue key (e.g. PROJ-123) or numeric issue ID."

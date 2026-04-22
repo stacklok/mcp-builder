@@ -16,6 +16,7 @@ groups:
       - tool_name: get_item
         endpoint: GET /items/{itemId}
         description: "Get an item by its ID."
+        response_kind: json
         parameters:
           - name: itemId
             description: "The item identifier."

@@ -106,9 +106,9 @@ class ExtractedBodyField(BaseModel):
 class ExtractedResponse(BaseModel):
     """Declared media types for a single 2xx response of an operation.
 
-    Consumed by: codegen.validator._check_response_content_types() to
-    decide whether the generated (JSON-only) client can decode the
-    operation's success body.
+    Consumed by the codegen validator to cross-check a scope's declared
+    ``response_kind`` (``json`` or ``binary``) against the media types
+    the spec actually declares.
 
     ``media_types`` is sorted for stable error messages. An empty list
     means the response is declared with no ``content`` block (e.g. 204
@@ -124,6 +124,6 @@ class ExtractedResponse(BaseModel):
     # media_types stays ``list[str]`` deliberately. Media-type grammar
     # (RFC 6838) allows arbitrary vendor types, so a narrower Literal or
     # enum would reject valid inputs. Shape parsing isn't useful here —
-    # _is_json_media_type() only asks "is this JSON?", which is a cheap
+    # is_json_media_type() only asks "is this JSON?", which is a cheap
     # regex, not a grammar walk.
     media_types: list[str]

@@ -23,6 +23,7 @@ groups:
         description: >
           Check the API health status. Returns the current service state,
           uptime, and version information.
+        response_kind: json
 
 auth:
   type: none

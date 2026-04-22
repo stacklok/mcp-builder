@@ -1,0 +1,44 @@
+openapi: 3.0.3
+info:
+  title: Binary Response API
+  version: "1"
+servers:
+  - url: https://api.example.com
+paths:
+  /items/{itemId}:
+    get:
+      operationId: getItem
+      summary: Get an item by ID (JSON response)
+      parameters:
+        - name: itemId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: "Item ID."
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+  /employees/{employeeId}/photo:
+    get:
+      operationId: getEmployeePhoto
+      summary: Get an employee photo (binary JPEG)
+      parameters:
+        - name: employeeId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: "Employee ID."
+      responses:
+        "200":
+          description: The employee photo.
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                format: binary

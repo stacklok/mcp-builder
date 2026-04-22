@@ -33,6 +33,7 @@ def _minimal_scope(**overrides: object) -> dict:
                         "tool_name": "get_status",
                         "endpoint": "GET /status",
                         "description": "Get status.",
+                        "response_kind": "json",
                     }
                 ],
             }
@@ -49,6 +50,7 @@ def _make_tool(**overrides: object) -> dict:
         "tool_name": "get_item",
         "endpoint": "GET /items",
         "description": "Get items.",
+        "response_kind": "json",
     }
     base.update(overrides)
     return base

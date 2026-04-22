@@ -52,7 +52,7 @@ _CLIENT_TEMPLATE = textwrap.dedent('''\
             params: dict | None = None,
             json_body: dict | None = None,
         ) -> dict:
-            """Send an HTTP request to the upstream API.
+            """Send an HTTP request to a JSON endpoint.
 
             Args:
                 method: HTTP method (GET, POST, PUT, PATCH, DELETE).
@@ -61,19 +61,13 @@ _CLIENT_TEMPLATE = textwrap.dedent('''\
                 json_body: JSON request body.
 
             Returns:
-                Parsed JSON response as a dict.
+                Parsed JSON response as a dict. For 204 / empty-body
+                2xx responses, returns an empty dict so void endpoints
+                don't raise ``JSONDecodeError`` on a zero-length body.
             """
-            # Strip None query params so unset optional args aren't sent
-            # as empty strings (e.g. driveId=&pageToken=) which cause 400s.
-            # Body is left as-is: some APIs distinguish null from absent.
-            if params:
-                params = {{k: v for k, v in params.items() if v is not None}}
-
-            headers: dict[str, str] = {{}}
-            token = get_bearer_token()
-            if token:
-                headers["Authorization"] = f"Bearer {{token}}"
-
+            params = _strip_none(params)
+            headers = _auth_headers()
+            headers["Accept"] = "application/json"
             async with httpx.AsyncClient(base_url=self._base_url) as client:
                 response = await client.request(
                     method,
@@ -83,7 +77,64 @@ _CLIENT_TEMPLATE = textwrap.dedent('''\
                     headers=headers,
                 )
                 response.raise_for_status()
+                if not response.content:
+                    return {{}}
                 return response.json()
+
+        async def request_bytes(
+            self,
+            method: str,
+            path: str,
+            *,
+            params: dict | None = None,
+            json_body: dict | None = None,
+        ) -> bytes:
+            """Send an HTTP request to a binary endpoint and return the raw bytes.
+
+            Used for endpoints whose success responses declare a non-JSON
+            media type (images, PDFs, octet-streams). The caller is
+            responsible for any further encoding (e.g. base64 for MCP
+            transport).
+            """
+            params = _strip_none(params)
+            headers = _auth_headers()
+            headers["Accept"] = "*/*"
+            async with httpx.AsyncClient(base_url=self._base_url) as client:
+                response = await client.request(
+                    method,
+                    path,
+                    params=params,
+                    json=json_body,
+                    headers=headers,
+                )
+                response.raise_for_status()
+                return response.content
+
+
+    def _strip_none(params: dict | None) -> dict | None:
+        """Drop query params whose value is None.
+
+        Unset optional args would otherwise be sent as empty strings
+        (e.g. ``driveId=&pageToken=``) which some APIs reject with 400.
+        Body payloads are left untouched: some APIs distinguish an
+        explicit ``null`` from an absent field.
+        """
+        if not params:
+            return params
+        return {{k: v for k, v in params.items() if v is not None}}
+
+
+    def _auth_headers() -> dict[str, str]:
+        """Build the Authorization header from the project's auth layer.
+
+        Returns an empty dict when no bearer token is available so the
+        call still reaches unauthenticated endpoints.
+        """
+        headers: dict[str, str] = {{}}
+        token = get_bearer_token()
+        if token:
+            headers["Authorization"] = f"Bearer {{token}}"
+        return headers
 ''')
 
 

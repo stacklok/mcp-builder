@@ -26,6 +26,7 @@ groups:
           List all employees in the company directory. Returns names, IDs,
           departments, job titles, and work emails. Use this to browse or
           search the org chart.
+        response_kind: json
         hints:
           - "response may be large for big orgs — consider extracting only needed fields"
 
@@ -35,6 +36,7 @@ groups:
           Get detailed information for a single employee by their BambooHR ID.
           Supports selecting specific fields via a comma-separated list. The
           API supports over 400 possible fields per employee record.
+        response_kind: json
         parameters:
           - name: id
             description: "The BambooHR employee ID."
@@ -57,6 +59,7 @@ groups:
           Get a list of employees who are currently out or will be out in a
           date range. Includes both time-off and company holidays. Defaults
           to today through 14 days out if no dates are specified.
+        response_kind: json
         parameters:
           - name: start
             description: "Start date in YYYY-MM-DD format. Defaults to today."
@@ -73,6 +76,7 @@ groups:
           List time-off requests across the organization. Managers use this
           to review pending, approved, or denied requests for their reports.
           Supports filtering by status, employee, date range, and request type.
+        response_kind: json
         parameters:
           - name: status
             description: >
@@ -97,6 +101,7 @@ groups:
           List available time-off policies for the company. Returns policy
           names, types, and accrual details. Use this to understand what
           types of time off are available before creating a request.
+        response_kind: json
 
       - tool_name: request_time_off
         endpoint: PUT /api/v1/employees/{employeeId}/time_off/request
@@ -105,6 +110,7 @@ groups:
           Requires specifying the time-off type, start and end dates, and
           an optional note. The request enters a pending state for manager
           approval unless auto-approve is configured.
+        response_kind: json
         parameters:
           - name: timeOffTypeId
             description: "The ID of the time-off policy type (from get_time_off_policies)."
@@ -132,6 +138,7 @@ groups:
           List all benefits plans offered by the company. Returns plan names,
           types, and coverage details. Use this to understand what benefits
           are available for enrollment.
+        response_kind: json
 
       - tool_name: get_member_benefits
         endpoint: GET /api/v1/benefits/member-benefits
@@ -139,6 +146,7 @@ groups:
           Get the authenticated employee's enrolled benefits. Returns current
           plan selections, coverage levels, and enrollment status. Results
           are paginated for employees with many benefit elections.
+        response_kind: json
         hints:
           - "paginated: uses page/pageSize cursor pattern"
 

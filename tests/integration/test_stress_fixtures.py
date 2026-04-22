@@ -188,3 +188,55 @@ class TestSelectiveScoping:
         )
         for py_file in project.rglob("*.py"):
             py_compile.compile(str(py_file), doraise=True)
+
+
+# ---------------------------------------------------------------------------
+# Binary responses — response_kind=binary renders the bytes path,
+# response_kind=json leaves the JSON path alone.
+# ---------------------------------------------------------------------------
+
+
+class TestBinaryResponses:
+    @pytest.fixture()
+    def plan(self):
+        return _load_plan("binary")
+
+    def test_response_kind_propagated(self, plan) -> None:
+        photo = next(t for t in plan.tools if t.tool_name == "get_employee_photo")
+        item = next(t for t in plan.tools if t.tool_name == "get_item")
+        assert photo.response_kind == "binary"
+        assert item.response_kind == "json"
+
+    def test_pipeline_renders_both_paths(self, tmp_path: Path) -> None:
+        """Single pipeline run covers: valid Python and the tool fork
+        (JSON vs binary decode). One pipeline invocation — not three —
+        because later tests used to duplicate the generation step."""
+        project = run_pipeline(
+            FIXTURES / "binary_scope.yaml",
+            FIXTURES / "binary_openapi.yaml",
+            TEMPLATE_DIR,
+            tmp_path,
+        )
+
+        # Every generated file compiles.
+        for py_file in project.rglob("*.py"):
+            py_compile.compile(str(py_file), doraise=True)
+
+        # Tools module: JSON tool on .request(), binary tool on .request_bytes()
+        # with base64 wrapping.
+        tools_py = project / "src" / "binary_api_mcp" / "api" / "tools.py"
+        tools_content = tools_py.read_text()
+        assert "import base64" in tools_content
+        assert "request_bytes(" in tools_content
+        assert "base64.b64encode" in tools_content
+        get_item_section = tools_content.split("async def get_item")[1].split(
+            "async def"
+        )[0]
+        assert "self._client.request(" in get_item_section
+        assert "-> dict:" in get_item_section
+
+        # Client module exposes the bytes path used by binary tools.
+        client_py = project / "src" / "binary_api_mcp" / "client.py"
+        client_content = client_py.read_text()
+        assert "async def request_bytes(" in client_content
+        assert "-> bytes:" in client_content

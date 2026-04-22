@@ -52,6 +52,7 @@ Common reasons to flag (but NOT auto-remove):
 - **Potentially duplicative** — provides similar functionality to another endpoint (note which one)
 - **Admin/elevated scope** — may require elevated privileges (note: admin endpoints are valid use cases, just flag for awareness)
 - **Low workflow relevance** — not directly related to any provided workflow
+- **Mixed-media 2xx responses** — some 2xx responses declare JSON and others declare a non-JSON media type (e.g. `200` returns `application/pdf`, `202` returns `application/json`). There is no safe default: a single endpoint cannot both return parsed JSON and base64 bytes. Flag it with the three options the user will choose from in the approval step: (a) exclude the endpoint, (b) keep as `binary` — JSON responses would be base64-wrapped, (c) keep as `json` — non-JSON responses would crash at runtime.
 
 Present ALL endpoints (both included and flagged) in the output. The user will make the final inclusion/exclusion decision in the approval step.
 
@@ -207,7 +208,26 @@ Add `hints` to tools where you notice patterns that the deterministic code gener
 
 Only add hints that are genuinely useful. An endpoint with no special behavior needs no hints. If you're unsure about a detail, you can grep the OpenAPI spec file (path provided in your CONTEXT) for more information.
 
-### Step 6: Write tool-scoping.md
+### Step 6: Response Kind
+
+Every tool must declare a `response_kind`: the generator forks the
+client path on this value (JSON is parsed into a `dict`; binary is
+returned as raw bytes and base64-wrapped for MCP transport). Decide it
+now so the approval gate shows a fully-resolved tool definition.
+
+For each tool, inspect its 2xx responses in the spec:
+
+- Every 2xx response with content declares at least one JSON media
+  type (or every 2xx is 204-style with no body) → `response_kind: json`.
+- Every 2xx response with content declares a non-JSON media type (PDF,
+  image, `application/octet-stream`, …) → `response_kind: binary`.
+- Mixed — some 2xx are JSON and some are not — do **not** guess. Flag
+  the endpoint in Step 1 with the three options listed there, leave
+  `response_kind` unresolved in the tool-scoping output (record it as
+  `response_kind: <pending user decision>`), and let the orchestrator
+  resolve it during the Step 5 user gate.
+
+### Step 7: Write tool-scoping.md
 
 Write the scoping result to `{working_dir}/tool-scoping.md` using this exact format:
 
@@ -234,6 +254,7 @@ The following endpoints are flagged for your review. They are included by defaul
 - **Endpoint:** {METHOD} {/path}
 - **Original operationId:** {operationId} {(renamed: reason) | (kept)}
 - **Description:** {LLM-optimized description}
+- **Response kind:** {json | binary | <pending user decision — see flagged endpoint>}
 - **Parameters:**
   - {name} ({required|optional}, {path|query|body}): {description}
   - {name} ({required|optional}, {path|query|body}): {description}
@@ -259,7 +280,7 @@ The following endpoints are flagged for your review. They are included by defaul
 - **Renamed tools:** {N} of {total}
 ```
 
-### Step 7: Report Completion
+### Step 8: Report Completion
 
 Output confirmation:
 

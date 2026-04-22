@@ -85,6 +85,12 @@ class ParamPlan(BaseModel):
 class ToolPlan(BaseModel):
     """Everything needed to render one tool method and its parameter model.
 
+    ``response_kind`` is copied verbatim from the scope YAML's
+    ``Tool.response_kind``. ``"json"`` emits a tool whose return type is
+    ``dict`` (the client parses the body as JSON); ``"binary"`` emits a
+    tool whose return type is ``str`` (the client returns the raw bytes
+    base64-encoded for MCP transport).
+
     Example:
         ToolPlan(
             tool_name="get_item", class_name="GetItem",
@@ -94,7 +100,8 @@ class ToolPlan(BaseModel):
             query_params=[ParamPlan(name="fields", ...)],
             body_fields=[],
             hints=["response has 50+ fields"],
-            group_name="item-operations"
+            group_name="item-operations",
+            response_kind="json",
         )
     """
 
@@ -108,6 +115,7 @@ class ToolPlan(BaseModel):
     body_fields: list[ParamPlan]
     hints: list[str]
     group_name: str
+    response_kind: Literal["json", "binary"]
 
 
 class GroupPlan(BaseModel):
@@ -279,6 +287,7 @@ def _build_tool_plan(tool: Tool, spec: OpenAPISpec, group_name: str) -> ToolPlan
         body_fields=body_fields,
         hints=tool.hints or [],
         group_name=group_name,
+        response_kind=tool.response_kind,
     )
 
 

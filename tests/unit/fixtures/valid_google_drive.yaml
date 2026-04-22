@@ -26,6 +26,7 @@ groups:
           names, IDs, MIME types, and modification times. Use this to browse
           or search for files. Supports query filtering via the 'q' parameter
           using Drive query syntax.
+        response_kind: json
         parameters:
           - name: q
             description: >
@@ -54,6 +55,7 @@ groups:
         description: >
           Get metadata for a single file by ID. Returns the full file resource
           including name, size, MIME type, permissions, and parent folders.
+        response_kind: json
         parameters:
           - name: fileId
             description: "The ID of the file to retrieve."
@@ -70,6 +72,7 @@ groups:
         description: >
           List all permissions on a file or folder. Returns who has access
           and their role (reader, writer, owner).
+        response_kind: json
         parameters:
           - name: fileId
             description: "The ID of the file or folder."

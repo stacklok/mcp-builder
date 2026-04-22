@@ -7,11 +7,10 @@ it's a domain operation that consumes the low-level spec/ and schema/ packages.
 
 from __future__ import annotations
 
-import re
-
 import structlog
 from pydantic import BaseModel, Field
 
+from mcp_builder.spec.media import is_json_media_type
 from mcp_builder.schema.models import MCPScope, ParamLocation
 from mcp_builder.spec import (
     ExtractedResponse,
@@ -130,12 +129,16 @@ def validate_scope(
                                 f"str. The spec may be incomplete."
                             )
 
-                # Generated client calls response.json() unconditionally;
-                # a non-JSON 2xx body crashes at runtime. Surface it so
-                # the scoping model can drop the endpoint.
+                # Scope's response_kind commits the generated tool to one
+                # decode path; cross-check it against the spec so a
+                # mismatch surfaces now instead of at runtime.
                 responses = get_response_content_types(spec, method, path)
-                _check_response_content_types(
-                    tool.tool_name, responses, errors, warnings
+                _check_response_kind_matches_spec(
+                    tool.tool_name,
+                    tool.response_kind,
+                    responses,
+                    errors,
+                    warnings,
                 )
 
     logger.info(
@@ -146,47 +149,38 @@ def validate_scope(
     return ValidationResult(errors=errors, warnings=warnings)
 
 
-# Matches application/json, text/json, and any RFC 6839 structured-suffix
-# JSON type (application/vnd.api+json, application/ld+json, etc.).
-_JSON_MEDIA_RE = re.compile(
-    r"^(?:application|text)/(?:[\w.+-]+\+)?json$", re.IGNORECASE
-)
-
-
-def _is_json_media_type(media_type: str) -> bool:
-    """Return True if the media type is JSON-decodable.
-
-    Accepts ``application/json``, ``text/json`` (legacy), and any
-    ``application/foo+json`` / ``text/foo+json`` structured-suffix
-    variant per RFC 6839.
-    """
-    # Strip media-type parameters like "; charset=utf-8" before matching.
-    bare = media_type.split(";", 1)[0].strip()
-    return bool(_JSON_MEDIA_RE.match(bare))
-
-
-def _check_response_content_types(
+def _check_response_kind_matches_spec(
     tool_name: str,
+    response_kind: str,
     responses: list[ExtractedResponse],
     errors: list[str],
     warnings: list[str],
 ) -> None:
-    """Error if any 2xx status can return a body the JSON-only client cannot decode.
+    """Cross-check a tool's scope ``response_kind`` against the spec's 2xx media types.
 
-    Four outcomes:
+    The scope commits the generated tool to a single decode path. A
+    mismatch with what the spec actually declares means the tool will
+    fail (or silently corrupt output) at runtime, so surface it here.
 
-    - No 2xx responses declared at all → warning (spec is incomplete;
-      we can't prove anything).
-    - Every 2xx response has an empty ``media_types`` list (e.g. 204 No
-      Content) → silent pass; no body to decode.
-    - Every 2xx response with content includes at least one JSON media
-      type → silent pass.
-    - Any 2xx response declares content without a JSON option → error,
-      naming the offending status codes and media types.
+    Outcomes:
 
-    The rule is per-status, not flattened: a spec that returns
-    ``application/pdf`` on 200 and ``application/json`` on 201 still
-    errors, because the server will crash on 200.
+    - Spec declares no 2xx responses: warning. Spec is incomplete and
+      we can't verify the scope's choice.
+    - Spec's 2xx responses all have empty content (204-style): silent
+      pass. No body to disagree about.
+    - A single 2xx response declares both JSON and non-JSON media types
+      (e.g. 200 returns ``application/json, application/pdf``): error.
+      The server picks which to send, and no decode path is safe for
+      both.
+    - Cross-status mixed 2xx (some JSON-only, some non-JSON-only):
+      error. The tool commits to one return shape and the other status
+      would either crash (``json``) or get base64-wrapped (``binary``).
+    - ``response_kind="json"`` but every 2xx response with content lacks
+      a JSON option: error. The generated tool would call
+      ``response.json()`` on, e.g., a PDF and crash.
+    - ``response_kind="binary"`` but every 2xx response with content
+      includes a JSON option: error. The generated tool would
+      base64-wrap JSON, giving the caller an opaque string.
     """
     if not responses:
         warnings.append(
@@ -196,29 +190,78 @@ def _check_response_content_types(
         )
         return
 
-    offending: list[ExtractedResponse] = []
-    any_with_content = False
-    for resp in responses:
-        if not resp.media_types:
-            continue
-        any_with_content = True
-        if not any(_is_json_media_type(mt) for mt in resp.media_types):
-            offending.append(resp)
-
-    if not any_with_content:
+    responses_with_content = [r for r in responses if r.media_types]
+    if not responses_with_content:
         return  # All 2xx responses are 204-style; no body to decode.
 
-    if offending:
+    # A single 2xx response declaring BOTH JSON and non-JSON media types
+    # (e.g. 200 returns ``application/json, application/pdf``) is also
+    # ambiguous: the server picks one, and no Accept header can fully
+    # guarantee which — treat it as a mismatch so the scope author
+    # resolves it at design time.
+    same_status_mixed = [
+        r
+        for r in responses_with_content
+        if any(is_json_media_type(mt) for mt in r.media_types)
+        and any(not is_json_media_type(mt) for mt in r.media_types)
+    ]
+    if same_status_mixed:
         detail = "; ".join(
             f"{resp.status_code} returns {', '.join(resp.media_types)}"
-            for resp in sorted(offending, key=lambda r: r.status_code)
+            for resp in sorted(same_status_mixed, key=lambda r: r.status_code)
         )
         errors.append(
-            f"Tool '{tool_name}': 2xx response(s) declare non-JSON content "
-            f"type(s) ({detail}), but the generated client only handles "
-            "application/json. The resulting server will crash at "
-            "runtime when calling this endpoint. Exclude this tool from "
-            "the scope, or track the gap in "
-            "https://github.com/StacklokLabs/mcp-builder/issues/81 "
-            "(binary/non-JSON response support)."
+            f"Tool '{tool_name}': 2xx response declares both JSON and "
+            f"non-JSON content types in the same status ({detail}). "
+            "The server chooses which to return, so the generated tool "
+            "cannot commit to either decode path. Drop the endpoint or "
+            "fix the spec to pick one content type per status."
+        )
+        return
+
+    statuses_with_json: list[ExtractedResponse] = []
+    statuses_without_json: list[ExtractedResponse] = []
+    for resp in responses_with_content:
+        if any(is_json_media_type(mt) for mt in resp.media_types):
+            statuses_with_json.append(resp)
+        else:
+            statuses_without_json.append(resp)
+
+    if statuses_with_json and statuses_without_json:
+        detail = "; ".join(
+            f"{resp.status_code} returns {', '.join(resp.media_types)}"
+            for resp in sorted(
+                statuses_with_json + statuses_without_json,
+                key=lambda r: r.status_code,
+            )
+        )
+        errors.append(
+            f"Tool '{tool_name}': 2xx responses declare mixed JSON and "
+            f"non-JSON content types ({detail}). The generated tool "
+            "commits to a single return shape, so it cannot handle both. "
+            "Drop the endpoint, pick one status to support, or fix the spec."
+        )
+        return
+
+    if response_kind == "json" and not statuses_with_json:
+        detail = "; ".join(
+            f"{resp.status_code} returns {', '.join(resp.media_types)}"
+            for resp in sorted(statuses_without_json, key=lambda r: r.status_code)
+        )
+        errors.append(
+            f"Tool '{tool_name}': scope declares response_kind='json' but "
+            f"spec's 2xx responses have no JSON content type ({detail}). "
+            "Set response_kind='binary' or drop the endpoint."
+        )
+        return
+
+    if response_kind == "binary" and not statuses_without_json:
+        detail = "; ".join(
+            f"{resp.status_code} returns {', '.join(resp.media_types)}"
+            for resp in sorted(statuses_with_json, key=lambda r: r.status_code)
+        )
+        errors.append(
+            f"Tool '{tool_name}': scope declares response_kind='binary' "
+            f"but spec's 2xx responses are all JSON ({detail}). "
+            "Set response_kind='json' or drop the endpoint."
         )

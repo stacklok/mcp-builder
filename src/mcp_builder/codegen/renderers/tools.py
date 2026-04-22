@@ -52,17 +52,19 @@ def render_tools_module(plan: ServerPlan) -> str:
     template = env.get_template("tools.py.jinja2")
 
     tools_context = [_build_tool_context(t) for t in plan.tools]
+    any_binary = any(t["response_kind"] == "binary" for t in tools_context)
 
     result = template.render(
         module_name=plan.module_name,
         server_name=plan.server_name,
         tools=tools_context,
+        any_binary=any_binary,
     )
     logger.debug("tools module rendered", chars=len(result))
     return result
 
 
-def _build_tool_context(tool: ToolPlan) -> dict:
+def _build_tool_context(tool: ToolPlan) -> dict[str, object]:
     """Pre-compute all template values for one tool method.
 
     Separates params into required/optional for signature ordering,
@@ -97,6 +99,7 @@ def _build_tool_context(tool: ToolPlan) -> dict:
         "params_expr": params_expr,
         "body_expr": body_expr,
         "hints": tool.hints,
+        "response_kind": tool.response_kind,
     }
 
 

@@ -3,11 +3,48 @@
 from pathlib import Path
 
 import pytest
+import yaml
+from pydantic import ValidationError
 
-from mcp_builder.codegen.validator import _is_json_media_type, validate_scope
-from mcp_builder.schema.models import load_scope
+from mcp_builder.spec.media import is_json_media_type
+from mcp_builder.codegen.validator import validate_scope
+from mcp_builder.schema.models import (
+    Group,
+    MCPScope,
+    ParamLocation,
+    Parameter,
+    Tool,
+    load_scope,
+)
+from mcp_builder.spec import OpenAPISpec, load_openapi_spec
 
 FIXTURES = Path(__file__).parent / "fixtures"
+
+
+def _scope_with_tool(tool: Tool) -> MCPScope:
+    """Build a minimal scope wrapping a single tool for testing."""
+    scope = load_scope(FIXTURES / "test_scope.yaml")
+    scope.groups = [
+        Group(
+            name="focus",
+            description="Group under test.",
+            tools=[tool],
+        )
+    ]
+    return scope
+
+
+def _mini_spec(tmp_path: Path, paths: dict) -> OpenAPISpec:
+    """Write and load a tiny OpenAPI spec with the given paths block."""
+    doc = {
+        "openapi": "3.0.3",
+        "info": {"title": "T", "version": "1"},
+        "servers": [{"url": "https://x"}],
+        "paths": paths,
+    }
+    path = tmp_path / "spec.yaml"
+    path.write_text(yaml.safe_dump(doc))
+    return load_openapi_spec(path)
 
 
 class TestParameterCoverage:
@@ -16,12 +53,6 @@ class TestParameterCoverage:
     def test_body_param_missing_from_spec_warns(self, spec):
         """Body params on an endpoint with no requestBody get the
         'spec may be incomplete' warning."""
-        from mcp_builder.schema.models import (
-            ParamLocation,
-            Parameter,
-            Tool,
-        )
-
         # POST /files has no requestBody in the test spec.
         scope = load_scope(FIXTURES / "test_scope.yaml")
         group = scope.groups[0]
@@ -29,6 +60,7 @@ class TestParameterCoverage:
             tool_name="create_file",
             endpoint="POST /files",
             description="Create a file.",
+            response_kind="json",
             parameters=[
                 Parameter(
                     name="name",
@@ -50,12 +82,6 @@ class TestParameterCoverage:
         """When the spec has declared requestBody properties but the YAML
         body param doesn't match any of them, the warning lists the
         available field names and does not claim the spec is incomplete."""
-        from mcp_builder.schema.models import (
-            ParamLocation,
-            Parameter,
-            Tool,
-        )
-
         # POST /items has a requestBody with CreateItemRequest
         # (properties: name, description).
         scope = load_scope(FIXTURES / "test_scope.yaml")
@@ -64,6 +90,7 @@ class TestParameterCoverage:
             tool_name="create_item",
             endpoint="POST /items",
             description="Create an item.",
+            response_kind="json",
             parameters=[
                 Parameter(
                     name="body",
@@ -94,14 +121,13 @@ class TestParameterCoverage:
 
     def test_query_param_missing_from_spec_warns(self, spec):
         """Query params not in spec's parameters produce a warning."""
-        from mcp_builder.schema.models import ParamLocation, Parameter, Tool
-
         scope = load_scope(FIXTURES / "test_scope.yaml")
         group = scope.groups[0]
         group.tools[1] = Tool(
             tool_name="create_file",
             endpoint="POST /files",
             description="Create a file.",
+            response_kind="json",
             parameters=[
                 Parameter(
                     name="nonexistent_query",
@@ -115,34 +141,55 @@ class TestParameterCoverage:
         assert any("nonexistent_query" in w for w in result.warnings)
 
 
-class TestResponseContentTypes:
-    """Generated client only handles JSON; reject scopes that include
-    non-JSON endpoints so we don't silently ship a server that crashes
-    at runtime."""
+class TestResponseKindSchema:
+    """Pydantic-level rejection of scopes missing response_kind.
 
-    def _scope_with_tool(self, tool):
-        """Build a minimal scope wrapping a single tool for testing."""
-        from mcp_builder.schema.models import Group
+    Having this enforced at load time means the CLI's generate/validate
+    commands can't silently fall through to a default decode path.
+    """
 
-        scope = load_scope(FIXTURES / "test_scope.yaml")
-        scope.groups = [
-            Group(
-                name="focus",
-                description="Group under test.",
-                tools=[tool],
+    def test_missing_response_kind_fails_at_load(self):
+        # Model instantiation via dict bypasses the static-type check so
+        # the runtime Pydantic validation is what we're exercising.
+        with pytest.raises(ValidationError):
+            Tool.model_validate(
+                {
+                    "tool_name": "no_kind",
+                    "endpoint": "GET /items",
+                    "description": "Tool missing response_kind.",
+                    "parameters": [],
+                }
             )
-        ]
-        return scope
 
-    def test_binary_response_errors(self, spec):
-        """An endpoint returning image/jpeg errors — user must exclude it
-        or track the gap in the binary-response issue."""
-        from mcp_builder.schema.models import ParamLocation, Parameter, Tool
+    def test_invalid_response_kind_fails_at_load(self):
+        with pytest.raises(ValidationError):
+            Tool.model_validate(
+                {
+                    "tool_name": "bad_kind",
+                    "endpoint": "GET /items",
+                    "description": "Tool with bogus response_kind.",
+                    "response_kind": "maybe",
+                    "parameters": [],
+                }
+            )
 
+
+class TestResponseKindSpecCompatibility:
+    """Validator cross-checks scope's response_kind against the spec's 2xx.
+
+    Errors surface a mismatch now so the scope author either drops the
+    endpoint or fixes the decode choice — no silent base64 of JSON
+    responses, no runtime crash on ``response.json()`` of a PDF.
+    """
+
+    def test_binary_scope_with_non_json_spec_passes(self, spec):
+        """binary scope against an image/jpeg-only endpoint is the intended
+        happy path."""
         tool = Tool(
             tool_name="get_employee_photo",
             endpoint="GET /employees/{employeeId}/photo",
             description="Fetch the employee photo.",
+            response_kind="binary",
             parameters=[
                 Parameter(
                     name="employeeId",
@@ -152,85 +199,108 @@ class TestResponseContentTypes:
                 ),
             ],
         )
-        result = validate_scope(self._scope_with_tool(tool), spec)
-        matching = [e for e in result.errors if "get_employee_photo" in e]
-        assert matching, result.errors
-        (msg,) = matching
-        assert "image/jpeg" in msg
-        assert "application/json" in msg
-        # Must cite the tracking issue so the user/model knows the gap.
-        assert "issues/81" in msg
+        result = validate_scope(_scope_with_tool(tool), spec)
+        assert not any("get_employee_photo" in e for e in result.errors)
 
-    def test_mixed_response_passes_when_json_present(self, spec):
-        """If JSON is among the declared media types, no error fires —
-        the generated client can decode that path even if peers exist."""
-        from mcp_builder.schema.models import ParamLocation, Parameter, Tool
-
+    def test_json_scope_against_non_json_endpoint_errors(self, spec):
+        """Declaring json against a PDF/image-only endpoint would crash at
+        runtime when the generated tool calls ``response.json()``."""
         tool = Tool(
-            tool_name="download_report",
-            endpoint="GET /reports/{reportId}/download",
-            description="Download a report.",
+            tool_name="get_employee_photo",
+            endpoint="GET /employees/{employeeId}/photo",
+            description="Fetch the employee photo.",
+            response_kind="json",
             parameters=[
                 Parameter(
-                    name="reportId",
-                    description="Report ID.",
+                    name="employeeId",
+                    description="Employee ID.",
                     required=True,
                     location=ParamLocation.PATH,
                 ),
             ],
         )
-        result = validate_scope(self._scope_with_tool(tool), spec)
-        assert not any("download_report" in e for e in result.errors)
-
-    def test_ref_response_binary_errors(self, spec):
-        """A $ref'd components.responses entry is resolved before the
-        content-type check, so ref-based binary responses also error."""
-        from mcp_builder.schema.models import Tool
-
-        tool = Tool(
-            tool_name="get_shared_binary",
-            endpoint="GET /shared-binary",
-            description="Fetch shared binary.",
-            parameters=[],
-        )
-        result = validate_scope(self._scope_with_tool(tool), spec)
-        matching = [e for e in result.errors if "get_shared_binary" in e]
+        result = validate_scope(_scope_with_tool(tool), spec)
+        matching = [e for e in result.errors if "get_employee_photo" in e]
         assert matching, result.errors
-        assert "image/png" in matching[0]
+        (msg,) = matching
+        assert "response_kind='json'" in msg
+        assert "image/jpeg" in msg
+
+    def test_binary_scope_against_json_endpoint_errors(self, spec):
+        """Declaring binary against a JSON-only endpoint would base64-wrap a
+        JSON body, handing the caller opaque bytes."""
+        tool = Tool(
+            tool_name="get_item",
+            endpoint="GET /items/{itemId}",
+            description="Get an item.",
+            response_kind="binary",
+            parameters=[
+                Parameter(
+                    name="itemId",
+                    description="Item ID.",
+                    required=True,
+                    location=ParamLocation.PATH,
+                ),
+            ],
+        )
+        result = validate_scope(_scope_with_tool(tool), spec)
+        matching = [e for e in result.errors if "get_item" in e]
+        assert matching, result.errors
+        (msg,) = matching
+        assert "response_kind='binary'" in msg
+        assert "application/json" in msg
+
+    def test_same_status_mixed_json_and_non_json_errors(self, spec):
+        """A single 2xx declaring both JSON and non-JSON media types
+        (/reports/{reportId}/download) is ambiguous: content negotiation
+        at runtime can hand back either shape. Error regardless of
+        ``response_kind`` so the scope author picks one or drops the
+        endpoint."""
+        for kind in ("json", "binary"):
+            tool = Tool(
+                tool_name="download_report",
+                endpoint="GET /reports/{reportId}/download",
+                description="Download a report.",
+                response_kind=kind,
+                parameters=[
+                    Parameter(
+                        name="reportId",
+                        description="Report ID.",
+                        required=True,
+                        location=ParamLocation.PATH,
+                    ),
+                ],
+            )
+            result = validate_scope(_scope_with_tool(tool), spec)
+            matching = [e for e in result.errors if "download_report" in e]
+            assert matching, (kind, result.errors)
+            (msg,) = matching
+            assert "both JSON and non-JSON" in msg
+            assert "application/json" in msg
+            assert "application/pdf" in msg
 
     def test_no_content_block_passes(self, spec):
         """2xx with no 'content' block is a legitimate empty response
-        (204-style); must not error."""
-        from mcp_builder.schema.models import Tool
-
-        # GET /items declares 200 without a content block
+        (204-style); must not error regardless of response_kind."""
+        # GET /items declares 200 without a content block.
         tool = Tool(
             tool_name="list_items",
             endpoint="GET /items",
             description="List items.",
+            response_kind="json",
             parameters=[],
         )
-        result = validate_scope(self._scope_with_tool(tool), spec)
+        result = validate_scope(_scope_with_tool(tool), spec)
         assert not any("list_items" in e for e in result.errors)
-        # Also must not warn about missing responses — they exist, they
-        # just have no body.
         assert not any("list_items" in w and "no 2xx" in w for w in result.warnings)
 
-    def test_missing_responses_warns(self, spec, tmp_path):
+    def test_missing_2xx_warns(self, tmp_path):
         """An operation with no 2xx responses declared produces a
         'spec may be incomplete' warning, not an error — we can't prove
         it's broken."""
-        # Build a tiny spec with one endpoint that declares only a 500.
-        import yaml as _yaml
-
-        from mcp_builder.schema.models import Tool
-        from mcp_builder.spec import load_openapi_spec as _load
-
-        doc = {
-            "openapi": "3.0.3",
-            "info": {"title": "T", "version": "1"},
-            "servers": [{"url": "https://x"}],
-            "paths": {
+        small_spec = _mini_spec(
+            tmp_path,
+            {
                 "/only-errors": {
                     "get": {
                         "responses": {
@@ -239,34 +309,24 @@ class TestResponseContentTypes:
                     }
                 }
             },
-        }
-        f = tmp_path / "spec.yaml"
-        f.write_text(_yaml.safe_dump(doc))
-        small_spec = _load(f)
-
+        )
         tool = Tool(
             tool_name="only_errors",
             endpoint="GET /only-errors",
             description="Only errors declared.",
+            response_kind="json",
             parameters=[],
         )
-        result = validate_scope(self._scope_with_tool(tool), small_spec)
+        result = validate_scope(_scope_with_tool(tool), small_spec)
         assert not any("only_errors" in e for e in result.errors)
         assert any("only_errors" in w and "no 2xx" in w for w in result.warnings)
 
-    def test_vendor_json_type_accepted(self, spec, tmp_path):
+    def test_vendor_json_type_accepted(self, tmp_path):
         """RFC 6839 structured-suffix +json types (e.g. application/vnd.api+json)
-        are JSON-decodable, so they should not error."""
-        import yaml as _yaml
-
-        from mcp_builder.schema.models import Tool
-        from mcp_builder.spec import load_openapi_spec as _load
-
-        doc = {
-            "openapi": "3.0.3",
-            "info": {"title": "T", "version": "1"},
-            "servers": [{"url": "https://x"}],
-            "paths": {
+        are JSON-decodable, so they should not error with response_kind=json."""
+        small_spec = _mini_spec(
+            tmp_path,
+            {
                 "/vendor": {
                     "get": {
                         "responses": {
@@ -280,67 +340,55 @@ class TestResponseContentTypes:
                     }
                 }
             },
-        }
-        f = tmp_path / "spec.yaml"
-        f.write_text(_yaml.safe_dump(doc))
-        small_spec = _load(f)
-
+        )
         tool = Tool(
             tool_name="get_vendor",
             endpoint="GET /vendor",
             description="Vendor JSON response.",
+            response_kind="json",
             parameters=[],
         )
-        result = validate_scope(self._scope_with_tool(tool), small_spec)
+        result = validate_scope(_scope_with_tool(tool), small_spec)
         assert not any("get_vendor" in e for e in result.errors)
 
-    def test_mixed_status_codes_with_non_json_errors(self, tmp_path):
-        """Per-status check: a spec that returns PDF on 200 and JSON on
-        201 still errors. The generated client crashes whenever the API
-        returns 200, even though some peer status declares JSON."""
-        import yaml as _yaml
-
-        from mcp_builder.schema.models import Tool
-        from mcp_builder.spec import load_openapi_spec as _load
-
-        doc = {
-            "openapi": "3.0.3",
-            "info": {"title": "T", "version": "1"},
-            "servers": [{"url": "https://x"}],
-            "paths": {
-                "/mixed": {
-                    "get": {
-                        "responses": {
-                            "200": {
-                                "description": "pdf",
-                                "content": {"application/pdf": {}},
-                            },
-                            "201": {
-                                "description": "json",
-                                "content": {"application/json": {}},
-                            },
-                        }
+    def test_mixed_status_2xx_errors_regardless_of_response_kind(self, tmp_path):
+        """Spec that returns PDF on 200 and JSON on 201 is ambiguous for
+        single-tool codegen — error whichever response_kind is set, because
+        the tool commits to one decode path and the other status will
+        either crash (json) or get base64-wrapped (binary)."""
+        paths = {
+            "/mixed": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "description": "pdf",
+                            "content": {"application/pdf": {}},
+                        },
+                        "201": {
+                            "description": "json",
+                            "content": {"application/json": {}},
+                        },
                     }
                 }
-            },
+            }
         }
-        f = tmp_path / "spec.yaml"
-        f.write_text(_yaml.safe_dump(doc))
-        small_spec = _load(f)
 
-        tool = Tool(
-            tool_name="get_mixed",
-            endpoint="GET /mixed",
-            description="Mixed statuses.",
-            parameters=[],
-        )
-        result = validate_scope(self._scope_with_tool(tool), small_spec)
-        matching = [e for e in result.errors if "get_mixed" in e]
-        assert matching, result.errors
-        # Error must cite the offending status (200) and media type,
-        # not hide them behind a flattened "some JSON exists somewhere".
-        assert "200" in matching[0]
-        assert "application/pdf" in matching[0]
+        for kind in ("json", "binary"):
+            small_spec = _mini_spec(tmp_path, paths)
+            tool = Tool(
+                tool_name="get_mixed",
+                endpoint="GET /mixed",
+                description="Mixed statuses.",
+                response_kind=kind,
+                parameters=[],
+            )
+            result = validate_scope(_scope_with_tool(tool), small_spec)
+            matching = [e for e in result.errors if "get_mixed" in e]
+            assert matching, (kind, result.errors)
+            (msg,) = matching
+            assert "mixed JSON and non-JSON" in msg
+            assert "application/pdf" in msg
+            assert "application/json" in msg
 
 
 class TestIsJsonMediaType:
@@ -368,7 +416,7 @@ class TestIsJsonMediaType:
         ],
     )
     def test_accepts(self, media_type):
-        assert _is_json_media_type(media_type) is True
+        assert is_json_media_type(media_type) is True
 
     @pytest.mark.parametrize(
         "media_type",
@@ -385,4 +433,4 @@ class TestIsJsonMediaType:
         ],
     )
     def test_rejects(self, media_type):
-        assert _is_json_media_type(media_type) is False
+        assert is_json_media_type(media_type) is False
