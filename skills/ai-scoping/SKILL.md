@@ -196,7 +196,13 @@ If multiple security schemes exist, select the most ToolHive-compatible one and 
 
 For OAuth scopes: pull from the spec when available. If scopes look incomplete or are missing, add a note flagging this for human review.
 
-**USER GATE:** Present the auth detection result to the user (selected scheme, issuer, chosen scopes, and any alternatives you rejected). **Do NOT proceed to Step 6.2 until the user confirms the auth block.** This gate is easy to skip by accident — do not.
+**Discovery-doc conformance check (soft warning, do not block):** If the selected auth is `oauth_bearer` and the issuer URL is resolvable, fetch `{issuer}/.well-known/openid-configuration` once and confirm these fields are present: `response_types_supported`, `id_token_signing_alg_values_supported`, `subject_types_supported`, `authorization_endpoint`, `token_endpoint`, `jwks_uri`. If any are missing, add a line to `auth.notes` like:
+
+> Upstream issuer publishes a non-compliant discovery doc (missing: `<field1>`, `<field2>`). The deploy step should rewrite the generated `MCPExternalAuthConfig` to use `upstreamProviders[*].type: oauth2` with explicit `authorizationEndpoint`, `tokenEndpoint`, and `userInfo` pulled from the discovery doc. Template placeholders in issuer URLs (e.g. `{companyDomain}`) also block this check — substitute a concrete value before deploy.
+
+If the issuer is unreachable or the URL contains a template literal, note that too. This is a soft warning — do not block the gate or change the selected auth type.
+
+**USER GATE:** Present the auth detection result to the user (selected scheme, issuer, chosen scopes, any discovery-doc warning, and any alternatives you rejected). **Do NOT proceed to Step 6.2 until the user confirms the auth block.** This gate is easy to skip by accident — do not.
 
 #### 6.2: Determine Server Metadata
 
