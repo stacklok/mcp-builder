@@ -77,63 +77,156 @@ symlinks SKILL.md files if you'd rather not do it by hand.
 
 ### Run the pipeline
 
-The pipeline has four phases. Phases 1 and 4 run inside your AI coding tool
-via the skills above. Phases 2 and 3 are CLI steps you run at the terminal.
+The pipeline has four phases plus an optional deploy step. Phases 1 and 4
+(and deploy) run inside your AI coding tool via the skills above. Phases 2
+and 3 are CLI steps you run at the terminal.
 
-**Phase 1 — Scope the API.** Launch your AI coding tool (Claude Code or
-Gemini CLI) and type `/ai-scoping <path-to-openapi-spec>`. The skill walks
-you through spec analysis, semantic endpoint grouping, tool naming,
-LLM-optimized description writing, and auth detection, pausing at review
-gates along the way. Output: a curated `mcp-scope.yaml` plus a
-`scoping-summary.md` explaining the AI's choices.
+> **You are responsible for runtime testing.** The pipeline validates
+> *structure* — tool coverage, HTTP methods, manifest shape, auth *wiring*.
+> It does not exercise the server against the real API. **Auth especially
+> must be verified by you**: specs misrepresent auth more often than
+> anything else, and a server that compiles and passes structural checks
+> can still fail the first real token exchange. Plan to run the built
+> image against the live API with real credentials before declaring any
+> server done.
 
-**Phase 2 — Human review.** Open `mcp-scope.yaml` and the accompanying
-`scoping-summary.md` the skill produced. Review the AI's group and tool
-choices, tweak descriptions, fix anything that's wrong, and sanity-check the
-detected auth. The scoping skill already runs `mcp-builder validate` against
-the spec before handing off, so no separate validation step is needed — but
-if you make substantial edits, re-running `validate` is a quick safety net.
+Example specs live in `e2e/fixtures/` (Google Drive, GitHub, Jira,
+BambooHR, Stripe, Slack, and more) if you want something to try against.
 
-**Phase 3 — Generate the server.** You need a local checkout of
-[`mcp-template-py`](https://github.com/StacklokLabs/mcp-template-py) first
-(one-time setup — clone it anywhere on disk):
+---
 
-```bash
-git clone https://github.com/StacklokLabs/mcp-template-py.git ../mcp-template-py
-```
+#### Phase 1 — Scope the API (AI)
 
-Then run:
+1. Launch your AI coding tool (Claude Code or Gemini CLI).
 
-```bash
-uv run mcp-builder generate path/to/mcp-scope.yaml path/to/openapi.yaml ../mcp-template-py --output-dir ./out
-```
+2. Run the scoping skill:
 
-This is fully deterministic — no AI in the loop — and produces a complete
+   ```
+   /ai-scoping <path-to-openapi-spec>
+   ```
+
+3. Work through the skill's review gates: spec analysis, endpoint grouping,
+   tool naming, description writing, and auth detection. The skill pauses
+   at each gate for your approval.
+
+4. **Verify the detected auth at the auth gate.** The skill maps OpenAPI
+   security schemes to ToolHive auth types, but it is inferring — not
+   observing. Before confirming, check:
+
+   - **Auth type** is correct (`oauth_bearer`, `api_key`, etc.).
+   - **Issuer / token URL** is reachable and has no template placeholders
+     (e.g. `{companyDomain}`).
+   - **Scopes** match what your workflows actually need.
+   - **Header name** for API keys matches what the API expects.
+
+   If the skill flagged a discovery-doc warning, read it. Upstream IdPs
+   that publish non-compliant docs need `type: oauth2` with explicit
+   endpoints — not `type: oidc`.
+
+**Outputs:**
+- `mcp-scope.yaml` — the curated contract the generator consumes.
+- `scoping-summary.md` — explanation of the AI's choices.
+
+---
+
+#### Phase 2 — Human review (you)
+
+1. Open `mcp-scope.yaml` alongside `scoping-summary.md`.
+
+2. Review tool groups, names, descriptions, and hints. Edit freely.
+
+3. **Re-verify the `auth:` block.** This is your last chance before code is
+   generated around it. Confirm `auth.type`, endpoints, scopes, and any
+   header names one more time.
+
+4. *(Optional)* If you made substantial edits, re-run validation:
+
+   ```bash
+   uv run mcp-builder validate path/to/mcp-scope.yaml path/to/openapi.yaml
+   ```
+
+   The scoping skill already validated once before handoff, so a clean
+   YAML does not strictly need this step.
+
+---
+
+#### Phase 3 — Generate the server (CLI)
+
+1. **One-time setup:** clone `mcp-template-py` somewhere on disk.
+
+   ```bash
+   git clone https://github.com/StacklokLabs/mcp-template-py.git ../mcp-template-py
+   ```
+
+2. Generate the server:
+
+   ```bash
+   uv run mcp-builder generate \
+       path/to/mcp-scope.yaml \
+       path/to/openapi.yaml \
+       ../mcp-template-py \
+       --output-dir ./out
+   ```
+
+This step is fully deterministic — no AI in the loop. Output is a complete
 MCP server project plus ToolHive deployment manifests in `./out`.
 
-**Phase 4 — Validate and polish.** Launch your AI coding tool and type
-`/ai-validation <generated-project-dir> <scope-yaml> <spec-path>`. The skill
-verifies structural and behavioral correctness (every scoped tool is
-present, HTTP methods match the spec, auth is wired correctly), builds the
-Docker image, and suggests improvements driven by the hints in the scope
-(response shaping for large payloads, pagination helpers, API quirks). Tip:
-before moving on, run the built image locally (`docker run` with real
-credentials) and hit `/mcp` once — structural validation catches shape
-bugs, but not runtime behavior.
+---
 
-**Optional — Deploy.** Before deploying you need the container image in a
-registry your cluster can reach. Phase 4 builds the image locally; tag and
-push it to your registry of choice ([ttl.sh](https://ttl.sh) works without
-auth for quick iteration). Then launch your AI coding tool and type
-`/deploy-assist <generated-project-dir> <cluster-repo-path>`. The skill
-drops the generated manifests into your cluster repo, fills placeholders by
-inferring values from existing cluster configuration, and lists the manual
-steps that remain (for example, creating the K8s Secret with real
-credentials).
+#### Phase 4 — Validate and polish (AI + you)
 
-Example OpenAPI specs you can run the pipeline against live in
-`e2e/fixtures/` (Google Drive, GitHub, Jira, BambooHR, Stripe, Slack, and
-more).
+1. Launch your AI coding tool and run:
+
+   ```
+   /ai-validation <generated-project-dir> <scope-yaml> <spec-path>
+   ```
+
+2. The skill performs structural and behavioral checks (every scoped tool
+   is present, HTTP methods match the spec, auth is wired correctly),
+   builds the Docker image, and suggests improvements driven by scope
+   hints (response shaping, pagination, API quirks).
+
+3. **Runtime-test the server yourself.** The skill does not make a live
+   API call — structural checks do not cover runtime behavior.
+
+   - Run the generated server locally (`task run` from the generated
+     project; see its README for the exact command, port, and env vars).
+   - Connect with the [MCP
+     Inspector](https://github.com/modelcontextprotocol/inspector) to
+     list tools and invoke them interactively against the real API.
+   - **Prove auth works** by successfully invoking at least one tool
+     with real credentials. A live tool call is the only signal that
+     token exchange, headers, and scopes are all correct.
+   - Probe a few error paths (bad token, missing parameter). Error
+     messages from the real API often need response shaping the
+     generator cannot anticipate.
+
+---
+
+#### Optional — Deploy
+
+1. Tag and push the image built in Phase 4 to a registry your cluster can
+   reach. [`ttl.sh`](https://ttl.sh) works without auth for quick
+   iteration.
+
+2. Launch your AI coding tool and run:
+
+   ```
+   /deploy-assist <generated-project-dir> <cluster-repo-path>
+   ```
+
+3. The skill drops the generated manifests into your cluster repo and
+   fills placeholders by inferring values from existing cluster
+   configuration. It will list manual steps that remain.
+
+4. **Complete the manual steps yourself.** At minimum you will need to:
+
+   - Create the Kubernetes `Secret` with real credentials.
+   - Confirm the OAuth client registration in your IdP matches the
+     redirect URI the manifest uses.
+   - Re-run the runtime auth tests from Phase 4 against the deployed
+     server — the cluster is not special; auth can still break there
+     (redirect URIs, egress rules, clock skew, certificate trust).
 
 ## Limitations
 
