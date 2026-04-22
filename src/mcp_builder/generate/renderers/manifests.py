@@ -9,14 +9,10 @@ on ToolHive:
     - MCPExternalAuthConfig CRD — only when auth is configured
     - Secret template — only when auth type is api_key (bearerToken)
 
-Each render_* function returns a YAML string. The convenience function
-render_manifests() returns a dict mapping filenames to content, handling
-the conditional logic for auth-dependent manifests.
-
-Reading guide:
-    render_manifests() is the entry point called by cli.run_pipeline().
-    The three render_* functions are the leaf renderers.
-    Templates live in renderers/templates/*.yaml.jinja2.
+Each render_* function returns a YAML string. ``render_manifests()`` is
+the entry point — it returns a dict mapping filenames to content and
+handles the conditional logic for auth-dependent manifests. Templates
+live in ``renderers/templates/*.yaml.jinja2``.
 """
 
 from __future__ import annotations
@@ -28,7 +24,7 @@ from urllib.parse import urlparse
 
 from jinja2 import Environment, FileSystemLoader
 
-from mcp_builder.codegen.plan import ServerPlan
+from mcp_builder.generate.plan import ServerPlan
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +44,6 @@ def render_manifests(plan: ServerPlan) -> dict[str, str]:
     """Render all deployment manifests as a filename -> content mapping.
 
     Pipeline stage: rendering (plan -> {filename: YAML string}).
-    Called by: cli.run_pipeline().
 
     Returns a dict with 2-5 entries depending on auth type:
         - "mcpserver.yaml" — always present

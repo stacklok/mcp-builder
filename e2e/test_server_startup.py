@@ -197,7 +197,7 @@ def _wait_for_port(port: int, timeout: float = 30.0) -> None:
 
 
 def _generate_project(fixture: E2EFixture, output_dir: Path) -> Path:
-    from mcp_builder.cli import run_pipeline
+    from mcp_builder.pipeline import run_pipeline
 
     return run_pipeline(
         scope_yaml=_scope_path(fixture),

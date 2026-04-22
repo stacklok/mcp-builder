@@ -153,7 +153,7 @@ The endpoint-scoper agent will:
 - Assign tool names — keeping originals when possible, renaming only bad ones
 - Write LLM-optimized descriptions focused on separability between tools
 - Add hints for pagination, large responses, quirks
-- Set each tool's `response_kind` (`json` or `binary`) from the spec's 2xx responses, and flag any endpoint whose 2xx responses mix JSON and non-JSON media types for the user's decision
+- Set each tool's `response_kind` (`json` or `binary`) from the spec's 2xx responses, and flag any endpoint whose 2xx responses mix JSON and non-JSON media types for the user's decision. Void endpoints (204-style, no 2xx content block) are tagged `json` — the generated client returns `{}` on empty bodies, so the tool yields `{}` rather than a `JSONDecodeError`
 - Write `tool-scoping.md` to the working directory
 
 ---

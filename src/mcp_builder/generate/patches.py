@@ -1,11 +1,14 @@
-"""Patch scaffolded server files with tool and client wiring.
+"""Post-scaffold patches to the generated project.
 
-Pipeline stage: rendering (source text + ServerPlan -> patched source text).
-Called by: the pipeline orchestrator after scaffold_project().
+Pipeline stage: patching (source text + ServerPlan -> patched source text).
 
 The scaffold step copies the template and renames the module, but leaves
-placeholder tool registrations (``mcp.add_tool(tools.hello)``). This
-module replaces those placeholders with the actual generated tools.
+placeholder tool registrations (``mcp.add_tool(tools.hello)``) and a
+placeholder FastMCP server name. This module rewrites those placeholders
+with the actual generated tools and server identity, in place.
+
+Runs after ``scaffold.scaffold_project`` and after the pure renderers have
+written their files; nothing in this module runs during pure rendering.
 """
 
 from __future__ import annotations
@@ -14,7 +17,7 @@ import re
 
 import structlog
 
-from mcp_builder.codegen.plan import ServerPlan
+from mcp_builder.generate.plan import ServerPlan
 
 logger = structlog.get_logger()
 
@@ -22,8 +25,7 @@ logger = structlog.get_logger()
 def patch_mcp_builder(source: str, plan: ServerPlan) -> str:
     """Patch the scaffolded mcp_builder.py to wire generated tools.
 
-    Pipeline stage: rendering (post-scaffold source -> patched source).
-    Called by: the pipeline orchestrator.
+    Pipeline stage: patching (post-scaffold source -> patched source).
 
     Performs four targeted replacements on the post-scaffold source:
     1. Adds ``APIClient`` import before the ``Settings`` import.
@@ -90,8 +92,7 @@ def patch_mcp_builder(source: str, plan: ServerPlan) -> str:
 def patch_app_builder(source: str, plan: ServerPlan) -> str:
     """Patch the scaffolded app_builder.py.
 
-    Pipeline stage: rendering (post-scaffold source -> patched source).
-    Called by: the pipeline orchestrator.
+    Pipeline stage: patching (post-scaffold source -> patched source).
 
     Currently a no-op. The scaffold step already handles module name
     replacement, and app_builder.py contains only framework boilerplate

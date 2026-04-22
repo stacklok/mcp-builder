@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from mcp_builder.cli import run_pipeline
+from mcp_builder.pipeline import run_pipeline
 
 UNIT_FIXTURES = Path(__file__).parent.parent / "unit" / "fixtures"
 TEMPLATE_DIR = UNIT_FIXTURES / "template"

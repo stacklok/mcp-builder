@@ -1,6 +1,6 @@
 """Tests for codegen.spec_analyzer — OpenAPI spec analysis and survey."""
 
-from mcp_builder.codegen.spec_analyzer import (
+from mcp_builder.analyze import (
     AnalyzedParameter,
     AnalyzedRequestBody,
     QualityMetrics,

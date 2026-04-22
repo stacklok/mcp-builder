@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from mcp_builder.codegen.plan import AuthPlan, ServerPlan, ToolPlan
+from mcp_builder.generate.plan import AuthPlan, ServerPlan, ToolPlan
 
 FIXTURES = Path(__file__).parent.parent / "fixtures"
 TEMPLATE_DIR = FIXTURES / "template"

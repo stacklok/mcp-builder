@@ -1,7 +1,6 @@
 """Render the async HTTP client module for a generated MCP server.
 
 Pipeline stage: rendering (ServerPlan → source code string).
-Called by: the pipeline orchestrator after scaffold_project().
 
 The generated client uses httpx for async HTTP and delegates token
 retrieval to the template's auth layer (get_bearer_token()), which is
@@ -18,8 +17,8 @@ import textwrap
 
 import structlog
 
-from mcp_builder.codegen.plan import ServerPlan
-from mcp_builder.codegen.renderers.escape import escape_python_string
+from mcp_builder.generate.plan import ServerPlan
+from mcp_builder.generate.renderers.escape import escape_python_string
 
 logger = structlog.get_logger()
 
@@ -142,7 +141,6 @@ def render_client_module(plan: ServerPlan) -> str:
     """Generate the client.py module for the output project.
 
     Pipeline stage: rendering (plan → source code).
-    Called by: the pipeline orchestrator.
 
     Example output (for base_url="https://api.example.com"):
 

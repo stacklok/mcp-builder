@@ -5,8 +5,8 @@ YAML or JSON. It lists every URL path the API exposes (e.g. ``/items/{itemId}``)
 what HTTP methods each path supports (GET, POST, ...), and what data each
 endpoint expects and returns.
 
-This package turns those raw spec files into typed Python objects so that the
-code generation pipeline can work with them safely. It handles:
+This package turns raw spec files into typed Python objects so that the
+code-generation pipeline can work with them safely. It handles:
 
     - **Loading** — reading a YAML/JSON file into a typed model (``loader``).
     - **Parameters** — extracting the inputs an endpoint expects.
@@ -24,23 +24,11 @@ code generation pipeline can work with them safely. It handles:
       definition in multiple places. The ``resolver`` module looks up these
       pointers and returns the actual object they point to.
 
-Public API (re-exported here for convenience):
-    - load_openapi_spec() — load a spec from a JSON/YAML file
-    - get_parameters() — extract URL parameters from an operation
-    - get_body_fields() — extract request body fields from an operation
-    - get_response_content_types() — extract 2xx response media types
-    - parse_endpoint() — split "METHOD /path" into components
-    - resolve_parameter_ref() — resolve a $ref to a parameter component
-    - resolve_request_body_ref() — resolve a $ref to a requestBody component
-    - resolve_response_ref() — resolve a $ref to a response component
-    - resolve_schema_ref() — resolve a $ref to a schema component
-    - resolve_composed_schema() — flatten allOf/oneOf/anyOf into merged properties
-    - extract_schema_type() — get the schema type from a parameter
-    - schema_to_type() — get the schema type from a schema object
-    - Type aliases: OpenAPISpec, OpenAPISchema, ExtractedParameter,
-      ExtractedBodyField, ExtractedResponse, ParameterLocation,
-      PythonType, SchemaType, StatusCode
-    - Constants: OPENAPI_TYPE_MAP
+Public API (re-exported here for convenience) is intentionally narrow — the
+names callers need to extract endpoint inputs and describe them by type.
+Lower-level helpers (individual ``resolve_*`` functions, schema/location
+literal types) live in the submodules ``loader``, ``parameters``, ``resolver``,
+and ``types``; import directly from there if you need them (tests do).
 """
 
 from mcp_builder.spec.loader import load_openapi_spec
@@ -50,26 +38,14 @@ from mcp_builder.spec.parameters import (
     get_response_content_types,
     parse_endpoint,
 )
-from mcp_builder.spec.resolver import (
-    extract_schema_type,
-    resolve_composed_schema,
-    resolve_parameter_ref,
-    resolve_request_body_ref,
-    resolve_response_ref,
-    resolve_schema_ref,
-    schema_to_type,
-)
+from mcp_builder.spec.resolver import extract_schema_type
 from mcp_builder.spec.types import (
     OPENAPI_TYPE_MAP,
     ExtractedBodyField,
     ExtractedParameter,
     ExtractedResponse,
-    OpenAPISchema,
     OpenAPISpec,
-    ParameterLocation,
     PythonType,
-    SchemaType,
-    StatusCode,
 )
 
 __all__ = [
@@ -77,22 +53,12 @@ __all__ = [
     "ExtractedBodyField",
     "ExtractedParameter",
     "ExtractedResponse",
-    "OpenAPISchema",
     "OpenAPISpec",
-    "ParameterLocation",
     "PythonType",
-    "SchemaType",
-    "StatusCode",
     "extract_schema_type",
     "get_body_fields",
-    "resolve_composed_schema",
     "get_parameters",
     "get_response_content_types",
     "load_openapi_spec",
     "parse_endpoint",
-    "resolve_parameter_ref",
-    "resolve_request_body_ref",
-    "resolve_response_ref",
-    "resolve_schema_ref",
-    "schema_to_type",
 ]

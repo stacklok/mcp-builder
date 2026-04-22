@@ -14,14 +14,16 @@ from mcp_builder.spec import (
     get_response_content_types,
     load_openapi_spec,
     parse_endpoint,
+)
+from mcp_builder.spec.resolver import (
     resolve_composed_schema,
     resolve_parameter_ref,
     resolve_request_body_ref,
     resolve_response_ref,
     resolve_schema_ref,
+    resolve_schema_ref_allow_chain,
     schema_to_type,
 )
-from mcp_builder.spec.resolver import resolve_schema_ref_allow_chain
 
 
 def _load_inline_spec(doc, tmp_path):

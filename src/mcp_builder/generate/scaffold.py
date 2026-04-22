@@ -1,7 +1,6 @@
 """Scaffold a new MCP server project from the mcp-template-py template.
 
-Pipeline stage: rendering (ServerPlan → project directory on disk).
-Called by: the pipeline orchestrator after build_server_plan().
+Pipeline stage: scaffolding (ServerPlan → project directory on disk).
 
 Copies the template directory, renames the Python package to match the
 server name, and updates imports and pyproject.toml metadata.
@@ -15,8 +14,8 @@ from pathlib import Path
 
 import structlog
 
-from mcp_builder.codegen.plan import ServerPlan
-from mcp_builder.codegen.renderers.escape import escape_toml_string
+from mcp_builder.generate.plan import ServerPlan
+from mcp_builder.generate.renderers.escape import escape_toml_string
 
 logger = structlog.get_logger()
 
@@ -27,8 +26,7 @@ _TEMPLATE_PACKAGE = "mcp-template-py"
 def scaffold_project(plan: ServerPlan, template_dir: Path, output_dir: Path) -> Path:
     """Copy template and rebrand it as a new MCP server project.
 
-    Pipeline stage: rendering (plan → project on disk).
-    Called by: the pipeline orchestrator.
+    Pipeline stage: scaffolding (plan → project on disk).
 
     Args:
         plan: The server plan with module_name, server_name, description.
