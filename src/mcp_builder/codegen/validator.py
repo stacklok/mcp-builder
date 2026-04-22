@@ -7,11 +7,10 @@ it's a domain operation that consumes the low-level spec/ and schema/ packages.
 
 from __future__ import annotations
 
-import re
-
 import structlog
 from pydantic import BaseModel, Field
 
+from mcp_builder.codegen.media import is_json_media_type
 from mcp_builder.schema.models import MCPScope, ParamLocation
 from mcp_builder.spec import (
     ExtractedResponse,
@@ -146,48 +145,36 @@ def validate_scope(
     return ValidationResult(errors=errors, warnings=warnings)
 
 
-# Matches application/json, text/json, and any RFC 6839 structured-suffix
-# JSON type (application/vnd.api+json, application/ld+json, etc.).
-_JSON_MEDIA_RE = re.compile(
-    r"^(?:application|text)/(?:[\w.+-]+\+)?json$", re.IGNORECASE
-)
-
-
-def _is_json_media_type(media_type: str) -> bool:
-    """Return True if the media type is JSON-decodable.
-
-    Accepts ``application/json``, ``text/json`` (legacy), and any
-    ``application/foo+json`` / ``text/foo+json`` structured-suffix
-    variant per RFC 6839.
-    """
-    # Strip media-type parameters like "; charset=utf-8" before matching.
-    bare = media_type.split(";", 1)[0].strip()
-    return bool(_JSON_MEDIA_RE.match(bare))
-
-
 def _check_response_content_types(
     tool_name: str,
     responses: list[ExtractedResponse],
     errors: list[str],
     warnings: list[str],
 ) -> None:
-    """Error if any 2xx status can return a body the JSON-only client cannot decode.
+    """Warn when a tool's 2xx responses shape its return type unusually.
 
-    Four outcomes:
+    Three outcomes:
 
     - No 2xx responses declared at all → warning (spec is incomplete;
-      we can't prove anything).
-    - Every 2xx response has an empty ``media_types`` list (e.g. 204 No
-      Content) → silent pass; no body to decode.
+      we can't prove anything about the return shape).
     - Every 2xx response with content includes at least one JSON media
-      type → silent pass.
-    - Any 2xx response declares content without a JSON option → error,
-      naming the offending status codes and media types.
+      type (or all responses are 204-style) → silent pass; the tool
+      returns ``dict``.
+    - Any 2xx response declares content without a JSON option →
+      warning. The generated tool returns the response body
+      base64-encoded as ``str`` instead of ``dict``; flag it so users
+      aren't surprised at runtime.
 
-    The rule is per-status, not flattened: a spec that returns
-    ``application/pdf`` on 200 and ``application/json`` on 201 still
-    errors, because the server will crash on 200.
+    The rule is per-status: a spec that returns ``application/pdf`` on
+    200 and ``application/json`` on 201 still warns, because the
+    generated tool commits to one return shape.
+
+    ``errors`` is accepted but unused here — kept so the signature
+    stays stable for future return-shape checks that may upgrade back
+    to hard errors.
     """
+    del errors  # reserved for future checks
+
     if not responses:
         warnings.append(
             f"Tool '{tool_name}': spec declares no 2xx responses — "
@@ -202,7 +189,7 @@ def _check_response_content_types(
         if not resp.media_types:
             continue
         any_with_content = True
-        if not any(_is_json_media_type(mt) for mt in resp.media_types):
+        if not any(is_json_media_type(mt) for mt in resp.media_types):
             offending.append(resp)
 
     if not any_with_content:
@@ -213,12 +200,8 @@ def _check_response_content_types(
             f"{resp.status_code} returns {', '.join(resp.media_types)}"
             for resp in sorted(offending, key=lambda r: r.status_code)
         )
-        errors.append(
+        warnings.append(
             f"Tool '{tool_name}': 2xx response(s) declare non-JSON content "
-            f"type(s) ({detail}), but the generated client only handles "
-            "application/json. The resulting server will crash at "
-            "runtime when calling this endpoint. Exclude this tool from "
-            "the scope, or track the gap in "
-            "https://github.com/StacklokLabs/mcp-builder/issues/81 "
-            "(binary/non-JSON response support)."
+            f"type(s) ({detail}). The generated tool will return the "
+            "response body base64-encoded as a str (not dict)."
         )

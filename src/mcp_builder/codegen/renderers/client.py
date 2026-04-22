@@ -63,6 +63,39 @@ _CLIENT_TEMPLATE = textwrap.dedent('''\
             Returns:
                 Parsed JSON response as a dict.
             """
+            response = await self._send(
+                method, path, params=params, json_body=json_body
+            )
+            return response.json()
+
+        async def request_bytes(
+            self,
+            method: str,
+            path: str,
+            *,
+            params: dict | None = None,
+            json_body: dict | None = None,
+        ) -> bytes:
+            """Send an HTTP request and return the raw response body.
+
+            Used for endpoints whose success responses declare a
+            non-JSON media type (images, PDFs, octet-streams). The
+            caller is responsible for any further decoding (e.g.
+            base64 for MCP transport).
+            """
+            response = await self._send(
+                method, path, params=params, json_body=json_body
+            )
+            return response.content
+
+        async def _send(
+            self,
+            method: str,
+            path: str,
+            *,
+            params: dict | None,
+            json_body: dict | None,
+        ) -> httpx.Response:
             # Strip None query params so unset optional args aren't sent
             # as empty strings (e.g. driveId=&pageToken=) which cause 400s.
             # Body is left as-is: some APIs distinguish null from absent.
@@ -83,7 +116,7 @@ _CLIENT_TEMPLATE = textwrap.dedent('''\
                     headers=headers,
                 )
                 response.raise_for_status()
-                return response.json()
+                return response
 ''')
 
 

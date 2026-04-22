@@ -1,0 +1,36 @@
+version: "1"
+
+server:
+  name: binary-api
+  description: "Binary-response fixture: one JSON tool + one binary tool"
+
+spec:
+  source: "binary_openapi.yaml"
+  format: openapi3
+  base_url: "https://api.example.com"
+  total_endpoints: 2
+  scoped_endpoints: 2
+
+groups:
+  - name: mixed
+    description: "One JSON endpoint and one image/jpeg endpoint"
+    tools:
+      - tool_name: get_item
+        endpoint: GET /items/{itemId}
+        description: "Get an item by its ID (JSON)."
+        parameters:
+          - name: itemId
+            description: "Item ID."
+            required: true
+            location: path
+      - tool_name: get_employee_photo
+        endpoint: GET /employees/{employeeId}/photo
+        description: "Fetch the employee photo (binary)."
+        parameters:
+          - name: employeeId
+            description: "Employee ID."
+            required: true
+            location: path
+
+auth:
+  type: none

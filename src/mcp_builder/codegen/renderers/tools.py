@@ -52,11 +52,13 @@ def render_tools_module(plan: ServerPlan) -> str:
     template = env.get_template("tools.py.jinja2")
 
     tools_context = [_build_tool_context(t) for t in plan.tools]
+    any_binary = any(t["returns_binary"] for t in tools_context)
 
     result = template.render(
         module_name=plan.module_name,
         server_name=plan.server_name,
         tools=tools_context,
+        any_binary=any_binary,
     )
     logger.debug("tools module rendered", chars=len(result))
     return result
@@ -97,6 +99,8 @@ def _build_tool_context(tool: ToolPlan) -> dict:
         "params_expr": params_expr,
         "body_expr": body_expr,
         "hints": tool.hints,
+        "returns_binary": tool.returns_binary,
+        "response_content_type": tool.response_content_type,
     }
 
 

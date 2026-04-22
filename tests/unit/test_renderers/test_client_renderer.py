@@ -22,6 +22,22 @@ class TestRenderClientModule:
         source = render_client_module(plan)
         assert "async def request(" in source
 
+    def test_has_request_bytes_method(self, plan: ServerPlan) -> None:
+        """Binary/non-JSON endpoints need a bytes-returning path so the
+        tool renderer can base64-encode the body for MCP transport."""
+        source = render_client_module(plan)
+        assert "async def request_bytes(" in source
+        # Signature must promise bytes, not dict.
+        assert "-> bytes:" in source
+
+    def test_request_bytes_returns_raw_content(self, plan: ServerPlan) -> None:
+        """The bytes path skips .json() and returns response.content so
+        binary bodies aren't decoded as JSON."""
+        source = render_client_module(plan)
+        assert "return response.content" in source
+        # The JSON path is still there.
+        assert "return response.json()" in source
+
     def test_imports_get_bearer_token(self, plan: ServerPlan) -> None:
         source = render_client_module(plan)
         assert "from test_api_mcp.auth import get_bearer_token" in source

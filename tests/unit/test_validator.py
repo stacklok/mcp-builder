@@ -4,7 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from mcp_builder.codegen.validator import _is_json_media_type, validate_scope
+from mcp_builder.codegen.media import is_json_media_type
+from mcp_builder.codegen.validator import validate_scope
 from mcp_builder.schema.models import load_scope
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -116,9 +117,8 @@ class TestParameterCoverage:
 
 
 class TestResponseContentTypes:
-    """Generated client only handles JSON; reject scopes that include
-    non-JSON endpoints so we don't silently ship a server that crashes
-    at runtime."""
+    """Flag scopes that include non-JSON endpoints so users know the
+    generated tool returns base64-encoded bytes instead of a dict."""
 
     def _scope_with_tool(self, tool):
         """Build a minimal scope wrapping a single tool for testing."""
@@ -134,9 +134,10 @@ class TestResponseContentTypes:
         ]
         return scope
 
-    def test_binary_response_errors(self, spec):
-        """An endpoint returning image/jpeg errors — user must exclude it
-        or track the gap in the binary-response issue."""
+    def test_binary_response_warns(self, spec):
+        """An endpoint returning image/jpeg warns so users know the
+        generated tool returns base64 instead of a dict. It no longer
+        errors: codegen now emits a bytes path for these endpoints."""
         from mcp_builder.schema.models import ParamLocation, Parameter, Tool
 
         tool = Tool(
@@ -153,13 +154,12 @@ class TestResponseContentTypes:
             ],
         )
         result = validate_scope(self._scope_with_tool(tool), spec)
-        matching = [e for e in result.errors if "get_employee_photo" in e]
-        assert matching, result.errors
+        assert not any("get_employee_photo" in e for e in result.errors)
+        matching = [w for w in result.warnings if "get_employee_photo" in w]
+        assert matching, result.warnings
         (msg,) = matching
         assert "image/jpeg" in msg
-        assert "application/json" in msg
-        # Must cite the tracking issue so the user/model knows the gap.
-        assert "issues/81" in msg
+        assert "base64" in msg
 
     def test_mixed_response_passes_when_json_present(self, spec):
         """If JSON is among the declared media types, no error fires —
@@ -182,9 +182,9 @@ class TestResponseContentTypes:
         result = validate_scope(self._scope_with_tool(tool), spec)
         assert not any("download_report" in e for e in result.errors)
 
-    def test_ref_response_binary_errors(self, spec):
+    def test_ref_response_binary_warns(self, spec):
         """A $ref'd components.responses entry is resolved before the
-        content-type check, so ref-based binary responses also error."""
+        content-type check, so ref-based binary responses also warn."""
         from mcp_builder.schema.models import Tool
 
         tool = Tool(
@@ -194,8 +194,9 @@ class TestResponseContentTypes:
             parameters=[],
         )
         result = validate_scope(self._scope_with_tool(tool), spec)
-        matching = [e for e in result.errors if "get_shared_binary" in e]
-        assert matching, result.errors
+        assert not any("get_shared_binary" in e for e in result.errors)
+        matching = [w for w in result.warnings if "get_shared_binary" in w]
+        assert matching, result.warnings
         assert "image/png" in matching[0]
 
     def test_no_content_block_passes(self, spec):
@@ -294,10 +295,10 @@ class TestResponseContentTypes:
         result = validate_scope(self._scope_with_tool(tool), small_spec)
         assert not any("get_vendor" in e for e in result.errors)
 
-    def test_mixed_status_codes_with_non_json_errors(self, tmp_path):
+    def test_mixed_status_codes_with_non_json_warns(self, tmp_path):
         """Per-status check: a spec that returns PDF on 200 and JSON on
-        201 still errors. The generated client crashes whenever the API
-        returns 200, even though some peer status declares JSON."""
+        201 still warns. The generated tool commits to one return shape,
+        even though some peer status declares JSON."""
         import yaml as _yaml
 
         from mcp_builder.schema.models import Tool
@@ -335,9 +336,10 @@ class TestResponseContentTypes:
             parameters=[],
         )
         result = validate_scope(self._scope_with_tool(tool), small_spec)
-        matching = [e for e in result.errors if "get_mixed" in e]
-        assert matching, result.errors
-        # Error must cite the offending status (200) and media type,
+        assert not any("get_mixed" in e for e in result.errors)
+        matching = [w for w in result.warnings if "get_mixed" in w]
+        assert matching, result.warnings
+        # Warning must cite the offending status (200) and media type,
         # not hide them behind a flattened "some JSON exists somewhere".
         assert "200" in matching[0]
         assert "application/pdf" in matching[0]
@@ -368,7 +370,7 @@ class TestIsJsonMediaType:
         ],
     )
     def test_accepts(self, media_type):
-        assert _is_json_media_type(media_type) is True
+        assert is_json_media_type(media_type) is True
 
     @pytest.mark.parametrize(
         "media_type",
@@ -385,4 +387,4 @@ class TestIsJsonMediaType:
         ],
     )
     def test_rejects(self, media_type):
-        assert _is_json_media_type(media_type) is False
+        assert is_json_media_type(media_type) is False

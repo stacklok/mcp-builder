@@ -4,6 +4,9 @@ Each method wraps an upstream API endpoint. FastMCP introspects the
 method signature to build the tool's input schema automatically.
 """
 
+{% if any_binary %}
+import base64
+{% endif %}
 from typing import Annotated
 
 from pydantic import Field
@@ -17,6 +20,29 @@ class Tools:
     def __init__(self, client: APIClient) -> None:
         self._client = client
 {% for tool in tools %}
+{% if tool.returns_binary %}
+
+    async def {{ tool.method_name }}(self{{ tool.signature }}) -> str:
+        """{{ tool.description | py_string }}
+
+        Upstream returns {{ tool.response_content_type }}; the raw bytes
+        are base64-encoded so the value survives MCP transport.
+        """
+{% for hint in tool.hints %}
+        # Hint: {{ hint | py_string }}
+{% endfor %}
+        raw = await self._client.request_bytes(
+            "{{ tool.http_method }}",
+            {{ tool.path_expr }},
+{% if tool.params_expr %}
+            params={{ tool.params_expr }},
+{% endif %}
+{% if tool.body_expr %}
+            json_body={{ tool.body_expr }},
+{% endif %}
+        )
+        return base64.b64encode(raw).decode("ascii")
+{% else %}
 
     async def {{ tool.method_name }}(self{{ tool.signature }}) -> dict:
         """{{ tool.description | py_string }}"""
@@ -33,4 +59,5 @@ class Tools:
             json_body={{ tool.body_expr }},
 {% endif %}
         )
+{% endif %}
 {% endfor %}

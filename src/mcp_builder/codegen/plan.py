@@ -41,12 +41,15 @@ import structlog
 
 from pydantic import BaseModel
 
+from mcp_builder.codegen.media import is_json_media_type
 from mcp_builder.spec import (
     OPENAPI_TYPE_MAP,
+    ExtractedResponse,
     OpenAPISpec,
     PythonType,
     get_body_fields,
     get_parameters,
+    get_response_content_types,
     parse_endpoint,
 )
 from mcp_builder.schema.models import MCPScope, ParamLocation, Parameter, Tool
@@ -94,7 +97,9 @@ class ToolPlan(BaseModel):
             query_params=[ParamPlan(name="fields", ...)],
             body_fields=[],
             hints=["response has 50+ fields"],
-            group_name="item-operations"
+            group_name="item-operations",
+            response_content_type="application/json",
+            returns_binary=False,
         )
     """
 
@@ -108,6 +113,13 @@ class ToolPlan(BaseModel):
     body_fields: list[ParamPlan]
     hints: list[str]
     group_name: str
+    # Representative 2xx media type for docstrings/logs — e.g. "application/json"
+    # or "image/jpeg". Runtime behavior is gated on ``returns_binary``, not this.
+    response_content_type: str = "application/json"
+    # True when at least one 2xx response with content declares no JSON media
+    # type. The renderer emits a bytes-returning tool that base64-encodes the
+    # body; False keeps the existing JSON-decoding path.
+    returns_binary: bool = False
 
 
 class GroupPlan(BaseModel):
@@ -268,6 +280,9 @@ def _build_tool_plan(tool: Tool, spec: OpenAPISpec, group_name: str) -> ToolPlan
     all_params = path_params + query_params + body_fields
     _resolve_name_collisions(all_params)
 
+    responses = get_response_content_types(spec, method, path)
+    returns_binary, response_content_type = _classify_response_body(responses)
+
     return ToolPlan(
         tool_name=tool_name,
         class_name=_tool_name_to_class(tool_name),
@@ -279,7 +294,45 @@ def _build_tool_plan(tool: Tool, spec: OpenAPISpec, group_name: str) -> ToolPlan
         body_fields=body_fields,
         hints=tool.hints or [],
         group_name=group_name,
+        response_content_type=response_content_type,
+        returns_binary=returns_binary,
     )
+
+
+def _classify_response_body(
+    responses: list[ExtractedResponse],
+) -> tuple[bool, str]:
+    """Decide whether a tool returns bytes-as-base64 or JSON, plus a label.
+
+    Returns ``(returns_binary, representative_media_type)``. The rule
+    matches the Phase 1 validator semantics: any 2xx response with
+    content that has no JSON option flips the tool to the binary path.
+    The label is informational (used in docstrings/logs) — runtime
+    behavior is driven by the bool.
+
+    Empty inputs (no 2xx declared) and all-empty-content inputs (204-style)
+    fall through to the default JSON path: we have no evidence the body
+    is non-JSON, so preserve today's behavior.
+    """
+    first_non_json: str | None = None
+    first_json: str | None = None
+    returns_binary = False
+
+    for resp in responses:
+        if not resp.media_types:
+            continue
+        has_json = any(is_json_media_type(mt) for mt in resp.media_types)
+        if has_json and first_json is None:
+            first_json = next(mt for mt in resp.media_types if is_json_media_type(mt))
+        if not has_json:
+            returns_binary = True
+            if first_non_json is None:
+                first_non_json = resp.media_types[0]
+
+    if returns_binary:
+        # first_non_json is set whenever returns_binary is True.
+        return True, first_non_json or "application/octet-stream"
+    return False, first_json or "application/json"
 
 
 def _build_param_plans(

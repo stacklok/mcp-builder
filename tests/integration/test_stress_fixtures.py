@@ -188,3 +188,68 @@ class TestSelectiveScoping:
         )
         for py_file in project.rglob("*.py"):
             py_compile.compile(str(py_file), doraise=True)
+
+
+# ---------------------------------------------------------------------------
+# Binary responses — image/jpeg endpoint renders the bytes path (#81 Phase 2)
+# ---------------------------------------------------------------------------
+
+
+class TestBinaryResponses:
+    @pytest.fixture()
+    def plan(self):
+        return _load_plan("binary")
+
+    def test_binary_tool_flagged_in_plan(self, plan) -> None:
+        photo = next(t for t in plan.tools if t.tool_name == "get_employee_photo")
+        assert photo.returns_binary is True
+        assert photo.response_content_type == "image/jpeg"
+
+    def test_json_tool_unaffected(self, plan) -> None:
+        item = next(t for t in plan.tools if t.tool_name == "get_item")
+        assert item.returns_binary is False
+        assert item.response_content_type == "application/json"
+
+    def test_generated_code_is_valid_python(self, tmp_path: Path) -> None:
+        """End-to-end: run the pipeline and ensure every generated file
+        compiles. Guards against JSONDecodeError-at-runtime regressions
+        from shipping the JSON path for an image/jpeg endpoint."""
+        project = run_pipeline(
+            FIXTURES / "binary_scope.yaml",
+            FIXTURES / "binary_openapi.yaml",
+            TEMPLATE_DIR,
+            tmp_path,
+        )
+        for py_file in project.rglob("*.py"):
+            py_compile.compile(str(py_file), doraise=True)
+
+    def test_tools_module_has_both_paths(self, tmp_path: Path) -> None:
+        """The generated tools.py must wire the binary tool through
+        request_bytes + base64, while leaving the JSON tool on request."""
+        project = run_pipeline(
+            FIXTURES / "binary_scope.yaml",
+            FIXTURES / "binary_openapi.yaml",
+            TEMPLATE_DIR,
+            tmp_path,
+        )
+        tools_py = project / "src" / "binary_api_mcp" / "api" / "tools.py"
+        content = tools_py.read_text()
+        assert "import base64" in content
+        assert "request_bytes(" in content
+        assert "base64.b64encode" in content
+        # JSON path still present for get_item.
+        get_item_section = content.split("async def get_item")[1].split("async def")[0]
+        assert "self._client.request(" in get_item_section
+        assert "-> dict:" in get_item_section
+
+    def test_client_module_has_request_bytes(self, tmp_path: Path) -> None:
+        project = run_pipeline(
+            FIXTURES / "binary_scope.yaml",
+            FIXTURES / "binary_openapi.yaml",
+            TEMPLATE_DIR,
+            tmp_path,
+        )
+        client_py = project / "src" / "binary_api_mcp" / "client.py"
+        content = client_py.read_text()
+        assert "async def request_bytes(" in content
+        assert "return response.content" in content

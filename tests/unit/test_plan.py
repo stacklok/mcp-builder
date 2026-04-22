@@ -684,3 +684,138 @@ class TestDeterminism:
         plan1 = build_server_plan(scope, spec)
         plan2 = build_server_plan(scope, spec)
         assert plan1 == plan2
+
+
+# ---------------------------------------------------------------------------
+# Response body classification — drives client path selection in the renderer
+# ---------------------------------------------------------------------------
+
+
+class TestResponseBodyClassification:
+    """ToolPlan.returns_binary + response_content_type control whether the
+    renderer emits the JSON path (``request``) or the bytes path
+    (``request_bytes`` + base64 wrap)."""
+
+    def _build(self, tool, spec):
+        from mcp_builder.codegen.plan import _build_tool_plan
+
+        return _build_tool_plan(tool, spec, "test-group")
+
+    def test_json_endpoint_is_not_binary(self, plan):
+        """Standard JSON endpoint: returns_binary=False,
+        response_content_type=application/json."""
+        tool = next(t for t in plan.tools if t.tool_name == "get_item")
+        assert tool.returns_binary is False
+        assert tool.response_content_type == "application/json"
+
+    def test_empty_content_response_defaults_to_json(self, plan):
+        """``list_items`` declares a 200 with no content block (204-style).
+        No evidence the body is non-JSON → stay on the JSON path."""
+        tool = next(t for t in plan.tools if t.tool_name == "list_items")
+        assert tool.returns_binary is False
+        assert tool.response_content_type == "application/json"
+
+    def test_binary_endpoint_flags_binary(self, spec):
+        """image/jpeg 2xx body → returns_binary=True with the non-JSON
+        media type surfaced for docstrings/logs."""
+        from mcp_builder.schema.models import ParamLocation, Parameter, Tool
+
+        tool = Tool(
+            tool_name="get_employee_photo",
+            endpoint="GET /employees/{employeeId}/photo",
+            description="Fetch the employee photo.",
+            parameters=[
+                Parameter(
+                    name="employeeId",
+                    description="Employee ID.",
+                    required=True,
+                    location=ParamLocation.PATH,
+                ),
+            ],
+        )
+        built = self._build(tool, spec)
+        assert built.returns_binary is True
+        assert built.response_content_type == "image/jpeg"
+
+    def test_json_plus_non_json_in_same_status_stays_json(self, spec):
+        """``/reports/{reportId}/download`` declares both application/json
+        and application/pdf on 200. When JSON is available for every 2xx
+        status, the generated tool stays on the JSON path."""
+        from mcp_builder.schema.models import ParamLocation, Parameter, Tool
+
+        tool = Tool(
+            tool_name="download_report",
+            endpoint="GET /reports/{reportId}/download",
+            description="Download a report.",
+            parameters=[
+                Parameter(
+                    name="reportId",
+                    description="Report ID.",
+                    required=True,
+                    location=ParamLocation.PATH,
+                ),
+            ],
+        )
+        built = self._build(tool, spec)
+        assert built.returns_binary is False
+        assert built.response_content_type == "application/json"
+
+    def test_ref_resolved_binary_flags_binary(self, spec):
+        """``$ref`` to a components.responses entry resolves before
+        classification, so ref-based binary responses still flip
+        returns_binary on."""
+        from mcp_builder.schema.models import Tool
+
+        tool = Tool(
+            tool_name="get_shared_binary",
+            endpoint="GET /shared-binary",
+            description="Fetch shared binary.",
+            parameters=[],
+        )
+        built = self._build(tool, spec)
+        assert built.returns_binary is True
+        assert built.response_content_type == "image/png"
+
+    def test_mixed_status_with_non_json_flags_binary(self, tmp_path):
+        """Per-status rule: 200=PDF, 201=JSON → any 2xx without JSON
+        flips returns_binary on. Matches the validator's Phase 1
+        semantics and keeps the renderer on a single code path."""
+        import yaml as _yaml
+
+        from mcp_builder.schema.models import Tool
+        from mcp_builder.spec import load_openapi_spec as _load
+
+        doc = {
+            "openapi": "3.0.3",
+            "info": {"title": "T", "version": "1"},
+            "servers": [{"url": "https://x"}],
+            "paths": {
+                "/mixed": {
+                    "get": {
+                        "responses": {
+                            "200": {
+                                "description": "pdf",
+                                "content": {"application/pdf": {}},
+                            },
+                            "201": {
+                                "description": "json",
+                                "content": {"application/json": {}},
+                            },
+                        }
+                    }
+                }
+            },
+        }
+        spec_path = tmp_path / "spec.yaml"
+        spec_path.write_text(_yaml.safe_dump(doc))
+        small_spec = _load(spec_path)
+
+        tool = Tool(
+            tool_name="get_mixed",
+            endpoint="GET /mixed",
+            description="Mixed statuses.",
+            parameters=[],
+        )
+        built = self._build(tool, small_spec)
+        assert built.returns_binary is True
+        assert built.response_content_type == "application/pdf"

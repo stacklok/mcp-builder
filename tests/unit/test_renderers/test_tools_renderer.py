@@ -16,6 +16,8 @@ def _make_tool(
     query_params: list[ParamPlan] | None = None,
     body_fields: list[ParamPlan] | None = None,
     hints: list[str] | None = None,
+    returns_binary: bool = False,
+    response_content_type: str = "application/json",
 ) -> ToolPlan:
     return ToolPlan(
         tool_name=name,
@@ -28,6 +30,8 @@ def _make_tool(
         body_fields=body_fields or [],
         hints=hints or [],
         group_name="default",
+        returns_binary=returns_binary,
+        response_content_type=response_content_type,
     )
 
 
@@ -330,6 +334,11 @@ class TestRenderToolsModuleEdgeCases:
         assert "params=" in source
         assert "json_body=" in source
 
+    def test_json_tool_does_not_import_base64(self) -> None:
+        """Pure-JSON servers must not carry an unused base64 import."""
+        source = render_tools_module(make_plan(tools=[_make_tool()]))
+        assert "import base64" not in source
+
     def test_deterministic(self) -> None:
         tool = _make_tool(
             path_params=[_make_param("item_id", original_name="itemId")],
@@ -341,3 +350,70 @@ class TestRenderToolsModuleEdgeCases:
         source1 = render_tools_module(plan)
         source2 = render_tools_module(plan)
         assert source1 == source2
+
+
+class TestRenderToolsModuleBinaryBranch:
+    """Binary tools go through request_bytes() and base64-encode the
+    response body so it survives MCP transport as a ``str``."""
+
+    def _binary_tool(self) -> ToolPlan:
+        return _make_tool(
+            name="get_employee_photo",
+            path="/employees/{employeeId}/photo",
+            path_params=[_make_param("employee_id", original_name="employeeId")],
+            description="Fetch the employee photo.",
+            returns_binary=True,
+            response_content_type="image/jpeg",
+        )
+
+    def test_binary_tool_returns_str(self) -> None:
+        source = render_tools_module(make_plan(tools=[self._binary_tool()]))
+        assert "async def get_employee_photo(self" in source
+        assert ") -> str:" in source
+        # Must not claim to return dict.
+        assert "async def get_employee_photo(self, employee_id: " in source
+
+    def test_binary_tool_calls_request_bytes(self) -> None:
+        source = render_tools_module(make_plan(tools=[self._binary_tool()]))
+        assert "self._client.request_bytes(" in source
+        # JSON path must not leak into a binary tool.
+        binary_section = source.split("async def get_employee_photo")[1]
+        assert "self._client.request(" not in binary_section.split("async def", 1)[0]
+
+    def test_binary_tool_base64_encodes_response(self) -> None:
+        source = render_tools_module(make_plan(tools=[self._binary_tool()]))
+        assert 'base64.b64encode(raw).decode("ascii")' in source
+
+    def test_binary_tool_imports_base64(self) -> None:
+        source = render_tools_module(make_plan(tools=[self._binary_tool()]))
+        assert "import base64" in source
+
+    def test_binary_tool_compiles(self) -> None:
+        source = render_tools_module(make_plan(tools=[self._binary_tool()]))
+        compile(source, "<test>", "exec")
+
+    def test_binary_tool_docstring_mentions_content_type(self) -> None:
+        """Docstring surfaces the upstream media type so reviewers know
+        what the base64 payload actually encodes."""
+        source = render_tools_module(make_plan(tools=[self._binary_tool()]))
+        assert "image/jpeg" in source
+
+    def test_mixed_json_and_binary_tools_coexist(self) -> None:
+        """A server with both tool shapes renders one JSON tool and one
+        binary tool from the same template invocation."""
+        json_tool = _make_tool(
+            name="get_item",
+            path="/items/{itemId}",
+            path_params=[_make_param("item_id", original_name="itemId")],
+        )
+        source = render_tools_module(make_plan(tools=[json_tool, self._binary_tool()]))
+        compile(source, "<test>", "exec")
+        assert "import base64" in source
+        # JSON tool keeps its -> dict signature.
+        get_item_section = source.split("async def get_item")[1].split("async def")[0]
+        assert "-> dict:" in get_item_section
+        assert "self._client.request(" in get_item_section
+        # Binary tool uses the bytes path.
+        photo_section = source.split("async def get_employee_photo")[1]
+        assert "-> str:" in photo_section
+        assert "request_bytes(" in photo_section
