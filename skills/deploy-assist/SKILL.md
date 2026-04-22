@@ -87,14 +87,35 @@ If the cluster repo contains one or more existing `MCPServer` YAMLs, pick the ne
 - The set of top-level keys under `spec` (e.g. `image`, `transport`, `oidcConfigRef`, `telemetryConfigRef`, `externalAuthConfigRef`).
 - The set of sibling CRD kinds referenced — e.g. does this repo use a shared `MCPTelemetryConfig`, standalone `MCPOIDCConfig`, inline blocks, or something else?
 - Any ingress pattern differences (shared ALB group, URL-rewrite transforms, backend service naming — operator-managed `mcp-{name}-proxy` vs. plain `{name}`).
+- If a sibling `MCPExternalAuthConfig` exists, the shape of its `spec.embeddedAuthServer.upstreamProviders[*]`: `type` (`oidc` vs. `oauth2`), which config block is populated (`oidcConfig` vs. `oauth2Config`), and field-mapping patterns under `userInfo`. Don't stop at the top-level `spec` — descend into this subtree.
 
 Diff those sets against what's in the generated `deploy/` directory. Flag each of these to surface at the Step 3 gate:
 
 - **Keys present in generated but NOT in sibling** — likely to be rejected by the cluster's CRD. Most common class of failure.
 - **Keys present in sibling but NOT in generated** — the cluster expects something the generator didn't emit. Usually requires adding a ref or annotation.
 - **Kinds referenced by sibling but NOT emitted by generator** — e.g. sibling uses `telemetryConfigRef: shared-telemetry` and the generator emits an inline `telemetry:` block. Requires an adapter rewrite.
+- **Upstream provider `type` mismatch** — e.g. generated uses `type: oidc` but all siblings use `type: oauth2` with explicit endpoints. Note this; Question 5 will confirm whether a rewrite is required.
 
 If there are no existing `MCPServer` YAMLs in the repo, note that this is the first — no diff possible — and proceed.
+
+**Question 5: Does the upstream IdP's OIDC discovery doc actually conform?**
+
+Only applies when the generated `mcpexternalauthconfig.yaml` has `upstreamProviders[*].type: oidc` with a resolvable `issuerUrl`. The embedded auth server performs strict OIDC discovery validation at startup and crash-loops on non-compliant docs — this is the single most common silent first-deploy failure after the sibling-diff class.
+
+Fetch `{issuerUrl}/.well-known/openid-configuration` and confirm all of these fields are present:
+
+- `response_types_supported`
+- `id_token_signing_alg_values_supported`
+- `subject_types_supported`
+- `authorization_endpoint`
+- `token_endpoint`
+- `jwks_uri`
+
+If any are missing, plan to rewrite the generated manifest to `type: oauth2` with explicit endpoints (`authorizationEndpoint`, `tokenEndpoint`, `userInfo`) pulled from the discovery doc. Use the nearest sibling's `oauth2Config` shape as the template (field names, `userInfo.fieldMapping` conventions). Flag this at the Step 3 gate as a proposed rewrite, not a question — the server won't start otherwise.
+
+If the issuer URL is unresolvable (network, DNS, or contains template literals like `{companyDomain}`), flag that separately at the Step 3 gate — the generator likely emitted an unresolved placeholder.
+
+Skip this check entirely when `type: oauth2` is already in use, when there is no `mcpexternalauthconfig.yaml`, or when auth type is `none`/`api_key`.
 
 ---
 
@@ -113,6 +134,7 @@ Present what you found to the user:
 5. **Deployment mechanism** (Flux, ArgoCD, plain manifests, etc.)
 6. **Files to copy** (list of manifests from `deploy/`)
 7. **Sibling-diff findings** (from Step 2 Question 4): any `spec.*` keys or referenced CRD kinds that diverge between the generated manifests and the nearest existing `MCPServer` in the target repo. Each divergence should be one of: **keep as-generated**, **rewrite to match sibling pattern before copying**, or **ask user**. Default to rewriting when the sibling uses a cluster-wide convention (shared-ALB ingress, shared telemetry/OIDC refs), and ask the user when the divergence could be either the generator's bug or the sibling's convention.
+8. **OIDC discovery findings** (from Step 2 Question 5): if the upstream IdP's discovery doc is missing required fields, present the proposed rewrite (type `oidc` → `oauth2`, with the endpoints you pulled from the discovery doc and the `userInfo.fieldMapping` shape taken from the nearest sibling). This is a proposed rewrite, not an open question — the server won't start otherwise — but still surface it so the user can override. If the issuer URL was unresolvable (template literal, DNS failure), show the exact string and ask what it should resolve to.
 
 If any values could not be inferred from the cluster repo, ask the user to provide them.
 
@@ -141,6 +163,12 @@ For each manifest in the generated project's `deploy/` directory, read the file,
 - Replace `REPLACE_ME_DOMAIN` with the confirmed domain
 - Update `metadata.namespace` if needed
 - **Leave `clientId: REPLACE_ME` as-is** — this is a secret the user must fill in
+- **If Step 2 Question 5 flagged a non-compliant OIDC discovery doc**, rewrite the upstream provider before writing the file:
+  - Change `upstreamProviders[*].type` from `oidc` to `oauth2`.
+  - Replace the `oidcConfig:` block with an `oauth2Config:` block.
+  - Populate `authorizationEndpoint`, `tokenEndpoint`, and `userInfo.endpointUrl` from the values you pulled from the discovery doc. Preserve `clientId`, `clientSecretRef`, `redirectUri`, and `scopes` verbatim.
+  - Use the nearest sibling's `userInfo.fieldMapping` shape as the template; if there's no sibling, default to `subjectFields: [sub]`, `nameFields: [name]`, `emailFields: [email]`.
+  - If the issuer URL contained an unresolved template literal (e.g. `{companyDomain}`), substitute the value the user provided at the Step 3 gate across this file AND inside the server's source code — grep the generated project for the same literal and replace it wherever it appears, then note in Step 5 that the container image needs to be rebuilt and the `spec.image` digest updated.
 
 **secret.yaml (if present):**
 - Update `metadata.namespace` if needed
