@@ -15,7 +15,15 @@ from mcp_builder.spec import (
     load_openapi_spec,
     parse_endpoint,
 )
-from mcp_builder.spec.resolver import resolve_response_ref
+from mcp_builder.spec.resolver import (
+    resolve_composed_schema,
+    resolve_parameter_ref,
+    resolve_request_body_ref,
+    resolve_response_ref,
+    resolve_schema_ref,
+    resolve_schema_ref_allow_chain,
+    schema_to_type,
+)
 
 
 def _load_inline_spec(doc, tmp_path):
@@ -768,3 +776,272 @@ class TestResolveResponseRef:
         )
         with pytest.raises(ValueError, match="nested"):
             resolve_response_ref(small_spec, "#/components/responses/Chained")
+
+
+_MINIMAL_PATHS = {"/x": {"get": {"responses": {"200": {"description": "ok"}}}}}
+
+
+def _minimal_spec(components, tmp_path):
+    """Build a minimal spec with the given components block for resolver tests."""
+    doc = {
+        "openapi": "3.0.3",
+        "info": {"title": "T", "version": "1"},
+        "paths": _MINIMAL_PATHS,
+    }
+    if components is not None:
+        doc["components"] = components
+    return _load_inline_spec(doc, tmp_path)
+
+
+class TestResolveParameterRef:
+    """Error-path coverage for resolve_parameter_ref.
+
+    Mirrors TestResolveResponseRef — the four rejection branches are the
+    load-bearing contract, in particular the nested-$ref case which a
+    future "helpful" refactor might silently loosen into chain-walking.
+    """
+
+    def test_rejects_external_ref(self, tmp_path):
+        spec = _minimal_spec(None, tmp_path)
+        with pytest.raises(ValueError, match="only local"):
+            resolve_parameter_ref(spec, "https://example.com/p/Foo")
+
+    def test_rejects_when_components_missing(self, tmp_path):
+        spec = _minimal_spec(None, tmp_path)
+        with pytest.raises(ValueError, match="no 'components' section"):
+            resolve_parameter_ref(spec, "#/components/parameters/Missing")
+
+    def test_rejects_missing_component_name(self, tmp_path):
+        spec = _minimal_spec(
+            {"parameters": {"Other": {"name": "other", "in": "query"}}},
+            tmp_path,
+        )
+        with pytest.raises(ValueError, match="'NotThere' not found"):
+            resolve_parameter_ref(spec, "#/components/parameters/NotThere")
+
+    def test_rejects_nested_ref(self, tmp_path):
+        spec = _minimal_spec(
+            {
+                "parameters": {
+                    "Chained": {"$ref": "#/components/parameters/Target"},
+                    "Target": {"name": "target", "in": "query"},
+                }
+            },
+            tmp_path,
+        )
+        with pytest.raises(ValueError, match="nested"):
+            resolve_parameter_ref(spec, "#/components/parameters/Chained")
+
+
+class TestResolveRequestBodyRef:
+    """Error-path coverage for resolve_request_body_ref. See TestResolveResponseRef."""
+
+    def test_rejects_external_ref(self, tmp_path):
+        spec = _minimal_spec(None, tmp_path)
+        with pytest.raises(ValueError, match="only local"):
+            resolve_request_body_ref(spec, "https://example.com/b/Foo")
+
+    def test_rejects_when_components_missing(self, tmp_path):
+        spec = _minimal_spec(None, tmp_path)
+        with pytest.raises(ValueError, match="no 'components' section"):
+            resolve_request_body_ref(spec, "#/components/requestBodies/Missing")
+
+    def test_rejects_missing_component_name(self, tmp_path):
+        spec = _minimal_spec(
+            {"requestBodies": {"Other": {"content": {"application/json": {}}}}},
+            tmp_path,
+        )
+        with pytest.raises(ValueError, match="'NotThere' not found"):
+            resolve_request_body_ref(spec, "#/components/requestBodies/NotThere")
+
+    def test_rejects_nested_ref(self, tmp_path):
+        spec = _minimal_spec(
+            {
+                "requestBodies": {
+                    "Chained": {"$ref": "#/components/requestBodies/Target"},
+                    "Target": {"content": {"application/json": {}}},
+                }
+            },
+            tmp_path,
+        )
+        with pytest.raises(ValueError, match="nested"):
+            resolve_request_body_ref(spec, "#/components/requestBodies/Chained")
+
+
+class TestResolveSchemaRef:
+    """Error-path coverage for resolve_schema_ref. See TestResolveResponseRef."""
+
+    def test_rejects_external_ref(self, tmp_path):
+        spec = _minimal_spec(None, tmp_path)
+        with pytest.raises(ValueError, match="only local"):
+            resolve_schema_ref(spec, "https://example.com/s/Foo")
+
+    def test_rejects_when_components_missing(self, tmp_path):
+        spec = _minimal_spec(None, tmp_path)
+        with pytest.raises(ValueError, match="no 'components' section"):
+            resolve_schema_ref(spec, "#/components/schemas/Missing")
+
+    def test_rejects_missing_component_name(self, tmp_path):
+        spec = _minimal_spec(
+            {"schemas": {"Other": {"type": "string"}}},
+            tmp_path,
+        )
+        with pytest.raises(ValueError, match="'NotThere' not found"):
+            resolve_schema_ref(spec, "#/components/schemas/NotThere")
+
+    def test_rejects_nested_ref(self, tmp_path):
+        spec = _minimal_spec(
+            {
+                "schemas": {
+                    "Chained": {"$ref": "#/components/schemas/Target"},
+                    "Target": {"type": "string"},
+                }
+            },
+            tmp_path,
+        )
+        with pytest.raises(ValueError, match="nested"):
+            resolve_schema_ref(spec, "#/components/schemas/Chained")
+
+
+class TestResolveSchemaRefAllowChain:
+    """resolve_schema_ref_allow_chain is the chain-walking variant —
+    it returns a nested $ref as-is for the caller to walk. Only the
+    three non-$ref error branches apply here.
+    """
+
+    def test_rejects_external_ref(self, tmp_path):
+        spec = _minimal_spec(None, tmp_path)
+        with pytest.raises(ValueError, match="only local"):
+            resolve_schema_ref_allow_chain(spec, "https://example.com/s/Foo")
+
+    def test_rejects_when_components_missing(self, tmp_path):
+        spec = _minimal_spec(None, tmp_path)
+        with pytest.raises(ValueError, match="no 'components' section"):
+            resolve_schema_ref_allow_chain(spec, "#/components/schemas/Missing")
+
+    def test_rejects_missing_component_name(self, tmp_path):
+        spec = _minimal_spec(
+            {"schemas": {"Other": {"type": "string"}}},
+            tmp_path,
+        )
+        with pytest.raises(ValueError, match="'NotThere' not found"):
+            resolve_schema_ref_allow_chain(spec, "#/components/schemas/NotThere")
+
+    def test_returns_nested_ref_unwalked(self, tmp_path):
+        """Unlike resolve_schema_ref, the allow_chain variant returns a
+        nested $ref component verbatim — caller walks the chain itself."""
+        spec = _minimal_spec(
+            {
+                "schemas": {
+                    "Chained": {"$ref": "#/components/schemas/Target"},
+                    "Target": {"type": "string"},
+                }
+            },
+            tmp_path,
+        )
+        result = resolve_schema_ref_allow_chain(spec, "#/components/schemas/Chained")
+        # Returned as-is: it's still a Ref object, not the resolved Target.
+        assert getattr(result, "ref", None) == "#/components/schemas/Target"
+
+
+class TestResolveComposedSchemaCycle:
+    def test_circular_ref_is_skipped_not_raised(self, tmp_path):
+        """A schema whose allOf recurses back to itself through a $ref
+        should log a warning and skip the cycle, not raise or infinite-loop.
+
+        Construction: top-level op references Parent, Parent.allOf = [ref Child],
+        Child.allOf = [ref Parent]. The second visit to Parent is the cycle.
+        """
+        spec = _minimal_spec(
+            {
+                "schemas": {
+                    "Parent": {
+                        "type": "object",
+                        "properties": {"p": {"type": "string"}},
+                        "allOf": [{"$ref": "#/components/schemas/Child"}],
+                    },
+                    "Child": {
+                        "type": "object",
+                        "properties": {"c": {"type": "integer"}},
+                        "allOf": [{"$ref": "#/components/schemas/Parent"}],
+                    },
+                }
+            },
+            tmp_path,
+        )
+        parent = resolve_schema_ref(spec, "#/components/schemas/Parent")
+        # Should not raise or hang. Both sides' properties should survive the merge.
+        merged = resolve_composed_schema(spec, parent)
+        assert set((merged.properties or {}).keys()) == {"p", "c"}
+
+
+class TestExtractSchemaTypeCycle:
+    def test_circular_ref_chain_raises(self, tmp_path):
+        """A parameter whose $ref chain loops (A → A) must raise, not
+        infinite-loop."""
+        raw = {
+            "openapi": "3.0.3",
+            "info": {"title": "T", "version": "0.1"},
+            "paths": {
+                "/x": {
+                    "get": {
+                        "operationId": "op",
+                        "parameters": [
+                            {
+                                "name": "q",
+                                "in": "query",
+                                "required": False,
+                                "schema": {"$ref": "#/components/schemas/A"},
+                            }
+                        ],
+                        "responses": {"200": {"description": "OK"}},
+                    }
+                }
+            },
+            "components": {
+                "schemas": {
+                    # Self-referential chain: A points to itself.
+                    "A": {"$ref": "#/components/schemas/A"},
+                }
+            },
+        }
+        spec_file = tmp_path / "cycle.yaml"
+        spec_file.write_text(yaml.dump(raw))
+        spec = load_openapi_spec(spec_file)
+        with pytest.raises(ValueError, match="circular .* chain"):
+            get_parameters(spec, "GET", "/x")
+
+
+class TestSchemaToTypeStrict:
+    """schema_to_type rejects unknown/invalid types rather than silently
+    defaulting — tested via direct schema construction since these cases
+    require either unknown type strings or v3.1 type-list quirks that
+    don't round-trip through YAML cleanly."""
+
+    def test_null_only_type_list_raises(self):
+        """A v3.1 schema with type list containing only 'null' has no
+        real type to return. Must raise."""
+        from openapi_pydantic.v3.v3_1 import DataType
+        from openapi_pydantic.v3.v3_1 import Schema as Schema31
+
+        schema = Schema31(type=[DataType.NULL])
+        with pytest.raises(ValueError, match="only null"):
+            schema_to_type(schema)
+
+    def test_non_null_in_list_is_returned(self):
+        """A v3.1 type list with at least one non-null entry returns that entry."""
+        from openapi_pydantic.v3.v3_1 import DataType
+        from openapi_pydantic.v3.v3_1 import Schema as Schema31
+
+        schema = Schema31(type=[DataType.NULL, DataType.STRING])
+        assert schema_to_type(schema) == "string"
+
+    def test_unsupported_type_raises(self):
+        """A scalar type outside OPENAPI_TYPE_MAP raises — we do not
+        silently default to str. v3.1's 'null' is the reachable case."""
+        from openapi_pydantic.v3.v3_1 import DataType
+        from openapi_pydantic.v3.v3_1 import Schema as Schema31
+
+        schema = Schema31(type=DataType.NULL)
+        with pytest.raises(ValueError, match="Unknown OpenAPI schema type"):
+            schema_to_type(schema)
