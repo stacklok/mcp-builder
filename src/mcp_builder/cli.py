@@ -1,10 +1,11 @@
-"""CLI entry point and pipeline orchestrator for mcp-builder.
+"""CLI entry point for mcp-builder.
 
-Pipeline stage: orchestration (ties all stages together).
+Pipeline stage: CLI (arg parsing, exit codes, error rendering).
+
 Each subcommand is a thin wrapper that calls one domain function:
-    - generate: run_pipeline() → scaffold a complete MCP server project
-    - analyze:  analyze_spec() → summarize an OpenAPI spec
-    - validate: validate_scope() → check a scope against an optional spec
+    - generate: pipeline.run_pipeline() → scaffold a complete MCP server project
+    - analyze:  analyze.analyze_spec() → summarize an OpenAPI spec
+    - validate: validate.validate_scope() → check a scope against an optional spec
 
 Usage:
     uv run mcp-builder generate scope.yaml openapi.yaml /path/to/mcp-template-py
@@ -15,118 +16,17 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import logging
 import sys
-from collections.abc import Callable
 from pathlib import Path
 
 from pydantic import ValidationError
 
-from mcp_builder.codegen.plan import ServerPlan, build_server_plan
-from mcp_builder.codegen.renderers.client import render_client_module
-from mcp_builder.codegen.renderers.manifests import render_manifests
-from mcp_builder.codegen.renderers.scaffold import scaffold_project
-from mcp_builder.codegen.renderers.server_wiring import (
-    patch_app_builder,
-    patch_mcp_builder,
-)
-from mcp_builder.codegen.renderers.tools import render_tools_module
-from mcp_builder.codegen.spec_analyzer import analyze_spec
-from mcp_builder.codegen.validator import validate_scope
+from mcp_builder.analyze import analyze_spec
 from mcp_builder.log import configure_logging
+from mcp_builder.pipeline import run_pipeline
 from mcp_builder.schema.models import load_scope
 from mcp_builder.spec import load_openapi_spec
-
-logger = logging.getLogger(__name__)
-
-
-# Note: unlike analyze_spec() and validate_scope() (which live in codegen/ as
-# pure functions), run_pipeline stays here because it is the orchestration
-# layer itself — it does filesystem I/O and ties renderers, patchers, and
-# scaffolding together. codegen/ is kept side-effect-free; cli.py owns the
-# I/O glue. If this grows further, lift it into mcp_builder/pipeline.py.
-def run_pipeline(
-    scope_yaml: Path,
-    openapi_spec: Path,
-    template_dir: Path,
-    output_dir: Path,
-) -> Path:
-    """Run the full MCP server generation pipeline.
-
-    Pipeline stage: orchestration (this is the top-level function).
-    Called by: _cmd_generate() and e2e tests.
-
-    Steps:
-        1. Load and validate the mcp-scope.yaml and OpenAPI spec.
-        2. Build the typed ServerPlan from scope + spec.
-        3. Scaffold the project from the template directory.
-        4. Render and write generated source files (client, tools).
-        5. Patch scaffolded server wiring files.
-        6. Write deployment manifests to deploy/.
-
-    Args:
-        scope_yaml: Path to mcp-scope.yaml.
-        openapi_spec: Path to the OpenAPI spec (YAML or JSON).
-        template_dir: Path to the mcp-template-py checkout.
-        output_dir: Directory where the generated project will be created.
-
-    Returns:
-        Path to the generated project directory.
-    """
-    logger.info("Loading scope from %s", scope_yaml)
-    scope = load_scope(scope_yaml)
-
-    logger.info("Loading OpenAPI spec from %s", openapi_spec)
-    spec = load_openapi_spec(openapi_spec)
-
-    logger.info("Building server plan for '%s'", scope.server.name)
-    plan = build_server_plan(scope, spec)
-
-    logger.info("Scaffolding project into %s", output_dir)
-    project_dir = scaffold_project(plan, template_dir, output_dir)
-    module_dir = project_dir / "src" / plan.module_name
-
-    # Render and write generated source files
-    _write_file(module_dir / "client.py", render_client_module(plan))
-    _write_file(module_dir / "api" / "tools.py", render_tools_module(plan))
-
-    # The template ships a sample api/models.py (HelloRequest/HelloResponse)
-    # that the generated tools.py doesn't import — generated tool methods take
-    # flattened Annotated args so FastMCP can expose a per-param input schema.
-    # Leaving the file behind ships dead code to generated projects.
-    (module_dir / "api" / "models.py").unlink(missing_ok=True)
-
-    # Patch scaffolded wiring files
-    _patch_file(module_dir / "api" / "mcp_builder.py", patch_mcp_builder, plan)
-    _patch_file(module_dir / "api" / "app_builder.py", patch_app_builder, plan)
-
-    # Write deployment manifests
-    deploy_dir = project_dir / "deploy"
-    deploy_dir.mkdir(exist_ok=True)
-    for filename, content in render_manifests(plan).items():
-        _write_file(deploy_dir / filename, content)
-
-    logger.info("Generated project at %s", project_dir)
-    return project_dir
-
-
-def _write_file(path: Path, content: str) -> None:
-    """Write content to a file, creating parent directories as needed."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content, encoding="utf-8")
-    logger.debug("Wrote %s", path)
-
-
-def _patch_file(
-    path: Path,
-    patch_fn: Callable[[str, ServerPlan], str],
-    plan: ServerPlan,
-) -> None:
-    """Read a file, apply a patch function, and write the result back."""
-    source = path.read_text(encoding="utf-8")
-    patched = patch_fn(source, plan)
-    path.write_text(patched, encoding="utf-8")
-    logger.debug("Patched %s", path)
+from mcp_builder.validate import validate_scope
 
 
 def _cmd_generate(args: argparse.Namespace) -> None:

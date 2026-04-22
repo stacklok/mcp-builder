@@ -1,7 +1,6 @@
 """Render tool methods for the generated MCP server.
 
 Pipeline stage: rendering (ServerPlan -> source code string).
-Called by: the pipeline orchestrator after scaffold_project().
 
 Generates a Tools class with one async method per tool. Each method
 has flattened parameters (not Pydantic models) so FastMCP exposes a
@@ -17,8 +16,8 @@ from pathlib import Path
 import structlog
 from jinja2 import Environment, FileSystemLoader
 
-from mcp_builder.codegen.plan import ParamPlan, ServerPlan, ToolPlan
-from mcp_builder.codegen.renderers.escape import escape_python_string
+from mcp_builder.generate.plan import ParamPlan, ServerPlan, ToolPlan
+from mcp_builder.generate.renderers.escape import escape_python_string
 
 logger = structlog.get_logger()
 
@@ -29,7 +28,6 @@ def render_tools_module(plan: ServerPlan) -> str:
     """Generate the tools.py module with a Tools class for the output project.
 
     Pipeline stage: rendering (plan -> source code).
-    Called by: the pipeline orchestrator.
 
     Each tool in plan.tools becomes an async method on the Tools class.
     Method args are flattened from path/query params and body fields so

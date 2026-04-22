@@ -2,8 +2,8 @@
 
 import textwrap
 
-from mcp_builder.codegen.plan import ToolPlan
-from mcp_builder.codegen.renderers.server_wiring import (
+from mcp_builder.generate.plan import ToolPlan
+from mcp_builder.generate.patches import (
     patch_app_builder,
     patch_mcp_builder,
 )

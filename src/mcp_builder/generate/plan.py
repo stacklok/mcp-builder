@@ -17,10 +17,10 @@ Terminology (OpenAPI → plan mapping):
 Reading guide:
     - ServerPlan is the root — it contains everything needed to generate
       an entire MCP server project.
-    - build_server_plan() is the only function — it transforms scope + spec
-      into a ServerPlan.
-    - Renderers in codegen.renderers/ consume the plan via their function
-      signatures (e.g., render_client_module(plan: ServerPlan) -> str).
+    - build_server_plan() is the only public function — it transforms
+      scope + spec into a ServerPlan.
+    - Renderers under mcp_builder.generate.renderers/ consume the plan
+      (e.g., render_client_module(plan: ServerPlan) -> str).
 
 Parameter semantics:
     Every tool's ``parameters`` list is an **allowlist**: only the listed
@@ -145,8 +145,8 @@ class AuthPlan(BaseModel):
 class ServerPlan(BaseModel):
     """The complete intermediate representation for generating one MCP server.
 
-    Pipeline stage: planning (this is the output of build_server_plan()).
-    Consumed by: every renderer in codegen.renderers/.
+    Output of ``build_server_plan()``; consumed by every renderer under
+    ``mcp_builder.generate.renderers`` and by ``scaffold`` + ``patches``.
 
     This is the single data contract between "understanding the spec" and
     "generating code." A reviewer can inspect this model to understand
@@ -182,7 +182,6 @@ def build_server_plan(scope: MCPScope, spec: OpenAPISpec) -> ServerPlan:
     """Build a ServerPlan from a validated scope and typed OpenAPI spec.
 
     Pipeline stage: planning (scope + spec → ServerPlan).
-    Called by: cli.run_pipeline().
 
     This is the only place in the codebase that reads from both the MCPScope
     and the OpenAPI spec. After this function returns, all downstream code
