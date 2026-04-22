@@ -66,13 +66,15 @@ _CLIENT_TEMPLATE = textwrap.dedent('''\
                 don't raise ``JSONDecodeError`` on a zero-length body.
             """
             params = _strip_none(params)
+            headers = _auth_headers()
+            headers["Accept"] = "application/json"
             async with httpx.AsyncClient(base_url=self._base_url) as client:
                 response = await client.request(
                     method,
                     path,
                     params=params,
                     json=json_body,
-                    headers=_auth_headers(),
+                    headers=headers,
                 )
                 response.raise_for_status()
                 if not response.content:
@@ -95,13 +97,15 @@ _CLIENT_TEMPLATE = textwrap.dedent('''\
             transport).
             """
             params = _strip_none(params)
+            headers = _auth_headers()
+            headers["Accept"] = "*/*"
             async with httpx.AsyncClient(base_url=self._base_url) as client:
                 response = await client.request(
                     method,
                     path,
                     params=params,
                     json=json_body,
-                    headers=_auth_headers(),
+                    headers=headers,
                 )
                 response.raise_for_status()
                 return response.content

@@ -164,7 +164,7 @@ Once the endpoint-scoper agent completes:
 
 1. Read `{working_dir}/tool-scoping.md`
 2. Present to the user:
-   - **Flagged endpoints**: which endpoints are flagged for potential exclusion and why — the user decides whether to remove them. This includes any mixed-media endpoints (2xx returning both JSON and non-JSON media types); for each, walk through the options the scoper recorded — exclude the endpoint, keep as `binary` (JSON responses would be base64-wrapped), or keep as `json` (non-JSON responses would crash at runtime) — and record the user's per-endpoint decision.
+   - **Flagged endpoints**: which endpoints are flagged (exclusion candidates, mixed-media endpoints, etc.) and the options the scoper recorded for each. The user decides per endpoint.
    - **Tool list**: for each tool, show the tool name, endpoint, description, parameters, `response_kind`, and hints
    - **Renamed tools**: highlight any tools where the name was changed from the original operationId
 3. Ask the user to approve the tool list or request changes (including which flagged endpoints to remove, if any)
@@ -282,7 +282,7 @@ This checks:
 
 If validation fails or warns:
 1. Read the error/warning output
-2. **Errors**: fix the YAML (common issues: tool name too long, endpoint path doesn't match spec, missing required auth config, path parameter not declared, `response_kind` mismatches what the spec declares). If a `response_kind` error appears at this late stage, the mixed-media surfacing in Step 5 was missed — re-present the affected endpoint to the user and record their decision before flipping the value.
+2. **Errors**: fix the YAML (common issues: tool name too long, endpoint path doesn't match spec, missing required auth config, path parameter not declared, `response_kind` mismatches what the spec declares). Present the error to the user and follow their decision.
 3. **Warnings about missing spec parameters**: **STOP and present these to the user before continuing.** These warnings mean the OpenAPI spec does not define these parameters, so codegen will default their types to `str`. This is often because the spec is incomplete (e.g., no `requestBody` on a POST endpoint). The user must confirm this is acceptable. If the param name is simply misspelled vs the spec, fix it and re-validate.
 4. Re-validate after fixes
 5. Repeat up to 3 times. If still failing after 3 attempts, present the errors to the user and ask for help.
