@@ -95,11 +95,12 @@ class TestRenderMcpserver:
         doc = yaml.safe_load(render_mcpserver(plan))
         assert doc["spec"]["audit"]["enabled"] is True
 
-    def test_telemetry(self, plan: ServerPlan) -> None:
+    def test_no_inline_telemetry(self, plan: ServerPlan) -> None:
+        # The MCPServer CRD no longer supports an inline `telemetry` field;
+        # telemetry is configured via a separate MCPTelemetryConfig and
+        # referenced via `telemetryConfigRef`.
         doc = yaml.safe_load(render_mcpserver(plan))
-        telemetry = doc["spec"]["telemetry"]
-        assert "REPLACE_ME_OTEL_ENDPOINT" in telemetry["openTelemetry"]["endpoint"]
-        assert telemetry["prometheus"]["enabled"] is True
+        assert "telemetry" not in doc["spec"]
 
     def test_oidc_config_ref_when_oauth(self) -> None:
         doc = yaml.safe_load(render_mcpserver(OAUTH_PLAN))
@@ -200,9 +201,9 @@ class TestRenderEmbeddedAuthServer:
     def test_token_lifespans(self) -> None:
         doc = yaml.safe_load(render_external_auth_config(OAUTH_PLAN))
         lifespans = doc["spec"]["embeddedAuthServer"]["tokenLifespans"]
-        assert lifespans["accessToken"] == "1h"
-        assert lifespans["refreshToken"] == "168h"
-        assert lifespans["authorizationCode"] == "10m"
+        assert lifespans["accessTokenLifespan"] == "1h"
+        assert lifespans["refreshTokenLifespan"] == "168h"
+        assert lifespans["authCodeLifespan"] == "10m"
 
     def test_scopes_inject_openid_email(self) -> None:
         """Scopes missing openid/email get them injected."""

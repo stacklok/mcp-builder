@@ -41,8 +41,8 @@ spec:
       memory: 128Mi
   audit:
     enabled: true
-  telemetry:
-    openTelemetry:
-      endpoint: http://REPLACE_ME_OTEL_ENDPOINT:4317
-    prometheus:
-      enabled: true
+  # Telemetry is configured via a separate MCPTelemetryConfig resource and
+  # referenced here with `telemetryConfigRef`. Example:
+  #   telemetryConfigRef:
+  #     name: shared-otel
+  # See: https://github.com/stacklok/toolhive/tree/main/examples/operator
