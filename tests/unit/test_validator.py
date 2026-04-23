@@ -250,34 +250,55 @@ class TestResponseKindSpecCompatibility:
         assert "response_kind='binary'" in msg
         assert "application/json" in msg
 
-    def test_same_status_mixed_json_and_non_json_errors(self, spec):
+    def test_same_status_mixed_passes_with_json_kind(self, spec):
         """A single 2xx declaring both JSON and non-JSON media types
-        (/reports/{reportId}/download) is ambiguous: content negotiation
-        at runtime can hand back either shape. Error regardless of
-        ``response_kind`` so the scope author picks one or drops the
-        endpoint."""
-        for kind in ("json", "binary"):
-            tool = Tool(
-                tool_name="download_report",
-                endpoint="GET /reports/{reportId}/download",
-                description="Download a report.",
-                response_kind=kind,
-                parameters=[
-                    Parameter(
-                        name="reportId",
-                        description="Report ID.",
-                        required=True,
-                        location=ParamLocation.PATH,
-                    ),
-                ],
-            )
-            result = validate_scope(_scope_with_tool(tool), spec)
-            matching = [e for e in result.errors if "download_report" in e]
-            assert matching, (kind, result.errors)
-            (msg,) = matching
-            assert "both JSON and non-JSON" in msg
-            assert "application/json" in msg
-            assert "application/pdf" in msg
+        (/reports/{reportId}/download returns application/json + pdf) is
+        safe under ``response_kind=json``: the generated client sends
+        ``Accept: application/json`` so the server negotiates JSON."""
+        tool = Tool(
+            tool_name="download_report",
+            endpoint="GET /reports/{reportId}/download",
+            description="Download a report.",
+            response_kind="json",
+            parameters=[
+                Parameter(
+                    name="reportId",
+                    description="Report ID.",
+                    required=True,
+                    location=ParamLocation.PATH,
+                ),
+            ],
+        )
+        result = validate_scope(_scope_with_tool(tool), spec)
+        assert not any("download_report" in e for e in result.errors), result.errors
+
+    def test_same_status_mixed_errors_with_binary_kind(self, spec):
+        """Same endpoint under ``response_kind=binary`` is unsafe: the
+        generated client sends ``Accept: */*`` and a JSON-capable server
+        may return JSON that would be base64-wrapped into opaque bytes."""
+        tool = Tool(
+            tool_name="download_report",
+            endpoint="GET /reports/{reportId}/download",
+            description="Download a report.",
+            response_kind="binary",
+            parameters=[
+                Parameter(
+                    name="reportId",
+                    description="Report ID.",
+                    required=True,
+                    location=ParamLocation.PATH,
+                ),
+            ],
+        )
+        result = validate_scope(_scope_with_tool(tool), spec)
+        matching = [e for e in result.errors if "download_report" in e]
+        assert matching, result.errors
+        (msg,) = matching
+        assert "response_kind='binary'" in msg
+        assert "include JSON" in msg
+        assert "application/json" in msg
+        assert "application/pdf" in msg
+        assert "Update the scope" in msg
 
     def test_no_content_block_passes(self, spec):
         """2xx with no 'content' block is a legitimate empty response
@@ -352,10 +373,10 @@ class TestResponseKindSpecCompatibility:
         assert not any("get_vendor" in e for e in result.errors)
 
     def test_mixed_status_2xx_errors_regardless_of_response_kind(self, tmp_path):
-        """Spec that returns PDF on 200 and JSON on 201 is ambiguous for
-        single-tool codegen — error whichever response_kind is set, because
-        the tool commits to one decode path and the other status will
-        either crash (json) or get base64-wrapped (binary)."""
+        """Spec that returns PDF on 200 and JSON on 201 is unsafe for
+        single-tool codegen under either response_kind: ``json`` can't
+        decode the PDF status, ``binary`` would base64-wrap the JSON
+        status."""
         paths = {
             "/mixed": {
                 "get": {
@@ -373,22 +394,37 @@ class TestResponseKindSpecCompatibility:
             }
         }
 
-        for kind in ("json", "binary"):
-            small_spec = _mini_spec(tmp_path, paths)
-            tool = Tool(
-                tool_name="get_mixed",
-                endpoint="GET /mixed",
-                description="Mixed statuses.",
-                response_kind=kind,
-                parameters=[],
-            )
-            result = validate_scope(_scope_with_tool(tool), small_spec)
-            matching = [e for e in result.errors if "get_mixed" in e]
-            assert matching, (kind, result.errors)
-            (msg,) = matching
-            assert "mixed JSON and non-JSON" in msg
-            assert "application/pdf" in msg
-            assert "application/json" in msg
+        small_spec = _mini_spec(tmp_path, paths)
+
+        json_tool = Tool(
+            tool_name="get_mixed",
+            endpoint="GET /mixed",
+            description="Mixed statuses.",
+            response_kind="json",
+            parameters=[],
+        )
+        result = validate_scope(_scope_with_tool(json_tool), small_spec)
+        matching = [e for e in result.errors if "get_mixed" in e]
+        assert matching, result.errors
+        (msg,) = matching
+        assert "response_kind='json'" in msg
+        assert "no JSON content type" in msg
+        assert "application/pdf" in msg
+
+        binary_tool = Tool(
+            tool_name="get_mixed",
+            endpoint="GET /mixed",
+            description="Mixed statuses.",
+            response_kind="binary",
+            parameters=[],
+        )
+        result = validate_scope(_scope_with_tool(binary_tool), small_spec)
+        matching = [e for e in result.errors if "get_mixed" in e]
+        assert matching, result.errors
+        (msg,) = matching
+        assert "response_kind='binary'" in msg
+        assert "include JSON" in msg
+        assert "application/json" in msg
 
 
 class TestIsJsonMediaType:
