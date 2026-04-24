@@ -38,6 +38,12 @@ def is_text_media_type(media_type: str) -> bool:
     the predicate is mutually exclusive with
     :func:`is_json_media_type`; those belong under ``response_kind:
     json`` instead.
+
+    Known limitation: human-readable ``application/*`` subtypes that
+    are not XML — ``application/javascript``, ``application/yaml``,
+    ``application/sql``, ``application/graphql``, etc. — return False
+    today and route through the binary path, which base64-wraps the
+    body. Expanding the allowlist is tracked as a follow-up.
     """
     bare = media_type.split(";", 1)[0].strip()
     if is_json_media_type(bare):
