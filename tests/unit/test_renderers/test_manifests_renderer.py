@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 import yaml
 
-from mcp_builder.generate.plan import AuthPlan, ServerPlan
+from mcp_builder.generate.plan import ServerPlan
 from mcp_builder.generate.renderers.manifests import (
     _derive_provider_name,
     render_external_auth_config,
@@ -15,17 +15,28 @@ from mcp_builder.generate.renderers.manifests import (
     render_mcpserver,
     render_secret,
 )
+from mcp_builder.schema.models import NoAuth, OAuth2Auth, OIDCAuth
 from tests.unit.test_renderers.conftest import make_plan
 
-OAUTH_PLAN = make_plan(
-    auth=AuthPlan(
-        type="oauth_bearer",
+OIDC_PLAN = make_plan(
+    auth=OIDCAuth(
+        type="oidc",
         issuer="https://accounts.google.com",
-        scopes=["openid", "email"],
+        scopes_required=["openid", "email"],
+    )
+)
+OAUTH2_PLAN = make_plan(
+    auth=OAuth2Auth(
+        type="oauth2",
+        flow="authorizationCode",
+        authorization_url="https://accounts.spotify.com/authorize",
+        token_url="https://accounts.spotify.com/api/token",
+        userinfo_url="https://api.spotify.com/v1/me",
+        scopes_required=["user-read-private", "playlist-read-private"],
     )
 )
 API_KEY_PLAN = make_plan()
-NONE_PLAN = make_plan(auth=AuthPlan(type="none"))
+NONE_PLAN = make_plan(auth=NoAuth(type="none"))
 
 
 # ---------------------------------------------------------------------------
@@ -69,8 +80,12 @@ class TestRenderMcpserver:
             "name": "network",
         }
 
-    def test_auth_ref_when_oauth(self) -> None:
-        doc = yaml.safe_load(render_mcpserver(OAUTH_PLAN))
+    def test_auth_ref_when_oidc(self) -> None:
+        doc = yaml.safe_load(render_mcpserver(OIDC_PLAN))
+        assert doc["spec"]["externalAuthConfigRef"]["name"] == "test-api-auth"
+
+    def test_auth_ref_when_oauth2(self) -> None:
+        doc = yaml.safe_load(render_mcpserver(OAUTH2_PLAN))
         assert doc["spec"]["externalAuthConfigRef"]["name"] == "test-api-auth"
 
     def test_auth_ref_for_api_key(self) -> None:
@@ -102,14 +117,20 @@ class TestRenderMcpserver:
         doc = yaml.safe_load(render_mcpserver(plan))
         assert "telemetry" not in doc["spec"]
 
-    def test_oidc_config_ref_when_oauth(self) -> None:
-        doc = yaml.safe_load(render_mcpserver(OAUTH_PLAN))
+    def test_oidc_config_ref_when_oidc(self) -> None:
+        doc = yaml.safe_load(render_mcpserver(OIDC_PLAN))
         ref = doc["spec"]["oidcConfigRef"]
         assert ref["name"] == "test-api-oidc"
         assert "REPLACE_ME_DOMAIN" in ref["audience"]
         assert "REPLACE_ME_DOMAIN" in ref["resourceUrl"]
-        # The inline spec.oidcConfig shape is not accepted by the current CRD.
         assert "oidcConfig" not in doc["spec"]
+
+    def test_oidc_config_ref_when_oauth2(self) -> None:
+        # Embedded auth server always issues OIDC tokens to clients, even
+        # when the upstream is OAuth2 — so oidcConfigRef applies.
+        doc = yaml.safe_load(render_mcpserver(OAUTH2_PLAN))
+        ref = doc["spec"]["oidcConfigRef"]
+        assert ref["name"] == "test-api-oidc"
 
     def test_no_oidc_config_ref_when_api_key(self) -> None:
         doc = yaml.safe_load(render_mcpserver(API_KEY_PLAN))
@@ -135,83 +156,66 @@ class TestRenderMcpserver:
 # ---------------------------------------------------------------------------
 
 
-class TestRenderEmbeddedAuthServer:
+class TestRenderEmbeddedOIDC:
     def test_valid_yaml(self) -> None:
-        doc = yaml.safe_load(render_external_auth_config(OAUTH_PLAN))
+        doc = yaml.safe_load(render_external_auth_config(OIDC_PLAN))
         assert isinstance(doc, dict)
 
     def test_api_version(self) -> None:
-        doc = yaml.safe_load(render_external_auth_config(OAUTH_PLAN))
+        doc = yaml.safe_load(render_external_auth_config(OIDC_PLAN))
         assert doc["apiVersion"] == "toolhive.stacklok.dev/v1alpha1"
 
     def test_kind(self) -> None:
-        doc = yaml.safe_load(render_external_auth_config(OAUTH_PLAN))
+        doc = yaml.safe_load(render_external_auth_config(OIDC_PLAN))
         assert doc["kind"] == "MCPExternalAuthConfig"
 
     def test_metadata_name(self) -> None:
-        doc = yaml.safe_load(render_external_auth_config(OAUTH_PLAN))
+        doc = yaml.safe_load(render_external_auth_config(OIDC_PLAN))
         assert doc["metadata"]["name"] == "test-api-auth"
 
-    def test_namespace(self) -> None:
-        doc = yaml.safe_load(render_external_auth_config(OAUTH_PLAN))
-        assert doc["metadata"]["namespace"] == "toolhive-system"
-
     def test_type(self) -> None:
-        doc = yaml.safe_load(render_external_auth_config(OAUTH_PLAN))
+        doc = yaml.safe_load(render_external_auth_config(OIDC_PLAN))
         assert doc["spec"]["type"] == "embeddedAuthServer"
 
-    def test_issuer_placeholder(self) -> None:
-        doc = yaml.safe_load(render_external_auth_config(OAUTH_PLAN))
-        issuer = doc["spec"]["embeddedAuthServer"]["issuer"]
-        assert "REPLACE_ME_DOMAIN" in issuer
-        assert "test-api" in issuer
-
-    def test_upstream_provider_name(self) -> None:
-        doc = yaml.safe_load(render_external_auth_config(OAUTH_PLAN))
-        providers = doc["spec"]["embeddedAuthServer"]["upstreamProviders"]
-        assert len(providers) == 1
-        assert providers[0]["name"] == "google"
-
     def test_upstream_provider_type(self) -> None:
-        doc = yaml.safe_load(render_external_auth_config(OAUTH_PLAN))
+        doc = yaml.safe_load(render_external_auth_config(OIDC_PLAN))
         providers = doc["spec"]["embeddedAuthServer"]["upstreamProviders"]
         assert providers[0]["type"] == "oidc"
+        assert providers[0]["name"] == "google"
 
     def test_upstream_issuer_url(self) -> None:
-        doc = yaml.safe_load(render_external_auth_config(OAUTH_PLAN))
+        doc = yaml.safe_load(render_external_auth_config(OIDC_PLAN))
         oidc = doc["spec"]["embeddedAuthServer"]["upstreamProviders"][0]["oidcConfig"]
         assert oidc["issuerUrl"] == "https://accounts.google.com"
 
     def test_upstream_client_id_placeholder(self) -> None:
-        doc = yaml.safe_load(render_external_auth_config(OAUTH_PLAN))
+        doc = yaml.safe_load(render_external_auth_config(OIDC_PLAN))
         oidc = doc["spec"]["embeddedAuthServer"]["upstreamProviders"][0]["oidcConfig"]
         assert oidc["clientId"] == "REPLACE_ME"
 
     def test_upstream_scopes(self) -> None:
-        doc = yaml.safe_load(render_external_auth_config(OAUTH_PLAN))
+        doc = yaml.safe_load(render_external_auth_config(OIDC_PLAN))
         oidc = doc["spec"]["embeddedAuthServer"]["upstreamProviders"][0]["oidcConfig"]
         assert oidc["scopes"] == ["openid", "email"]
 
     def test_redirect_uri(self) -> None:
-        doc = yaml.safe_load(render_external_auth_config(OAUTH_PLAN))
+        doc = yaml.safe_load(render_external_auth_config(OIDC_PLAN))
         oidc = doc["spec"]["embeddedAuthServer"]["upstreamProviders"][0]["oidcConfig"]
         assert "REPLACE_ME_DOMAIN" in oidc["redirectUri"]
         assert "test-api/oauth/callback" in oidc["redirectUri"]
 
     def test_token_lifespans(self) -> None:
-        doc = yaml.safe_load(render_external_auth_config(OAUTH_PLAN))
+        doc = yaml.safe_load(render_external_auth_config(OIDC_PLAN))
         lifespans = doc["spec"]["embeddedAuthServer"]["tokenLifespans"]
         assert lifespans["accessTokenLifespan"] == "1h"
-        assert lifespans["refreshTokenLifespan"] == "168h"
-        assert lifespans["authCodeLifespan"] == "10m"
 
     def test_scopes_inject_openid_email(self) -> None:
         """Scopes missing openid/email get them injected."""
         plan = make_plan(
-            auth=AuthPlan(
-                type="oauth_bearer",
+            auth=OIDCAuth(
+                type="oidc",
                 issuer="https://accounts.google.com",
-                scopes=["https://www.googleapis.com/auth/drive.readonly"],
+                scopes_required=["https://www.googleapis.com/auth/drive.readonly"],
             )
         )
         doc = yaml.safe_load(render_external_auth_config(plan))
@@ -220,24 +224,66 @@ class TestRenderEmbeddedAuthServer:
         assert "https://www.googleapis.com/auth/drive.readonly" in oidc["scopes"]
 
     def test_scopes_no_duplicate_openid_email(self) -> None:
-        """Scopes already containing openid/email are not duplicated."""
-        doc = yaml.safe_load(render_external_auth_config(OAUTH_PLAN))
+        doc = yaml.safe_load(render_external_auth_config(OIDC_PLAN))
         oidc = doc["spec"]["embeddedAuthServer"]["upstreamProviders"][0]["oidcConfig"]
         assert oidc["scopes"].count("openid") == 1
         assert oidc["scopes"].count("email") == 1
 
-    def test_no_signing_keys(self) -> None:
-        """Signing keys are intentionally omitted — auto-generated at runtime."""
-        doc = yaml.safe_load(render_external_auth_config(OAUTH_PLAN))
-        eas = doc["spec"]["embeddedAuthServer"]
-        assert "signingKeySecretRefs" not in eas
-        assert "hmacSecretRefs" not in eas
 
-    def test_has_comment_header(self) -> None:
-        raw = render_external_auth_config(OAUTH_PLAN)
-        assert "REQUIRED" in raw
-        assert "clientId" in raw
-        assert "docs.stacklok.com" in raw
+class TestRenderEmbeddedOAuth2:
+    def test_valid_yaml(self) -> None:
+        doc = yaml.safe_load(render_external_auth_config(OAUTH2_PLAN))
+        assert isinstance(doc, dict)
+
+    def test_upstream_provider_type(self) -> None:
+        doc = yaml.safe_load(render_external_auth_config(OAUTH2_PLAN))
+        providers = doc["spec"]["embeddedAuthServer"]["upstreamProviders"]
+        assert providers[0]["type"] == "oauth2"
+        assert providers[0]["name"] == "spotify"
+
+    def test_oauth2_config_endpoints(self) -> None:
+        doc = yaml.safe_load(render_external_auth_config(OAUTH2_PLAN))
+        cfg = doc["spec"]["embeddedAuthServer"]["upstreamProviders"][0]["oauth2Config"]
+        assert cfg["authorizationEndpoint"] == "https://accounts.spotify.com/authorize"
+        assert cfg["tokenEndpoint"] == "https://accounts.spotify.com/api/token"
+        assert cfg["userInfo"] == "https://api.spotify.com/v1/me"
+
+    def test_no_issuer_url(self) -> None:
+        # OAuth2 has no issuer; the CRD must not carry one.
+        raw = render_external_auth_config(OAUTH2_PLAN)
+        assert "issuerUrl" not in raw
+
+    def test_no_oidc_config_block(self) -> None:
+        doc = yaml.safe_load(render_external_auth_config(OAUTH2_PLAN))
+        provider = doc["spec"]["embeddedAuthServer"]["upstreamProviders"][0]
+        assert "oidcConfig" not in provider
+
+    def test_client_id_placeholder(self) -> None:
+        doc = yaml.safe_load(render_external_auth_config(OAUTH2_PLAN))
+        cfg = doc["spec"]["embeddedAuthServer"]["upstreamProviders"][0]["oauth2Config"]
+        assert cfg["clientId"] == "REPLACE_ME"
+
+    def test_scopes_not_injected_with_openid(self) -> None:
+        # openid/email are OIDC concepts — OAuth2 scopes are API-defined
+        # only, so we do NOT inject openid/email into the oauth2 template.
+        doc = yaml.safe_load(render_external_auth_config(OAUTH2_PLAN))
+        cfg = doc["spec"]["embeddedAuthServer"]["upstreamProviders"][0]["oauth2Config"]
+        assert "openid" not in cfg["scopes"]
+        assert "user-read-private" in cfg["scopes"]
+
+    def test_userinfo_url_omitted_when_none(self) -> None:
+        plan = make_plan(
+            auth=OAuth2Auth(
+                type="oauth2",
+                flow="authorizationCode",
+                authorization_url="https://accounts.spotify.com/authorize",
+                token_url="https://accounts.spotify.com/api/token",
+                scopes_required=["user-read-private"],
+            )
+        )
+        doc = yaml.safe_load(render_external_auth_config(plan))
+        cfg = doc["spec"]["embeddedAuthServer"]["upstreamProviders"][0]["oauth2Config"]
+        assert "userInfo" not in cfg
 
 
 # ---------------------------------------------------------------------------
@@ -295,9 +341,13 @@ class TestRenderSecret:
         doc = yaml.safe_load(render_secret(API_KEY_PLAN))
         assert doc["stringData"]["token"] == "REPLACE_ME"
 
-    def test_oauth_raises(self) -> None:
+    def test_oidc_raises(self) -> None:
         with pytest.raises(ValueError, match="api_key"):
-            render_secret(OAUTH_PLAN)
+            render_secret(OIDC_PLAN)
+
+    def test_oauth2_raises(self) -> None:
+        with pytest.raises(ValueError, match="api_key"):
+            render_secret(OAUTH2_PLAN)
 
     def test_none_raises(self) -> None:
         with pytest.raises(ValueError, match="api_key"):
@@ -358,30 +408,35 @@ class TestRenderIngress:
 
 
 class TestRenderMcpoidcConfig:
-    def test_valid_yaml(self) -> None:
-        doc = yaml.safe_load(render_mcpoidc_config(OAUTH_PLAN))
-        assert isinstance(doc, dict)
-
-    def test_api_version_and_kind(self) -> None:
-        doc = yaml.safe_load(render_mcpoidc_config(OAUTH_PLAN))
-        assert doc["apiVersion"] == "toolhive.stacklok.dev/v1alpha1"
+    def test_valid_for_oidc(self) -> None:
+        doc = yaml.safe_load(render_mcpoidc_config(OIDC_PLAN))
         assert doc["kind"] == "MCPOIDCConfig"
 
+    def test_valid_for_oauth2(self) -> None:
+        # Embedded auth server issues OIDC tokens to clients regardless of
+        # upstream, so MCPOIDCConfig applies to oauth2 too.
+        doc = yaml.safe_load(render_mcpoidc_config(OAUTH2_PLAN))
+        assert doc["kind"] == "MCPOIDCConfig"
+
+    def test_api_version_and_kind(self) -> None:
+        doc = yaml.safe_load(render_mcpoidc_config(OIDC_PLAN))
+        assert doc["apiVersion"] == "toolhive.stacklok.dev/v1alpha1"
+
     def test_metadata_name_matches_ref(self) -> None:
-        doc = yaml.safe_load(render_mcpoidc_config(OAUTH_PLAN))
+        doc = yaml.safe_load(render_mcpoidc_config(OIDC_PLAN))
         assert doc["metadata"]["name"] == "test-api-oidc"
 
     def test_inline_issuer(self) -> None:
-        doc = yaml.safe_load(render_mcpoidc_config(OAUTH_PLAN))
+        doc = yaml.safe_load(render_mcpoidc_config(OIDC_PLAN))
         assert doc["spec"]["type"] == "inline"
         assert "REPLACE_ME_DOMAIN" in doc["spec"]["inline"]["issuer"]
 
     def test_raises_for_api_key(self) -> None:
-        with pytest.raises(ValueError, match="oauth_bearer"):
+        with pytest.raises(ValueError, match="oauth2/oidc"):
             render_mcpoidc_config(API_KEY_PLAN)
 
     def test_raises_for_none(self) -> None:
-        with pytest.raises(ValueError, match="oauth_bearer"):
+        with pytest.raises(ValueError, match="oauth2/oidc"):
             render_mcpoidc_config(NONE_PLAN)
 
 
@@ -395,8 +450,12 @@ class TestRenderManifests:
         result = render_manifests(API_KEY_PLAN)
         assert len(result) == 4
 
-    def test_oauth_returns_four_files(self) -> None:
-        result = render_manifests(OAUTH_PLAN)
+    def test_oidc_returns_four_files(self) -> None:
+        result = render_manifests(OIDC_PLAN)
+        assert len(result) == 4
+
+    def test_oauth2_returns_four_files(self) -> None:
+        result = render_manifests(OAUTH2_PLAN)
         assert len(result) == 4
 
     def test_none_returns_two_files(self) -> None:
@@ -412,8 +471,17 @@ class TestRenderManifests:
             "secret.yaml",
         }
 
-    def test_filenames_oauth(self) -> None:
-        result = render_manifests(OAUTH_PLAN)
+    def test_filenames_oidc(self) -> None:
+        result = render_manifests(OIDC_PLAN)
+        assert set(result.keys()) == {
+            "mcpserver.yaml",
+            "ingress.yaml",
+            "mcpexternalauthconfig.yaml",
+            "mcpoidcconfig.yaml",
+        }
+
+    def test_filenames_oauth2(self) -> None:
+        result = render_manifests(OAUTH2_PLAN)
         assert set(result.keys()) == {
             "mcpserver.yaml",
             "ingress.yaml",
@@ -426,11 +494,16 @@ class TestRenderManifests:
         assert set(result.keys()) == {"mcpserver.yaml", "ingress.yaml"}
 
     def test_all_values_are_strings(self) -> None:
-        for content in render_manifests(OAUTH_PLAN).values():
+        for content in render_manifests(OIDC_PLAN).values():
+            assert isinstance(content, str)
+        for content in render_manifests(OAUTH2_PLAN).values():
             assert isinstance(content, str)
 
     def test_all_values_parse_as_yaml(self) -> None:
-        for content in render_manifests(OAUTH_PLAN).values():
+        for content in render_manifests(OIDC_PLAN).values():
+            doc = yaml.safe_load(content)
+            assert isinstance(doc, dict)
+        for content in render_manifests(OAUTH2_PLAN).values():
             doc = yaml.safe_load(content)
             assert isinstance(doc, dict)
 

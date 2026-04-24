@@ -156,16 +156,28 @@ class TestGroupPlans:
 class TestAuthPlan:
     def test_api_key_auth(self, plan):
         assert plan.auth.type == "api_key"
-        assert plan.auth.issuer is None
-        assert plan.auth.scopes is None
 
-    def test_oauth_auth(self, spec):
+    def test_oauth2_auth(self, spec):
+        from mcp_builder.schema.models import OAuth2Auth
+
         scope = load_scope(FIXTURES / "test_scope_oauth.yaml")
         plan = build_server_plan(scope, spec)
-        assert plan.auth.type == "oauth_bearer"
+        assert plan.auth.type == "oauth2"
+        assert isinstance(plan.auth, OAuth2Auth)
+        assert plan.auth.authorization_url == "https://auth.example.com/oauth/authorize"
+        assert plan.auth.token_url == "https://auth.example.com/oauth/token"
+        assert plan.auth.userinfo_url == "https://api.example.com/userinfo"
+        assert "read" in plan.auth.scopes_required
+
+    def test_oidc_auth(self, spec):
+        from mcp_builder.schema.models import OIDCAuth
+
+        scope = load_scope(FIXTURES / "test_scope_oidc.yaml")
+        plan = build_server_plan(scope, spec)
+        assert plan.auth.type == "oidc"
+        assert isinstance(plan.auth, OIDCAuth)
         assert plan.auth.issuer == "https://accounts.google.com"
-        assert plan.auth.scopes is not None
-        assert "openid" in plan.auth.scopes
+        assert "openid" in plan.auth.scopes_required
 
 
 # ---------------------------------------------------------------------------

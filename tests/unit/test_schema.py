@@ -66,10 +66,14 @@ class TestValidInputs:
         scope = load_scope(FIXTURES / "valid_google_drive.yaml")
         assert scope.server.name == "google-drive"
         assert len(scope.groups) == 2
-        assert scope.auth.type == "oauth_bearer"
-        assert scope.auth.oauth is not None
-        assert scope.auth.oauth.issuer == "https://accounts.google.com"
-        assert len(scope.auth.oauth.scopes) == 3
+        assert scope.auth.type == "oidc"
+        # isinstance narrowing keeps the discriminated-union types honest.
+        from mcp_builder.schema.models import OIDCAuth
+
+        assert isinstance(scope.auth, OIDCAuth)
+        assert scope.auth.issuer == "https://accounts.google.com"
+        assert len(scope.auth.scopes_required) == 3
+        assert "openid" in scope.auth.scopes_available
 
     def test_minimal_fixture(self) -> None:
         scope = load_scope(FIXTURES / "valid_minimal.yaml")
@@ -80,7 +84,6 @@ class TestValidInputs:
     def test_api_key_fixture(self) -> None:
         scope = load_scope(FIXTURES / "valid_api_key_auth.yaml")
         assert scope.auth.type == "api_key"
-        assert scope.auth.oauth is None
         assert scope.auth.notes is not None
 
     def test_minimal_from_dict(self) -> None:
@@ -318,23 +321,79 @@ class TestInvalidAuth:
         with pytest.raises(ValidationError, match="type"):
             MCPScope.model_validate(data)
 
-    def test_missing_oauth_when_required(self) -> None:
+    def test_oauth_bearer_no_longer_accepted(self) -> None:
+        # The old catch-all type is gone — callers must pick oauth2 or oidc.
         data = _minimal_scope(auth={"type": "oauth_bearer"})
-        with pytest.raises(ValidationError, match="oauth.*required"):
+        with pytest.raises(ValidationError):
             MCPScope.model_validate(data)
 
-    def test_oauth_bearer_valid(self) -> None:
+    def test_oauth2_missing_required_endpoints(self) -> None:
+        data = _minimal_scope(auth={"type": "oauth2", "flow": "authorizationCode"})
+        with pytest.raises(ValidationError, match="authorization_url|token_url"):
+            MCPScope.model_validate(data)
+
+    def test_oauth2_valid(self) -> None:
+        from mcp_builder.schema.models import OAuth2Auth
+
         data = _minimal_scope(
             auth={
-                "type": "oauth_bearer",
-                "oauth": {
-                    "issuer": "https://accounts.google.com",
-                    "scopes": ["openid"],
-                },
+                "type": "oauth2",
+                "flow": "authorizationCode",
+                "authorization_url": "https://auth.example.com/authorize",
+                "token_url": "https://auth.example.com/token",
+                "scopes_available": {"read": "Read items"},
+                "scopes_required": ["read"],
             }
         )
         scope = MCPScope.model_validate(data)
-        assert scope.auth.oauth is not None
+        assert isinstance(scope.auth, OAuth2Auth)
+        assert scope.auth.authorization_url == "https://auth.example.com/authorize"
+
+    def test_oauth2_rejects_issuer(self) -> None:
+        # Cross-over prevention: issuer is an OIDC concept, not OAuth2.
+        data = _minimal_scope(
+            auth={
+                "type": "oauth2",
+                "flow": "authorizationCode",
+                "authorization_url": "https://auth.example.com/authorize",
+                "token_url": "https://auth.example.com/token",
+                "issuer": "https://auth.example.com",
+            }
+        )
+        with pytest.raises(ValidationError, match="issuer"):
+            MCPScope.model_validate(data)
+
+    def test_oidc_valid(self) -> None:
+        from mcp_builder.schema.models import OIDCAuth
+
+        data = _minimal_scope(
+            auth={
+                "type": "oidc",
+                "issuer": "https://accounts.google.com",
+                "scopes_required": ["openid"],
+            }
+        )
+        scope = MCPScope.model_validate(data)
+        assert isinstance(scope.auth, OIDCAuth)
+        assert scope.auth.issuer == "https://accounts.google.com"
+
+    def test_oidc_missing_issuer(self) -> None:
+        data = _minimal_scope(auth={"type": "oidc"})
+        with pytest.raises(ValidationError, match="issuer"):
+            MCPScope.model_validate(data)
+
+    def test_oidc_rejects_oauth2_endpoints(self) -> None:
+        # Cross-over prevention: OIDC discovery document carries endpoints,
+        # not the scope file.
+        data = _minimal_scope(
+            auth={
+                "type": "oidc",
+                "issuer": "https://accounts.google.com",
+                "authorization_url": "https://accounts.google.com/authorize",
+            }
+        )
+        with pytest.raises(ValidationError, match="authorization_url"):
+            MCPScope.model_validate(data)
 
 
 class TestInvalidEndpoint:

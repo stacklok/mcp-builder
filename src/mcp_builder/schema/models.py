@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from enum import StrEnum
 from pathlib import Path
-from typing import Literal, Self
+from typing import Annotated, Literal, Self
 
 import structlog
 import yaml
@@ -42,15 +42,6 @@ class Parameter(BaseModel):
     description: str
     required: bool
     location: ParamLocation
-
-
-class OAuthConfig(BaseModel):
-    """OAuth configuration for oauth_bearer auth type."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    issuer: str
-    scopes: list[str]
 
 
 class SpecConfig(BaseModel):
@@ -190,25 +181,67 @@ class Group(BaseModel):
     tools: list[Tool] = Field(min_length=1)
 
 
-class AuthConfig(BaseModel):
-    """Authentication configuration."""
+class OAuth2Auth(BaseModel):
+    """OAuth2 auth variant — matches OpenAPI's oauth2 security scheme shape.
+
+    Fields mirror what OpenAPI's ``flows.<flow>`` block provides, plus an
+    optional ``userinfo_url`` (vendor-specific; not standardized in OpenAPI).
+    Endpoint URLs are absolute: relative paths from the spec are resolved
+    against ``spec.base_url`` during scoping.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
-    type: Literal["oauth_bearer", "api_key", "none"]
-    oauth: OAuthConfig | None = None
+    type: Literal["oauth2"]
+    flow: Literal["authorizationCode"]
+    authorization_url: str
+    token_url: str
+    userinfo_url: str | None = None
+    scopes_available: dict[str, str] = Field(default_factory=dict)
+    scopes_required: list[str] = Field(default_factory=list)
     notes: str | None = None
 
-    @model_validator(mode="after")
-    def validate_oauth_required(self) -> Self:
-        """``oauth`` block required when ``type == "oauth_bearer"``.
 
-        Codegen emits an ``MCPExternalAuthConfig`` that needs a concrete
-        issuer and scopes — no sensible default for either.
-        """
-        if self.type == "oauth_bearer" and self.oauth is None:
-            raise ValueError("'oauth' is required when auth type is 'oauth_bearer'")
-        return self
+class OIDCAuth(BaseModel):
+    """OIDC auth variant — carries the issuer; endpoints come from discovery.
+
+    For OIDC, the upstream publishes a ``/.well-known/openid-configuration``
+    that lists ``authorization_endpoint``, ``token_endpoint``, and
+    ``userinfo_endpoint``. We don't duplicate those here — ``deploy-assist``
+    reads them at deploy time.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["oidc"]
+    issuer: str
+    scopes_available: dict[str, str] = Field(default_factory=dict)
+    scopes_required: list[str] = Field(default_factory=list)
+    notes: str | None = None
+
+
+class APIKeyAuth(BaseModel):
+    """Static bearer-token auth — API key in ``Authorization`` header."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["api_key"]
+    notes: str | None = None
+
+
+class NoAuth(BaseModel):
+    """No auth — the upstream API is public or auth is out of scope."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["none"]
+    notes: str | None = None
+
+
+AuthConfig = Annotated[
+    OAuth2Auth | OIDCAuth | APIKeyAuth | NoAuth,
+    Field(discriminator="type"),
+]
 
 
 class MCPScope(BaseModel):

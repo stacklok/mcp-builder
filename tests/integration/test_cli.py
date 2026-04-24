@@ -92,14 +92,21 @@ class TestRunPipeline:
 
 
 class TestRunPipelineOAuth:
-    def test_creates_oauth_auth_config(self, tmp_path: Path) -> None:
+    def test_creates_oauth2_auth_config(self, tmp_path: Path) -> None:
+        # SCOPE_OAUTH is an oauth2 fixture (no OIDC discovery) — the
+        # generated CRD should use oauth2Config with inline endpoints.
         project_dir = run_pipeline(SCOPE_OAUTH, OPENAPI_SPEC, TEMPLATE_DIR, tmp_path)
         auth_config = project_dir / "deploy" / "mcpexternalauthconfig.yaml"
         doc = yaml.safe_load(auth_config.read_text())
         assert doc["spec"]["type"] == "embeddedAuthServer"
         providers = doc["spec"]["embeddedAuthServer"]["upstreamProviders"]
         assert len(providers) == 1
-        assert providers[0]["oidcConfig"]["issuerUrl"] == "https://accounts.google.com"
+        assert providers[0]["type"] == "oauth2"
+        cfg = providers[0]["oauth2Config"]
+        assert (
+            cfg["authorizationEndpoint"] == "https://auth.example.com/oauth/authorize"
+        )
+        assert cfg["tokenEndpoint"] == "https://auth.example.com/oauth/token"
 
     def test_no_secret_for_oauth(self, tmp_path: Path) -> None:
         project_dir = run_pipeline(SCOPE_OAUTH, OPENAPI_SPEC, TEMPLATE_DIR, tmp_path)

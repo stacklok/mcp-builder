@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from mcp_builder.generate.plan import AuthPlan, ServerPlan, ToolPlan
+from mcp_builder.schema.models import APIKeyAuth
 
 FIXTURES = Path(__file__).parent.parent / "fixtures"
 TEMPLATE_DIR = FIXTURES / "template"
@@ -24,7 +25,7 @@ def make_plan(
         server_name="test-api",
         description="A test API server.",
         base_url="https://api.example.com",
-        auth=auth or AuthPlan(type="api_key"),
+        auth=auth or APIKeyAuth(type="api_key"),
         tools=tools or [],
         groups=[],
     )

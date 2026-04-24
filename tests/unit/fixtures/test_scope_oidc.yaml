@@ -2,7 +2,7 @@ version: "1"
 
 server:
   name: test-api
-  description: "Test API MCP server with OAuth2"
+  description: "Test API MCP server with OIDC"
 
 spec:
   source: "test_openapi.yaml"
@@ -24,15 +24,11 @@ groups:
             location: path
 
 auth:
-  type: oauth2
-  flow: authorizationCode
-  authorization_url: "https://auth.example.com/oauth/authorize"
-  token_url: "https://auth.example.com/oauth/token"
-  userinfo_url: "https://api.example.com/userinfo"
+  type: oidc
+  issuer: "https://accounts.google.com"
   scopes_available:
-    read: "Read items"
-    write: "Read and write items"
-    admin: "Full admin access"
+    openid: "OpenID Connect sign-in"
+    email: "User email"
   scopes_required:
-    - read
-    - write
+    - openid
+    - email
