@@ -212,6 +212,7 @@ auth:
   authorization_url: "https://auth.atlassian.com/authorize"
   token_url: "https://auth.atlassian.com/oauth/token"
   userinfo_url: "https://auth.atlassian.com/userinfo"
+  client_type: confidential
   scopes_available:
     openid: "OpenID Connect sign-in"
     email: "User email"

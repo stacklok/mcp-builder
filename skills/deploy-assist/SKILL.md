@@ -69,8 +69,9 @@ The generated manifests contain these placeholders that need real values:
 
 | Placeholder | Files it appears in |
 |---|---|
-| `REPLACE_ME_DOMAIN` | mcpserver.yaml, ingress.yaml, mcpexternalauthconfig.yaml |
+| `REPLACE_ME_DOMAIN` | mcpserver.yaml, ingress.yaml, mcpexternalauthconfig.yaml, mcpoidcconfig.yaml (only when the scope did not capture `auth.external_url_template`; if it did, these fields are already concrete and must not be rewritten) |
 | `REPLACE_ME_OTEL_ENDPOINT` | mcpserver.yaml |
+| `client-secret: REPLACE_ME` | secret-oauth.yaml (emitted only when the scope captured `auth.client_type: confidential`; must be filled by the user from the upstream IdP) |
 | `{server_name}-mcp:latest` (image needs registry prefix) | mcpserver.yaml |
 
 The cluster repo likely contains existing deployments, config files, or values files that reveal the correct domain, OTEL endpoint, container registry, and namespace for this environment. Find them however makes sense for this repo — they might be in Kubernetes manifests, Helm values, Terraform configs, Kustomize overlays, environment files, or documentation.
@@ -226,18 +227,18 @@ Create the target directory in the cluster repo if it does not exist.
 For each manifest in the generated project's `deploy/` directory, read the file, perform the replacements below, and write it to the target directory.
 
 **mcpserver.yaml:**
-- Replace `REPLACE_ME_DOMAIN` with the confirmed domain
+- Replace `REPLACE_ME_DOMAIN` with the confirmed domain **only if** the token appears in the file. When the scope captured `auth.external_url_template`, `audience` and `resourceUrl` are already concrete and do not carry the token — leave them untouched and treat them as user-authoritative.
 - Replace `REPLACE_ME_OTEL_ENDPOINT` with the confirmed OTEL endpoint (match the format expected by the template — typically `host:port` without protocol prefix)
 - Update `spec.image` from `{server_name}-mcp:latest` to `{registry_prefix}{server_name}-mcp:latest`
 - Update `metadata.namespace` if it differs from the confirmed namespace
 
 **ingress.yaml:**
-- Replace `REPLACE_ME_DOMAIN` with the confirmed domain
+- Replace `REPLACE_ME_DOMAIN` with the confirmed domain **only if** the token appears in the file. When the scope captured `auth.external_url_template`, `host` and the rule's `path` were derived from it at generation time — leave them untouched.
 - Update `metadata.namespace` if needed
 - Adjust annotations or `ingressClassName` if the cluster repo's existing Ingress resources use a different pattern
 
 **mcpexternalauthconfig.yaml (if present):**
-- Replace `REPLACE_ME_DOMAIN` with the confirmed domain
+- Replace `REPLACE_ME_DOMAIN` with the confirmed domain **only if** the token appears in the file. When the scope captured `auth.external_url_template`, `issuer` and `redirectUri` are already concrete and do not carry the token — leave them untouched.
 - Update `metadata.namespace` if needed
 - **Leave `clientId: REPLACE_ME` as-is** — this is a secret the user must fill in
 - **If `rewrites_planned` contains `oidc_to_oauth2`**, call the `rewrite_upstream_oidc_to_oauth2` subroutine defined after Step 2. Pass:
@@ -247,9 +248,18 @@ For each manifest in the generated project's `deploy/` directory, read the file,
 
   Apply the returned `patched_yaml` in place of the in-memory file contents before writing. If `user_provided_tenant` was used, also grep the generated project's source tree for the same literal and substitute it everywhere — note in Step 6 that the container image must be rebuilt and `spec.image` digest updated.
 
+**mcpoidcconfig.yaml (if present):**
+- Replace `REPLACE_ME_DOMAIN` with the confirmed domain **only if** the token appears in the file. When the scope captured `auth.external_url_template`, `spec.inline.issuer` is already concrete — leave it untouched.
+- Update `metadata.namespace` if needed
+
 **secret.yaml (if present):**
 - Update `metadata.namespace` if needed
 - **Leave `token: REPLACE_ME` as-is** — this is a secret the user must fill in
+
+**secret-oauth.yaml (if present):**
+This file is emitted when the scope's `auth.client_type == "confidential"`. It holds the upstream OAuth `client_secret`.
+- Update `metadata.namespace` if needed
+- **Leave `client-secret: REPLACE_ME` as-is** — this is a secret the user must fill in from the upstream IdP (Google Cloud Console, GitHub app settings, Okta admin, etc.). Flag in Step 6 that the user owes this value before first login works.
 
 If the cluster repo has other files that need updating to pick up the new manifests (e.g., a Kustomization file that lists resources, an ArgoCD Application, a Flux Kustomization), note this but do not modify them automatically — flag it for the user in Step 6.
 
@@ -271,6 +281,7 @@ Re-reading from disk matters: the skill's self-report of "I replaced X" is not e
 2. **No `REPLACE_ME_*` placeholders remain** except the explicit secret placeholders:
    - `clientId: REPLACE_ME` in `mcpexternalauthconfig.yaml` is allowed.
    - `token: REPLACE_ME` in `secret.yaml` is allowed.
+   - `client-secret: REPLACE_ME` in `secret-oauth.yaml` is allowed.
    Any other `REPLACE_ME_DOMAIN`, `REPLACE_ME_OTEL_ENDPOINT`, or `REPLACE_ME_*` token is a failure.
 
 **Ingress shape assertions** (run against `ingress.yaml` when present):

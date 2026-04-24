@@ -271,7 +271,35 @@ If multiple security schemes exist, select the most ToolHive-compatible one and 
 
 Do not run this check for `oauth2` — there is no discovery doc to probe.
 
-**USER GATE:** Present the auth detection result to the user (selected type, endpoints or issuer, selected scopes from the full catalog, any discovery-doc warning, and any alternatives you rejected). **Do NOT proceed to Step 6.2 until the user confirms the auth block.** This gate is easy to skip by accident — do not.
+**External URL shape (optional; oauth2/oidc only).** The generated `MCPExternalAuthConfig`, `MCPServer`, `MCPOIDCConfig`, and `Ingress` manifests all reference the same external URL — the URL under which the ToolHive-issued auth endpoint will be reachable in the target cluster. If the user knows where this server will deploy, ask for the URL template using `<server_name>` (literal angle brackets, no substitution) as a placeholder. Examples:
+
+- `https://mcp.example.com/<server_name>` — shared host, path-per-server
+- `https://example.com/<server_name>/mcp` — path-at-root
+- `https://<server_name>.example.com/mcp` — subdomain-per-server
+
+If the user doesn't know the target cluster yet, they can defer. When deferred, generated manifests emit a `REPLACE_ME_DOMAIN` placeholder and the `deploy-assist` skill (or a manual edit pass) fills it in from the target cluster's conventions.
+
+Write the concrete template to `auth.external_url_template` in the scope YAML. Skip this field entirely when deferred — do not emit an empty string.
+
+**OAuth client type (optional; oauth2/oidc only).** Ask the user whether the OAuth app registered (or to-be-registered) with the upstream IdP uses PKCE alone (public client, no client secret) or requires a client secret (confidential client).
+
+- Most web-app and server-side OAuth clients are **confidential** (Google web apps, GitHub, Slack, Okta, Keycloak, Atlassian). Choose this if the IdP issued a `client_secret` when the app was registered.
+- SPAs, mobile apps, and some modern SDKs use **public** clients with PKCE only.
+
+If the user doesn't know, defer. When deferred, generated manifests render `clientSecretRef` as a commented example; the deployer uncomments if needed. When `confidential`, a `deploy/secret-oauth.yaml` is emitted and the user must fill in the real secret.
+
+Write to `auth.client_type` as either `"public"` or `"confidential"`. Skip the field when deferred.
+
+**Note on IdP-specific authorize parameters.** Some upstreams require extra parameters in the `/authorize` call that are not modeled by OpenAPI:
+
+- Atlassian requires `audience=api.atlassian.com` or the response is ID-token-only.
+- Slack requires `user_scope` for user-context tokens.
+
+If you know of any such required parameters for the upstream, add them to `auth.notes` — they become breadcrumbs for the Phase 2 human reviewer. Do not invent schema fields for them.
+
+**Note on redirect URI registration.** The emitted `redirectUri` in `mcpexternalauthconfig.yaml` must be registered with the upstream IdP before the first login works (OAuth consent screen on Google, app registration page on GitHub/Atlassian/etc.). If an `external_url_template` was captured above, compute the redirect URI as `<substituted_external_url>/oauth/callback` and include a one-line "before deploy, register X with Y at Z" reminder in `auth.notes`.
+
+**USER GATE:** Present the auth detection result to the user (selected type, endpoints or issuer, selected scopes from the full catalog, any discovery-doc warning, any alternatives you rejected, and the external-URL / client-type captures from above). **Do NOT proceed to Step 6.2 until the user confirms the auth block.** This gate is easy to skip by accident — do not.
 
 #### 6.2: Determine Server Metadata
 
@@ -333,6 +361,8 @@ groups:
 auth:
   type: oidc
   issuer: "{issuer_url}"
+  external_url_template: "{url_with_<server_name>_placeholder}"   # optional; omit when deferred
+  client_type: {public|confidential}                              # optional; omit when deferred
   scopes_available:
     "{scope_name}": "{description}"
     # ... full catalog from the OIDC discovery document
@@ -347,7 +377,9 @@ auth:
   flow: authorizationCode
   authorization_url: "{absolute_authorization_url}"
   token_url: "{absolute_token_url}"
-  userinfo_url: "{absolute_userinfo_url}"   # optional; omit if unknown
+  userinfo_url: "{absolute_userinfo_url}"                         # optional; omit if unknown
+  external_url_template: "{url_with_<server_name>_placeholder}"   # optional; omit when deferred
+  client_type: {public|confidential}                              # optional; omit when deferred
   scopes_available:
     "{scope_name}": "{description}"
     # ... full catalog from the OpenAPI oauth2 flow
