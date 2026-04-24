@@ -227,8 +227,10 @@ def _check_response_kind_matches_spec(
             errors.append(
                 f"Tool '{tool_name}': scope declares response_kind='json' "
                 f"but spec's 2xx responses have no JSON content type "
-                f"({detail}). Update the scope to response_kind='text' or "
-                "'binary', or drop the endpoint from the scope."
+                f"({detail}). Update the scope's response_kind to match "
+                "the spec's media types (see the generator contract's "
+                "'Picking a kind from the spec' section), or drop the "
+                "endpoint from the scope."
             )
         return
 
@@ -250,8 +252,10 @@ def _check_response_kind_matches_spec(
             errors.append(
                 f"Tool '{tool_name}': scope declares response_kind='text' "
                 f"but spec's 2xx responses have no text/* (or XML) content "
-                f"type ({detail}). Update the scope to response_kind='json' "
-                "or 'binary', or drop the endpoint from the scope."
+                f"type ({detail}). Update the scope's response_kind to "
+                "match the spec's media types (see the generator "
+                "contract's 'Picking a kind from the spec' section), or "
+                "drop the endpoint from the scope."
             )
         return
 
