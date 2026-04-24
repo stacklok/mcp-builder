@@ -139,15 +139,22 @@ groups:
             location: body
 
 auth:
-  type: oauth_bearer
-  oauth:
-    issuer: "https://accounts.google.com"
-    scopes:
-      - openid
-      - email
-      - https://www.googleapis.com/auth/drive
+  type: oidc
+  issuer: "https://accounts.google.com"
+  scopes_available:
+    openid: "OpenID Connect sign-in"
+    email: "View the user's email address"
+    profile: "View the user's basic profile info"
+    "https://www.googleapis.com/auth/drive": "Full read/write access to Drive"
+    "https://www.googleapis.com/auth/drive.readonly": "Read-only access to Drive"
+    "https://www.googleapis.com/auth/drive.file": "Per-file access to files created by the app"
+  scopes_required:
+    - openid
+    - email
+    - https://www.googleapis.com/auth/drive
   notes: >
-    Google Drive uses OAuth2 with OIDC. The MCP server receives an access
-    token via the Authorization header and forwards it to Drive API
-    endpoints. The drive scope provides full read/write access needed for
-    file creation and commenting.
+    Google Drive uses OIDC. The MCP server receives an access token via the
+    Authorization header and forwards it to Drive API endpoints. Endpoints
+    are resolved from the OIDC discovery document at deploy time. The drive
+    scope provides full read/write access needed for file creation and
+    commenting.

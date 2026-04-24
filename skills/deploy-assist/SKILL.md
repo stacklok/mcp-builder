@@ -204,7 +204,7 @@ Present what you found to the user:
    - Container registry prefix (for the image reference)
    - Domain (for `REPLACE_ME_DOMAIN`)
    - OTEL endpoint (for `REPLACE_ME_OTEL_ENDPOINT`)
-4. **Auth type** detected from the generated manifests (oauth_bearer / api_key / none)
+4. **Auth type** detected from the generated manifests (oauth2 / oidc / api_key / none)
 5. **Deployment mechanism** (Flux, ArgoCD, plain manifests, etc.)
 6. **Files to copy** (list of manifests from `deploy/`)
 7. **Preflight artifact**: show the path `{cluster_repo}/.deploy-assist-preflight.yaml` and either display its content inline or summarize each section (`sibling_used`, `sibling_diff`, `oidc_discovery`, `rewrites_planned`, `user_inputs_required`). For each planned rewrite, state what the skill will do and why:
@@ -311,7 +311,7 @@ Present a structured summary to the user.
 Present a checklist tailored to the auth type and deployment mechanism:
 
 *Secret values (auth-dependent):*
-- If **oauth_bearer**: fill in `clientId` in `mcpexternalauthconfig.yaml` with the OAuth client ID from the identity provider. Note the optional `clientSecretRef` for confidential clients.
+- If **oauth2** or **oidc**: fill in `clientId` in `mcpexternalauthconfig.yaml` with the OAuth client ID from the identity provider. Note the optional `clientSecretRef` for confidential clients.
 - If **api_key**: fill in `token` in `secret.yaml` with the actual API key or bearer token.
 - If **none**: no secrets to fill in.
 

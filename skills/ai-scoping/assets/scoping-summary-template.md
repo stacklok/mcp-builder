@@ -57,14 +57,22 @@ The following tools had no description in the spec. Descriptions were inferred f
 
 ## Auth Detection
 
-- **Selected auth type:** {oauth_bearer / api_key / none}
+- **Selected auth type:** {oauth2 / oidc / api_key / none}
 - **Source scheme:** {scheme name from spec} ({scheme type})
 - **Rationale:** {Why this scheme was selected, especially if multiple were available}
 
-### OAuth Details (if applicable)
+### OAuth2 Details (if auth type is `oauth2`)
+
+- **Authorization URL:** {authorization_url}
+- **Token URL:** {token_url}
+- **Userinfo URL:** {userinfo_url, or "not available"}
+- **Scopes required:** {list of scopes}
+- **Scope completeness:** {Complete — from spec / Incomplete — may need additional scopes / Inferred — not in spec, needs verification}
+
+### OIDC Details (if auth type is `oidc`)
 
 - **Issuer:** {issuer URL}
-- **Scopes:** {list of scopes}
+- **Scopes required:** {list of scopes}
 - **Scope completeness:** {Complete — from spec / Incomplete — may need additional scopes / Inferred — not in spec, needs verification}
 
 ### Alternative Schemes (if applicable)

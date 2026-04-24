@@ -80,15 +80,18 @@ groups:
             location: path
 
 auth:
-  type: oauth_bearer
-  oauth:
-    issuer: "https://accounts.google.com"
-    scopes:
-      - openid
-      - email
-      - https://www.googleapis.com/auth/drive.readonly
+  type: oidc
+  issuer: "https://accounts.google.com"
+  scopes_available:
+    openid: "OpenID Connect sign-in"
+    email: "View the user's email address"
+    "https://www.googleapis.com/auth/drive": "Full read/write access to Drive"
+    "https://www.googleapis.com/auth/drive.readonly": "Read-only access to Drive"
+  scopes_required:
+    - openid
+    - email
+    - https://www.googleapis.com/auth/drive.readonly
   notes: >
-    Google Drive uses OAuth2 with OIDC. The MCP server receives an access
-    token via the Authorization header and forwards it to Drive API endpoints.
-    The generator maps this to the appropriate ToolHive auth config
-    (embeddedAuthServer) when producing deployment manifests.
+    Google Drive uses OIDC. The MCP server receives an access token via the
+    Authorization header and forwards it to Drive API endpoints. Endpoints
+    come from the OIDC discovery document at deploy time.

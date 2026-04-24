@@ -99,12 +99,20 @@ groups:
             location: path
 
 auth:
-  type: oauth_bearer
-  oauth:
-    issuer: "https://zoom.us"
-    scopes:
-      - meeting:read
-      - user:read
+  type: oauth2
+  flow: authorizationCode
+  authorization_url: "https://zoom.us/oauth/authorize"
+  token_url: "https://zoom.us/oauth/token"
+  userinfo_url: "https://api.zoom.us/v2/users/me"
+  scopes_available:
+    "meeting:read": "Read user meetings"
+    "meeting:write": "Create and update meetings"
+    "user:read": "Read user profile"
+    "user:write": "Update user profile"
+    "recording:read": "Read cloud recordings"
+  scopes_required:
+    - meeting:read
+    - user:read
   notes: >
     Zoom uses OAuth2 authorization code or client credentials flow. Create
     a Server-to-Server OAuth app in the Zoom Marketplace. The MCP server

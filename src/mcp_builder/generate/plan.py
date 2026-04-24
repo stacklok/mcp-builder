@@ -35,11 +35,11 @@ from __future__ import annotations
 
 import keyword
 import re
-from typing import Literal
+from typing import Annotated, Literal
 
 import structlog
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from mcp_builder.spec import (
     OPENAPI_TYPE_MAP,
@@ -49,7 +49,16 @@ from mcp_builder.spec import (
     get_parameters,
     parse_endpoint,
 )
-from mcp_builder.schema.models import MCPScope, ParamLocation, Parameter, Tool
+from mcp_builder.schema.models import (
+    APIKeyAuth,
+    MCPScope,
+    NoAuth,
+    OAuth2Auth,
+    OIDCAuth,
+    ParamLocation,
+    Parameter,
+    Tool,
+)
 
 logger = structlog.get_logger()
 
@@ -129,17 +138,15 @@ class GroupPlan(BaseModel):
     tool_names: list[str]
 
 
-class AuthPlan(BaseModel):
-    """Authentication configuration for the generated server.
-
-    Example (OAuth):
-        AuthPlan(type="oauth_bearer", issuer="https://accounts.google.com",
-                 scopes=["openid", "email"])
-    """
-
-    type: Literal["oauth_bearer", "api_key", "none"]
-    issuer: str | None = None
-    scopes: list[str] | None = None
+# Discriminated union of the four auth variants, keyed on the ``type``
+# literal. Structurally identical to ``schema.models.AuthConfig`` — the
+# plan layer carries the scope's auth instance through unchanged so that
+# renderers can dispatch with ``isinstance(plan.auth, OAuth2Auth)`` etc.
+# and get full type narrowing on variant-specific fields.
+AuthPlan = Annotated[
+    OAuth2Auth | OIDCAuth | APIKeyAuth | NoAuth,
+    Field(discriminator="type"),
+]
 
 
 class ServerPlan(BaseModel):
@@ -158,7 +165,7 @@ class ServerPlan(BaseModel):
             server_name="google-drive",
             description="Google Drive MCP server",
             base_url="https://www.googleapis.com/drive/v3",
-            auth=AuthPlan(type="oauth_bearer", ...),
+            auth=OIDCAuth(type="oidc", issuer="https://accounts.google.com", ...),
             tools=[ToolPlan(tool_name="list_files", ...), ...],
             groups=[GroupPlan(name="file-operations", ...), ...],
         )
@@ -348,20 +355,9 @@ def _build_param_plans(
 
 
 def _build_auth_plan(scope: MCPScope) -> AuthPlan:
-    """Extract auth configuration from scope into an AuthPlan."""
+    """Return the scope's auth variant (the plan uses the same union type)."""
     logger.debug("building auth plan", auth_type=scope.auth.type)
-    if scope.auth.type == "oauth_bearer" and scope.auth.oauth is not None:
-        logger.debug(
-            "oauth config",
-            issuer=scope.auth.oauth.issuer,
-            scopes=scope.auth.oauth.scopes,
-        )
-        return AuthPlan(
-            type="oauth_bearer",
-            issuer=scope.auth.oauth.issuer,
-            scopes=list(scope.auth.oauth.scopes),
-        )
-    return AuthPlan(type=scope.auth.type)
+    return scope.auth
 
 
 # ---------------------------------------------------------------------------

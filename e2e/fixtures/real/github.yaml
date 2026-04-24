@@ -230,14 +230,25 @@ groups:
             location: path
 
 auth:
-  type: oauth_bearer
-  oauth:
-    issuer: "https://github.com"
-    scopes:
-      - repo
-      - read:org
-      - read:user
-      - read:project
+  type: oauth2
+  flow: authorizationCode
+  authorization_url: "https://github.com/login/oauth/authorize"
+  token_url: "https://github.com/login/oauth/access_token"
+  userinfo_url: "https://api.github.com/user"
+  scopes_available:
+    repo: "Full control of private repositories"
+    public_repo: "Access public repositories"
+    "read:org": "Read org and team membership"
+    "write:org": "Read and write org and team membership"
+    "read:user": "Read user profile data"
+    "user:email": "Access user email addresses"
+    "read:project": "Read project boards"
+    "write:project": "Read and write project boards"
+  scopes_required:
+    - repo
+    - read:org
+    - read:user
+    - read:project
   notes: >
     GitHub uses OAuth2 authorization code flow. Create an OAuth App at
     github.com/settings/developers. The MCP server receives an access

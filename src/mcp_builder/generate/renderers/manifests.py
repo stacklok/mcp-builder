@@ -25,11 +25,17 @@ from urllib.parse import urlparse
 from jinja2 import Environment, FileSystemLoader
 
 from mcp_builder.generate.plan import ServerPlan
+from mcp_builder.schema.models import OAuth2Auth, OIDCAuth
 
 logger = logging.getLogger(__name__)
 
 TOOLHIVE_API_VERSION = "toolhive.stacklok.dev/v1alpha1"
 DEFAULT_NAMESPACE = "toolhive-system"
+
+# Auth variants that use the embedded OIDC auth server (MCPOIDCConfig +
+# MCPExternalAuthConfig). Use with ``isinstance`` so the type checker keeps
+# the narrowed variant inside each branch.
+_EMBEDDED_AUTH_CLASSES: tuple[type, ...] = (OAuth2Auth, OIDCAuth)
 
 _TEMPLATES_DIR = Path(__file__).parent / "templates"
 _env = Environment(  # nosec B701 — generating YAML manifests, not HTML
@@ -45,11 +51,11 @@ def render_manifests(plan: ServerPlan) -> dict[str, str]:
 
     Pipeline stage: rendering (plan -> {filename: YAML string}).
 
-    Returns a dict with 2-5 entries depending on auth type:
+    Returns a dict with 2-4 entries depending on auth type:
         - "mcpserver.yaml" — always present
         - "ingress.yaml" — always present
         - "mcpexternalauthconfig.yaml" — present when auth.type != "none"
-        - "mcpoidcconfig.yaml" — present when auth.type == "oauth_bearer"
+        - "mcpoidcconfig.yaml" — present when auth is oauth2 or oidc
         - "secret.yaml" — present only when auth.type == "api_key"
     """
     logger.info("Rendering deployment manifests for '%s'", plan.server_name)
@@ -62,7 +68,7 @@ def render_manifests(plan: ServerPlan) -> dict[str, str]:
     if plan.auth.type != "none":
         manifests["mcpexternalauthconfig.yaml"] = render_external_auth_config(plan)
 
-    if plan.auth.type == "oauth_bearer":
+    if isinstance(plan.auth, _EMBEDDED_AUTH_CLASSES):
         manifests["mcpoidcconfig.yaml"] = render_mcpoidc_config(plan)
 
     if plan.auth.type == "api_key":
@@ -88,21 +94,23 @@ def render_mcpserver(plan: ServerPlan) -> str:
         api_version=TOOLHIVE_API_VERSION,
         namespace=DEFAULT_NAMESPACE,
         has_auth=plan.auth.type != "none",
-        auth_type=plan.auth.type,
+        is_embedded_auth=isinstance(plan.auth, _EMBEDDED_AUTH_CLASSES),
     )
 
 
 def render_mcpoidc_config(plan: ServerPlan) -> str:
     """Render the MCPOIDCConfig CRD manifest.
 
-    Emitted only for oauth_bearer — MCPServer references this resource via
-    spec.oidcConfigRef instead of carrying an inline spec.oidcConfig block.
+    Emitted for oauth2 and oidc auth — both use the embedded OIDC auth
+    server, which issues its own OIDC tokens to clients regardless of
+    whether the upstream is OAuth2 or OIDC. MCPServer references this
+    resource via spec.oidcConfigRef instead of carrying an inline block.
 
-    Raises ValueError if called with auth.type != "oauth_bearer".
+    Raises ValueError for api_key / none auth.
     """
-    if plan.auth.type != "oauth_bearer":
+    if not isinstance(plan.auth, _EMBEDDED_AUTH_CLASSES):
         raise ValueError(
-            f"MCPOIDCConfig only applies to oauth_bearer, got {plan.auth.type!r}"
+            f"MCPOIDCConfig only applies to oauth2/oidc auth, got {plan.auth.type!r}"
         )
     logger.debug("Rendering MCPOIDCConfig for '%s'", plan.server_name)
     tmpl = _env.get_template("mcpoidcconfig.yaml.jinja2")
@@ -116,23 +124,28 @@ def render_mcpoidc_config(plan: ServerPlan) -> str:
 def render_external_auth_config(plan: ServerPlan) -> str:
     """Render the MCPExternalAuthConfig CRD manifest.
 
-    For oauth_bearer: type=embeddedAuthServer with upstream OIDC provider.
-    For api_key: type=bearerToken with a tokenSecretRef pointing to a K8s Secret.
+    Routes by auth variant:
+        - OAuth2Auth -> embeddedAuthServer with an oauth2 upstream provider
+          (authorizationEndpoint / tokenEndpoint declared inline)
+        - OIDCAuth -> embeddedAuthServer with an oidc upstream provider
+          (upstream publishes its own discovery document)
+        - APIKeyAuth -> bearerToken with a tokenSecretRef
 
-    Raises ValueError if called with auth.type == "none" (programming error).
+    Raises ValueError for auth.type == "none".
     """
-    if plan.auth.type == "none":
-        raise ValueError("No auth config to render when auth.type is 'none'")
+    if isinstance(plan.auth, OAuth2Auth):
+        logger.debug("Rendering embedded OAuth2 auth config for '%s'", plan.server_name)
+        return _render_embedded_oauth2(plan, plan.auth)
 
-    if plan.auth.type == "oauth_bearer":
-        logger.debug("Rendering embedded auth server config for '%s'", plan.server_name)
-        return _render_embedded_auth_server(plan)
+    if isinstance(plan.auth, OIDCAuth):
+        logger.debug("Rendering embedded OIDC auth config for '%s'", plan.server_name)
+        return _render_embedded_oidc(plan, plan.auth)
 
     if plan.auth.type == "api_key":
         logger.debug("Rendering bearer token auth config for '%s'", plan.server_name)
         return _render_bearer_token_auth(plan)
 
-    raise ValueError(f"Unexpected auth type: {plan.auth.type!r}")
+    raise ValueError(f"No external auth config for auth type {plan.auth.type!r}")
 
 
 def render_secret(plan: ServerPlan) -> str:
@@ -172,26 +185,51 @@ def render_ingress(plan: ServerPlan) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _render_embedded_auth_server(plan: ServerPlan) -> str:
-    """Render MCPExternalAuthConfig for OAuth (embeddedAuthServer type).
+def _render_embedded_oidc(plan: ServerPlan, auth: OIDCAuth) -> str:
+    """Render MCPExternalAuthConfig for OIDC upstream (issuer-based).
 
-    Generates an OIDC upstream provider config using the issuer and scopes
-    from the plan. The user must fill in clientId before applying.
+    Emits ``upstreamProviders[*].type: oidc`` with ``oidcConfig.issuerUrl``.
+    Endpoint URLs come from the upstream's discovery document at runtime.
     """
-    provider_name = _derive_provider_name(plan.auth.issuer or "upstream")
-    issuer_url = plan.auth.issuer or "https://REPLACE_ME"
-    # Ensure openid and email scopes are always present for user identity.
+    provider_name = _derive_provider_name(auth.issuer)
+    # openid+email are always present for user identity.
     required_scopes = ["openid", "email"]
-    raw_scopes = list(plan.auth.scopes or [])
-    scopes = required_scopes + [s for s in raw_scopes if s not in required_scopes]
+    scopes = required_scopes + [
+        s for s in auth.scopes_required if s not in required_scopes
+    ]
 
-    tmpl = _env.get_template("authconfig_embedded.yaml.jinja2")
+    tmpl = _env.get_template("authconfig_embedded_oidc.yaml.jinja2")
     return tmpl.render(
         server_name=plan.server_name,
         api_version=TOOLHIVE_API_VERSION,
         namespace=DEFAULT_NAMESPACE,
         provider_name=provider_name,
-        issuer_url=issuer_url,
+        issuer_url=auth.issuer,
+        scopes=scopes,
+    )
+
+
+def _render_embedded_oauth2(plan: ServerPlan, auth: OAuth2Auth) -> str:
+    """Render MCPExternalAuthConfig for OAuth2 upstream (endpoint-based).
+
+    Emits ``upstreamProviders[*].type: oauth2`` with ``oauth2Config``
+    carrying inline ``authorizationEndpoint``, ``tokenEndpoint``, and an
+    optional ``userInfo`` endpoint. No discovery document is consulted.
+    """
+    # Provider name derived from the authorization URL's host — OAuth2 has
+    # no issuer to key off of.
+    provider_name = _derive_provider_name(auth.authorization_url)
+    scopes = list(auth.scopes_required)
+
+    tmpl = _env.get_template("authconfig_embedded_oauth2.yaml.jinja2")
+    return tmpl.render(
+        server_name=plan.server_name,
+        api_version=TOOLHIVE_API_VERSION,
+        namespace=DEFAULT_NAMESPACE,
+        provider_name=provider_name,
+        authorization_url=auth.authorization_url,
+        token_url=auth.token_url,
+        userinfo_url=auth.userinfo_url,
         scopes=scopes,
     )
 

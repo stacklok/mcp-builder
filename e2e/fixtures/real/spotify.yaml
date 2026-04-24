@@ -104,13 +104,22 @@ groups:
             location: query
 
 auth:
-  type: oauth_bearer
-  oauth:
-    issuer: "https://accounts.spotify.com"
-    scopes:
-      - user-read-private
-      - playlist-read-private
-      - playlist-read-collaborative
+  type: oauth2
+  flow: authorizationCode
+  authorization_url: "https://accounts.spotify.com/authorize"
+  token_url: "https://accounts.spotify.com/api/token"
+  userinfo_url: "https://api.spotify.com/v1/me"
+  scopes_available:
+    user-read-private: "Read private user profile"
+    user-read-email: "Read user email"
+    playlist-read-private: "Read private playlists"
+    playlist-read-collaborative: "Read collaborative playlists"
+    playlist-modify-public: "Modify public playlists"
+    playlist-modify-private: "Modify private playlists"
+  scopes_required:
+    - user-read-private
+    - playlist-read-private
+    - playlist-read-collaborative
   notes: >
     Spotify uses OAuth2 authorization code flow. Register an app at
     developer.spotify.com. The MCP server receives an access token via the

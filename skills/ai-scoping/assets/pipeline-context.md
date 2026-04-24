@@ -20,7 +20,7 @@ mcp-builder is a pipeline that transforms an OpenAPI 3.x spec and plain-English 
 - **Workflows**: plain-English descriptions of what users do with this API (minimum 3)
 - **Groups**: semantic clusters of related tools (e.g., "file-operations", "comments")
 - **Tools**: individual API endpoints with LLM-optimized names, descriptions, parameter overrides, and hints
-- **Auth**: authentication type (oauth_bearer, api_key, none) with OAuth details if applicable
+- **Auth**: authentication type (oauth2, oidc, api_key, none) with OAuth details if applicable
 
 The formal JSON schema is at `docs/mcp-scope-schema.json` (auto-generated from the Pydantic models via `task generate-schema`).
 
@@ -32,7 +32,7 @@ The formal JSON schema is at `docs/mcp-scope-schema.json` (auto-generated from t
 - Each group must have at least one tool
 - Endpoint format: `METHOD /path` (e.g., `GET /files/{fileId}`)
 - Endpoint paths must match the spec's `paths` exactly — do not prepend the base URL path
-- OAuth config is required when auth type is `oauth_bearer`
+- When auth type is `oauth2`, `authorization_url` and `token_url` are required; when `oidc`, `issuer` is required
 
 ### Parameter semantics
 
@@ -43,9 +43,4 @@ A tool's `parameters` list is an **allowlist**: only the listed parameters are i
 - The `description` and `required` fields in the YAML override the spec values for matching parameters.
 
 This means the endpoint-scoper agent should actively curate parameters — including only what's useful for the described workflows and excluding noise.
-
-### Reference examples
-
-- `e2e/fixtures/real/google_drive.yaml` — 5 tools, 2 groups, OAuth bearer
-- `e2e/fixtures/real/github.yaml` — 8 tools, 3 groups, OAuth bearer
 

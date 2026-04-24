@@ -4,8 +4,9 @@ from pathlib import Path
 
 import pytest
 
-from mcp_builder.generate.plan import AuthPlan, ServerPlan
+from mcp_builder.generate.plan import ServerPlan
 from mcp_builder.generate.scaffold import scaffold_project
+from mcp_builder.schema.models import APIKeyAuth
 
 from .conftest import TEMPLATE_DIR
 
@@ -73,7 +74,7 @@ class TestScaffoldProject:
             server_name="test-api",
             description="A test API server.",
             base_url="https://api.example.com",
-            auth=AuthPlan(type="api_key"),
+            auth=APIKeyAuth(type="api_key"),
             tools=[],
             groups=[],
         )
@@ -93,7 +94,7 @@ class TestScaffoldProject:
             server_name="test-api",
             description='A server for "widgets" and stuff.',
             base_url="https://api.example.com",
-            auth=AuthPlan(type="api_key"),
+            auth=APIKeyAuth(type="api_key"),
             tools=[],
             groups=[],
         )

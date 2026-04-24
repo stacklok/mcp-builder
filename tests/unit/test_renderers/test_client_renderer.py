@@ -1,7 +1,8 @@
 """Tests for the client renderer."""
 
-from mcp_builder.generate.plan import AuthPlan, ServerPlan
+from mcp_builder.generate.plan import ServerPlan
 from mcp_builder.generate.renderers.client import render_client_module
+from mcp_builder.schema.models import APIKeyAuth
 
 
 class TestRenderClientModule:
@@ -87,7 +88,7 @@ class TestRenderClientModule:
             server_name="test-api",
             description="Test.",
             base_url='https://api.example.com/path"bad',
-            auth=AuthPlan(type="api_key"),
+            auth=APIKeyAuth(type="api_key"),
             tools=[],
             groups=[],
         )
