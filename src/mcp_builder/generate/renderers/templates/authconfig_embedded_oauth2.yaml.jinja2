@@ -40,17 +40,17 @@ spec:
     - name: {{ provider_name }}
       type: oauth2
       oauth2Config:
-        authorizationEndpoint: {{ authorization_url }}
-        tokenEndpoint: {{ token_url }}
+        authorizationEndpoint: "{{ authorization_url }}"
+        tokenEndpoint: "{{ token_url }}"
 {% if userinfo_url %}
-        userInfo: {{ userinfo_url }}
+        userInfo: "{{ userinfo_url }}"
 {% endif %}
         clientId: REPLACE_ME
         redirectUri: https://mcp.REPLACE_ME_DOMAIN/{{ server_name }}/oauth/callback
 {% if scopes %}
         scopes:
 {% for scope in scopes %}
-        - {{ scope }}
+        - "{{ scope }}"
 {% endfor %}
 {% endif %}
     tokenLifespans:

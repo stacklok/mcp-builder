@@ -32,8 +32,10 @@ logger = logging.getLogger(__name__)
 TOOLHIVE_API_VERSION = "toolhive.stacklok.dev/v1alpha1"
 DEFAULT_NAMESPACE = "toolhive-system"
 
-# Auth types that use the embedded OIDC auth server (MCPOIDCConfig + MCPExternalAuthConfig).
-_EMBEDDED_AUTH_TYPES = frozenset({"oauth2", "oidc"})
+# Auth variants that use the embedded OIDC auth server (MCPOIDCConfig +
+# MCPExternalAuthConfig). Use with ``isinstance`` so the type checker keeps
+# the narrowed variant inside each branch.
+_EMBEDDED_AUTH_CLASSES: tuple[type, ...] = (OAuth2Auth, OIDCAuth)
 
 _TEMPLATES_DIR = Path(__file__).parent / "templates"
 _env = Environment(  # nosec B701 — generating YAML manifests, not HTML
@@ -66,7 +68,7 @@ def render_manifests(plan: ServerPlan) -> dict[str, str]:
     if plan.auth.type != "none":
         manifests["mcpexternalauthconfig.yaml"] = render_external_auth_config(plan)
 
-    if plan.auth.type in _EMBEDDED_AUTH_TYPES:
+    if isinstance(plan.auth, _EMBEDDED_AUTH_CLASSES):
         manifests["mcpoidcconfig.yaml"] = render_mcpoidc_config(plan)
 
     if plan.auth.type == "api_key":
@@ -92,7 +94,7 @@ def render_mcpserver(plan: ServerPlan) -> str:
         api_version=TOOLHIVE_API_VERSION,
         namespace=DEFAULT_NAMESPACE,
         has_auth=plan.auth.type != "none",
-        is_embedded_auth=plan.auth.type in _EMBEDDED_AUTH_TYPES,
+        is_embedded_auth=isinstance(plan.auth, _EMBEDDED_AUTH_CLASSES),
     )
 
 
@@ -106,7 +108,7 @@ def render_mcpoidc_config(plan: ServerPlan) -> str:
 
     Raises ValueError for api_key / none auth.
     """
-    if plan.auth.type not in _EMBEDDED_AUTH_TYPES:
+    if not isinstance(plan.auth, _EMBEDDED_AUTH_CLASSES):
         raise ValueError(
             f"MCPOIDCConfig only applies to oauth2/oidc auth, got {plan.auth.type!r}"
         )
@@ -143,7 +145,7 @@ def render_external_auth_config(plan: ServerPlan) -> str:
         logger.debug("Rendering bearer token auth config for '%s'", plan.server_name)
         return _render_bearer_token_auth(plan)
 
-    raise ValueError("No auth config to render when auth.type is 'none'")
+    raise ValueError(f"No external auth config for auth type {plan.auth.type!r}")
 
 
 def render_secret(plan: ServerPlan) -> str:

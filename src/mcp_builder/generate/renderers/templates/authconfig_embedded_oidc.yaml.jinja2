@@ -40,13 +40,13 @@ spec:
     - name: {{ provider_name }}
       type: oidc
       oidcConfig:
-        issuerUrl: {{ issuer_url }}
+        issuerUrl: "{{ issuer_url }}"
         clientId: REPLACE_ME
         redirectUri: https://mcp.REPLACE_ME_DOMAIN/{{ server_name }}/oauth/callback
 {% if scopes %}
         scopes:
 {% for scope in scopes %}
-        - {{ scope }}
+        - "{{ scope }}"
 {% endfor %}
 {% endif %}
     tokenLifespans:

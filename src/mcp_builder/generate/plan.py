@@ -142,7 +142,13 @@ class GroupPlan(BaseModel):
 # flattening them — every downstream consumer (renderers) branches on the
 # auth type anyway, and the discriminated union prevents cross-variant
 # field access from compiling/type-checking.
-AuthPlan = OAuth2Auth | OIDCAuth | APIKeyAuth | NoAuth
+#
+# The discriminator is attached to the alias itself (rather than at each
+# use site) so any future field typed ``AuthPlan`` picks it up for free.
+AuthPlan = Annotated[
+    OAuth2Auth | OIDCAuth | APIKeyAuth | NoAuth,
+    Field(discriminator="type"),
+]
 
 
 class ServerPlan(BaseModel):
@@ -171,7 +177,7 @@ class ServerPlan(BaseModel):
     server_name: str  # DNS label, e.g. "google-drive"
     description: str
     base_url: str
-    auth: Annotated[AuthPlan, Field(discriminator="type")]
+    auth: AuthPlan
     tools: list[ToolPlan]
     groups: list[GroupPlan]
 
