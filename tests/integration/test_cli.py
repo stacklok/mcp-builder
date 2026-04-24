@@ -89,7 +89,7 @@ class TestRunPipeline:
         assert readme.exists()
         text = readme.read_text()
         assert "test-api" in text
-        assert "external access" in text.lower()
+        assert "You must provide external access yourself" in text
 
     def test_does_not_create_ingress_yaml(self, project_dir: Path) -> None:
         # External access is intentionally left to the user — the URL shape
