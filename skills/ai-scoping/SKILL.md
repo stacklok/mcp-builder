@@ -183,7 +183,7 @@ Once the spec-analyzer agent completes, explain to the user that you need help d
 4. Recommend which groups to include based on workflow alignment (suggest all high-relevance groups, optionally medium)
 5. Ask the user which groups to include
 
-**Do NOT proceed to Step 4 until the user has selected their groups.** End the turn with the question and nothing else — do not spawn the endpoint-scoper, do not start preparing Step 4 context. See ground rule 1.
+**Do NOT proceed to Step 4 until the user has selected their groups.** (See ground rule 1.)
 
 After selection, extract the endpoint details for the selected groups from `spec-analysis.md`. You will pass this filtered data to the endpoint-scoper agent.
 
@@ -245,7 +245,7 @@ Once the endpoint-scoper agent completes:
 3. Ask the user to approve the tool list or request changes (including which flagged endpoints to remove, if any)
 4. Do a final audit of the user tool selections for consistency. Make sure tools that need to appear together are all selected or that the user understands the implications of removing certain tools (e.g., if they remove an endpoint that is a prerequisite for another tool, flag that for review).
 
-**Do NOT proceed to Step 6 until the user approves.** End the turn with the approval question and nothing else — do not pre-compute the auth block, do not draft the YAML, do not run validation. See ground rule 1.
+**Do NOT proceed to Step 6 until the user approves.** (See ground rule 1.)
 
 If the user requests changes:
 - For minor edits (rename a tool, tweak a description), apply them directly
@@ -284,7 +284,7 @@ If multiple security schemes exist, select the most ToolHive-compatible one and 
 
 Do not run this check for `oauth2` — there is no discovery doc to probe.
 
-**USER GATE:** Present the auth detection result to the user (selected type, endpoints or issuer, selected scopes from the full catalog, any discovery-doc warning, and any alternatives you rejected). **Do NOT proceed to Step 6.2 until the user confirms the auth block.** End the turn with the confirmation question and nothing else — do not derive server metadata, do not draft the YAML. See ground rule 1. This gate is easy to skip by accident — do not.
+**USER GATE:** Present the auth detection result to the user (selected type, endpoints or issuer, selected scopes from the full catalog, any discovery-doc warning, and any alternatives you rejected). **Do NOT proceed to Step 6.2 until the user confirms the auth block.** (See ground rule 1.) This gate is easy to skip by accident — do not.
 
 #### 6.2: Determine Server Metadata
 
