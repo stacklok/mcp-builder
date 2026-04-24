@@ -7,11 +7,18 @@ it's a domain operation that consumes the low-level spec/ and schema/ packages.
 
 from __future__ import annotations
 
+import re
+
 import structlog
 from pydantic import BaseModel, Field
 
 from mcp_builder.spec.media import is_json_media_type
-from mcp_builder.schema.models import MCPScope, ParamLocation
+from mcp_builder.schema.models import (
+    MCPScope,
+    OAuth2Auth,
+    OIDCAuth,
+    ParamLocation,
+)
 from mcp_builder.spec import (
     ExtractedResponse,
     OpenAPISpec,
@@ -20,6 +27,11 @@ from mcp_builder.spec import (
     get_response_content_types,
     parse_endpoint,
 )
+
+# Matches one ``{name}`` placeholder where ``name`` is an identifier-shaped
+# token. Restricting the inner alphabet keeps regex literals (``{0,5}``) and
+# YAML brace usage from masquerading as unresolved tenant placeholders.
+_PLACEHOLDER_RE = re.compile(r"\{[A-Za-z_][A-Za-z0-9_]*\}")
 
 logger = structlog.get_logger()
 
@@ -50,6 +62,9 @@ def validate_scope(
     logger.info("validating scope", server_name=scope.server.name)
     errors: list[str] = []
     warnings: list[str] = []
+
+    _check_unresolved_placeholders(scope, errors)
+    _check_auth_consistency(scope, errors)
 
     # Check that groups have descriptions
     for group in scope.groups:
@@ -235,3 +250,79 @@ def _check_response_kind_matches_spec(
                 "from the scope."
             )
         return
+
+
+def _check_unresolved_placeholders(scope: MCPScope, errors: list[str]) -> None:
+    """Fail if any URL field still carries a ``{name}`` placeholder.
+
+    Tenant-specific values (subdomain, region) belong in the scoping
+    output, not in fields the deployed server will hit at request time.
+    A placeholder reaching validate means scoping skipped substitution
+    and the generated client will SSL-error on the literal hostname.
+
+    Free-form fields (``notes``, descriptions) are intentionally not
+    scanned: prose can legitimately quote a placeholder for the reader.
+    """
+    fields: list[tuple[str, str | None]] = [("spec.base_url", scope.spec.base_url)]
+    auth = scope.auth
+    if isinstance(auth, OAuth2Auth):
+        fields.append(("auth.authorization_url", auth.authorization_url))
+        fields.append(("auth.token_url", auth.token_url))
+        fields.append(("auth.userinfo_url", auth.userinfo_url))
+    elif isinstance(auth, OIDCAuth):
+        fields.append(("auth.issuer", auth.issuer))
+
+    for field_name, value in fields:
+        if value is None:
+            continue
+        for match in _PLACEHOLDER_RE.findall(value):
+            errors.append(
+                f"V-TENANT-01 {field_name} contains unresolved placeholder "
+                f"{match}. Substitute with the concrete value before running "
+                "generate."
+            )
+
+
+def _check_auth_consistency(scope: MCPScope, errors: list[str]) -> None:
+    """Catch auth-block bugs Pydantic's discriminated union can't.
+
+    The schema enforces shape (which fields belong to which auth type);
+    these checks catch *content* bugs in fields that did parse:
+
+    - **V-AUTH-01** scopes_required ⊆ scopes_available — asking the IdP
+      for a scope you never declared as available is almost always a
+      typo the user wants to know about now, not at consent-screen time.
+    - **V-AUTH-02** absolute URLs only — scoping resolves relative paths
+      against ``spec.base_url``; a relative URL surviving to validate
+      means scoping skipped resolution and the generated client would
+      assemble a broken IdP request.
+    """
+    auth = scope.auth
+
+    if isinstance(auth, (OAuth2Auth, OIDCAuth)):
+        missing = sorted(set(auth.scopes_required) - set(auth.scopes_available))
+        if missing:
+            errors.append(
+                f"V-AUTH-01 scopes_required contains {missing} not present "
+                f"in scopes_available {sorted(auth.scopes_available)}. Add "
+                "the scope to scopes_available or drop it from "
+                "scopes_required."
+            )
+
+    url_fields: list[tuple[str, str | None]] = []
+    if isinstance(auth, OAuth2Auth):
+        url_fields.append(("auth.authorization_url", auth.authorization_url))
+        url_fields.append(("auth.token_url", auth.token_url))
+        url_fields.append(("auth.userinfo_url", auth.userinfo_url))
+    elif isinstance(auth, OIDCAuth):
+        url_fields.append(("auth.issuer", auth.issuer))
+
+    for field_name, value in url_fields:
+        if value is None:
+            continue
+        if not value.startswith(("http://", "https://")):
+            errors.append(
+                f"V-AUTH-02 {field_name} is not an absolute URL "
+                f"(got '{value}'). Scoping resolves relative paths against "
+                "spec.base_url; re-run scoping to produce an absolute URL."
+            )
