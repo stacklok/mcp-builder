@@ -113,7 +113,7 @@ BambooHR, Stripe, Slack, and more) if you want something to try against.
    security schemes to ToolHive auth types, but it is inferring — not
    observing. Before confirming, check:
 
-   - **Auth type** is correct (`oauth_bearer`, `api_key`, etc.).
+   - **Auth type** is correct (`oauth2`, `oidc`, `api_key`, etc.).
    - **Issuer / token URL** is reachable and has no template placeholders
      (e.g. `{companyDomain}`).
    - **Scopes** match what your workflows actually need.

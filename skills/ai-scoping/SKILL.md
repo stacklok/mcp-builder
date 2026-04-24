@@ -391,7 +391,3 @@ Read `{working_dir}/scoping-summary.md` and present the user with a comprehensiv
 ### Working Directory
 - All files (intermediate and final) go in `{cwd}/scoping-output-{date_timestamp}/` (see Step 1.4). Use today's date as the timestamp to avoid collisions across runs.
 - This includes `analyze.json`, `spec-analysis.md`, `tool-scoping.md`, `mcp-scope.yaml`, and `scoping-summary.md`
-
-### Reference Examples
-- `e2e/fixtures/real/google_drive.yaml` — 5 tools, 2 groups, OAuth bearer auth
-- `e2e/fixtures/real/github.yaml` — 8 tools, 3 groups, OAuth bearer auth

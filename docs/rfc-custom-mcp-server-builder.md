@@ -7,6 +7,13 @@
 - **Target Repository**: mcp-builder
 - **Related Issues**: https://github.com/stacklok/ai-toolkit/issues/111
 
+> **Note (2026-04-24):** The auth schema described below has been superseded.
+> This RFC documents an `oauth_bearer` catch-all type; the implementation now
+> uses a discriminated `oauth2` / `oidc` / `api_key` / `none` union. See
+> [PR #99](https://github.com/StacklokLabs/mcp-builder/pull/99) and
+> [#94](https://github.com/StacklokLabs/mcp-builder/issues/94) for the new
+> shape. The rest of this document reflects the original design.
+
 ## Summary
 
 A repeatable, four-phase pipeline that transforms an OpenAPI spec and plain-English workflow descriptions into a production-quality, ToolHive-ready MCP server. Phase 1 (AI Scoping) uses AI skill files to parse the spec, semantically group endpoints, assign LLM-optimized tool names and descriptions, and emit a single `mcp-scope.yaml` config. Phase 2 (Human Review) is an edit pass over that YAML. Phase 3 (Deterministic Code Generation) reads the YAML and scaffolds a complete MCP server from the `mcp-template-py` — no AI involved. Phase 4 (AI Validation and Polish) reviews the generated code for correctness, makes corrections or improvements guided by hints in the config, and verifies the build succeeds. The first proof point is a Google Drive MCP server deployed in North's cluster.

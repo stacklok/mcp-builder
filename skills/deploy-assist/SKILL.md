@@ -130,7 +130,7 @@ Present what you found to the user:
    - Container registry prefix (for the image reference)
    - Domain (for `REPLACE_ME_DOMAIN`)
    - OTEL endpoint (for `REPLACE_ME_OTEL_ENDPOINT`)
-4. **Auth type** detected from the generated manifests (oauth_bearer / api_key / none)
+4. **Auth type** detected from the generated manifests (oauth2 / oidc / api_key / none)
 5. **Deployment mechanism** (Flux, ArgoCD, plain manifests, etc.)
 6. **Files to copy** (list of manifests from `deploy/`)
 7. **Sibling-diff findings** (from Step 2 Question 4): any `spec.*` keys or referenced CRD kinds that diverge between the generated manifests and the nearest existing `MCPServer` in the target repo. Each divergence should be one of: **keep as-generated**, **rewrite to match sibling pattern before copying**, or **ask user**. Default to rewriting when the sibling uses a cluster-wide convention (shared-ALB ingress, shared telemetry/OIDC refs), and ask the user when the divergence could be either the generator's bug or the sibling's convention.
@@ -192,7 +192,7 @@ Present a structured summary to the user.
 Present a checklist tailored to the auth type and deployment mechanism:
 
 *Secret values (auth-dependent):*
-- If **oauth_bearer**: fill in `clientId` in `mcpexternalauthconfig.yaml` with the OAuth client ID from the identity provider. Note the optional `clientSecretRef` for confidential clients.
+- If **oauth2** or **oidc**: fill in `clientId` in `mcpexternalauthconfig.yaml` with the OAuth client ID from the identity provider. Note the optional `clientSecretRef` for confidential clients.
 - If **api_key**: fill in `token` in `secret.yaml` with the actual API key or bearer token.
 - If **none**: no secrets to fill in.
 

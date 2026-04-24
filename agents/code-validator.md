@@ -215,10 +215,20 @@ Apply the same CRD-declared-keys enumeration to every other CRD kind the generat
 
 Based on the YAML's `auth.type`, verify `mcpexternalauthconfig.yaml` against ToolHive's MCPExternalAuthConfig CRD definition:
 
-**If `oauth_bearer`:**
+**If `oauth2`:**
 - File must exist
 - `spec.type` must match ToolHive's expected value for OAuth (read from source)
-- Issuer and scopes must match YAML's `auth.oauth.issuer` and `auth.oauth.scopes`
+- `upstreamProviders[*].type` must be `oauth2`
+- `oauth2Config.authorizationEndpoint` and `oauth2Config.tokenEndpoint` must match YAML's `auth.authorization_url` and `auth.token_url`
+- `oauth2Config.userInfo.endpointUrl` must match YAML's `auth.userinfo_url` if present
+- Scopes must match YAML's `auth.scopes_required`
+
+**If `oidc`:**
+- File must exist
+- `spec.type` must match ToolHive's expected value for OAuth (read from source)
+- `upstreamProviders[*].type` must be `oidc`
+- `oidcConfig.issuerUrl` must match YAML's `auth.issuer`
+- Scopes must match YAML's `auth.scopes_required`
 
 **If `api_key`:**
 - File must exist
@@ -235,7 +245,7 @@ Based on the YAML's `auth.type`, verify `mcpexternalauthconfig.yaml` against Too
 
 Based on the YAML's `auth.type`:
 
-**If `oauth_bearer`:**
+**If `oauth2` or `oidc`:**
 - `secret.yaml` must exist
 - Must have `stringData` with keys `client-id` and `client-secret`
 - Both values must be `REPLACE_ME`
