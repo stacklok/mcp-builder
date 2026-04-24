@@ -244,7 +244,7 @@ For OAuth scopes: pull from the spec when available. If scopes look incomplete o
 
 > Upstream issuer publishes a non-compliant discovery doc (missing: `<field1>`, `<field2>`). The deploy step should rewrite the generated `MCPExternalAuthConfig` to use `upstreamProviders[*].type: oauth2` with explicit `authorizationEndpoint`, `tokenEndpoint`, and `userInfo` pulled from the discovery doc.
 
-If the issuer is unreachable, note that too. This is a soft warning — do not block the gate or change the selected auth type. (URL placeholders are resolved in Step 2.2 and cannot reach this check.)
+If the issuer is unreachable, note that too. This is a soft warning — do not block the gate or change the selected auth type.
 
 **USER GATE:** Present the auth detection result to the user (selected scheme, issuer, chosen scopes, any discovery-doc warning, and any alternatives you rejected). **Do NOT proceed to Step 6.2 until the user confirms the auth block.** This gate is easy to skip by accident — do not.
 

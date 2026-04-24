@@ -27,7 +27,7 @@ When invoked, you will receive the following in your prompt:
   - `security_schemes` — map of scheme names to their definitions
   - `quality` — `endpoints_with_descriptions`, `parameters_with_descriptions`, `total_parameters`
   - `endpoints[]` — each with `method`, `path`, `operation_id`, `summary`, `description`, `tags`, `deprecated`, `parameters[]`, `request_body`
-- **Resolved base URL** *(optional)* — the concrete, placeholder-free base URL the orchestrator resolved from the spec (e.g. `https://stacklok.bamboohr.com` instead of `https://{companyDomain}.bamboohr.com`). When present, use this in place of `analyze.json`'s `base_url` everywhere the agent displays the base URL.
+- **Resolved base URL** *(optional)* — the concrete, placeholder-free base URL the orchestrator resolved from the spec. When present, use this in place of `analyze.json`'s `base_url` everywhere the agent displays the base URL.
 
 ---
 
