@@ -207,12 +207,21 @@ groups:
             location: body
 
 auth:
-  type: oauth_bearer
-  oauth:
-    issuer: "https://auth.atlassian.com"
-    scopes:
-      - read:jira-work
-      - write:jira-work
+  type: oidc
+  issuer: "https://auth.atlassian.com"
+  scopes_available:
+    openid: "OpenID Connect sign-in"
+    email: "User email"
+    profile: "Basic profile info"
+    "read:jira-work": "Read Jira issues, projects, and comments"
+    "write:jira-work": "Create and update Jira issues and comments"
+    "manage:jira-project": "Manage Jira projects"
+    offline_access: "Refresh tokens for long-lived access"
+  scopes_required:
+    - openid
+    - email
+    - read:jira-work
+    - write:jira-work
       - read:jira-user
   notes: >
     Jira Cloud uses Atlassian's OAuth 2.0 (3LO) authorization code flow.

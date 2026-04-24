@@ -190,15 +190,27 @@ groups:
             location: query
 
 auth:
-  type: oauth_bearer
-  oauth:
-    issuer: "https://slack.com"
-    scopes:
-      - channels:read
-      - chat:write
-      - search:read
-      - users:read
-      - users.profile:read
+  type: oauth2
+  flow: authorizationCode
+  authorization_url: "https://slack.com/oauth/v2/authorize"
+  token_url: "https://slack.com/api/oauth.v2.access"
+  userinfo_url: "https://slack.com/api/users.identity"
+  scopes_available:
+    "channels:read": "Read public channel information"
+    "channels:history": "Read public channel messages"
+    "chat:write": "Send messages"
+    "search:read": "Search the workspace"
+    "users:read": "Read user list"
+    "users:read.email": "Read user email addresses"
+    "users.profile:read": "Read detailed user profiles"
+    "groups:read": "Read private channel information"
+    "files:read": "Read files and attachments"
+  scopes_required:
+    - channels:read
+    - chat:write
+    - search:read
+    - users:read
+    - users.profile:read
   notes: >
     Slack uses OAuth2 authorization code flow via V2. Create an app at
     api.slack.com/apps and install it to your workspace. The MCP server

@@ -151,17 +151,27 @@ groups:
           - "paginated: uses page/pageSize cursor pattern"
 
 auth:
-  type: oauth_bearer
-  oauth:
-    issuer: "https://{companyDomain}.bamboohr.com"
-    scopes:
-      - openid
-      - email
-      - offline_access
-      - employees.read
+  type: oauth2
+  flow: authorizationCode
+  authorization_url: "https://{companyDomain}.bamboohr.com/authorize.php"
+  token_url: "https://{companyDomain}.bamboohr.com/token.php"
+  userinfo_url: "https://{companyDomain}.bamboohr.com/token.php?request=userInfo"
+  scopes_available:
+    openid: "OpenID Connect sign-in"
+    email: "User email"
+    offline_access: "Refresh tokens for long-lived access"
+    employees.read: "Read employee directory"
+    time_off: "Time off policies and requests"
+    employee: "Read and manage employee records"
+  scopes_required:
+    - openid
+    - email
+    - offline_access
+    - employees.read
   notes: >
-    BambooHR uses OAuth2 authorization code flow with a company-specific
-    issuer URL. The {companyDomain} placeholder must be replaced with the
-    customer's BambooHR subdomain. The MCP server receives an access token
-    via the Authorization header and forwards it to BambooHR API endpoints.
-    Tokens expire after 1 hour; offline_access scope enables refresh tokens.
+    BambooHR uses OAuth2 authorization code flow with company-specific
+    endpoints. The {companyDomain} placeholder must be replaced with the
+    customer's BambooHR subdomain before deploy. The MCP server receives an
+    access token via the Authorization header and forwards it to BambooHR
+    API endpoints. Tokens expire after 1 hour; offline_access scope enables
+    refresh tokens.
