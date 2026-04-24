@@ -108,6 +108,16 @@ Specs for multi-tenant APIs routinely ship `{placeholder}` literals in `servers[
    }
    ```
 
+   Rules for each field:
+   - `base_url`: always a string. On the no-op path, copy the already-absolute value from `analyze.json` verbatim.
+   - `oauth`: always a dict. If the spec has **no OAuth schemes**, use `{}`. Otherwise include one entry per `(scheme_name, flow_name)` present in the spec.
+   - `authorization_url` / `token_url`: strings when the flow declares them (copied verbatim from `analyze.json` on the no-op path, or the resolved value otherwise). Use `None` for a flow that genuinely doesn't declare that URL (e.g. `client_credentials` has no `authorization_url`).
+
+   Example — spec with no OAuth at all:
+   ```
+   resolved_urls = {"base_url": "https://api.example.com", "oauth": {}}
+   ```
+
    Every downstream step (2.3, 4, 6.1, 6.2, 6.3) uses these values.
 
 #### 2.3: Spawn spec-analyzer agent
