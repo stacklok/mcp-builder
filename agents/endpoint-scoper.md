@@ -213,40 +213,19 @@ Only add hints that are genuinely useful. An endpoint with no special behavior n
 
 ### Step 6: Response Kind
 
-Every tool must declare a `response_kind`: the generator forks the
-client path on this value. The authoritative description of what each
-kind does lives in the **generator contract** you read up front
-(`skills/ai-scoping/assets/generator-contract.md`). A one-paragraph
-summary:
+Every tool must declare a `response_kind`. Pick it now from the spec's
+2xx responses using the rules in **"Picking a kind from the spec"** in
+the generator contract (path provided as `Generator contract path` in
+your CONTEXT). The contract is also the source of truth for what each
+kind commits to at runtime and which validator rules apply.
 
-- `json` — parsed into a `dict`. For endpoints that declare
-  `application/json` (or a `+json` variant).
-- `text` — returned verbatim as a decoded `str`. For endpoints that
-  declare a `text/*` media type (plain, HTML, CSV, Markdown, XML, or
-  exported Google Docs).
-- `binary` — base64-wrapped `str`. For endpoints that return opaque
-  bytes (PDF, image, `application/octet-stream`).
-
-Decide the kind now so the approval gate shows a fully-resolved tool
-definition.
-
-For each tool, inspect its 2xx responses in the spec:
-
-- Every 2xx response with content declares at least one JSON media
-  type (or every 2xx is 204-style with no body) → `response_kind: json`.
-- Every 2xx response with content declares a `text/*` (or XML) media
-  type and no JSON → `response_kind: text`. Prefer `text` over `binary`
-  for any human-readable textual content: `binary` base64-wraps the
-  body and hides it from the model.
-- Every 2xx response with content declares an opaque binary media type
-  (PDF, image, `application/octet-stream`, …) and no JSON or text →
-  `response_kind: binary`.
-- Mixed — different statuses or a single status declaring incompatible
-  media types — do **not** guess. Flag the endpoint in Step 1 with the
-  options from the generator contract, leave `response_kind`
-  unresolved in the tool-scoping output (record it as `response_kind:
-  <pending user decision>`), and let the orchestrator resolve it
-  during the Step 5 user gate.
+For mixed-media endpoints — where the spec offers JSON on some 2xx
+responses and a non-JSON media type on others, or a single status
+declares incompatible media types — do **not** guess. Flag the
+endpoint in Step 1 with the options from the generator contract, leave
+`response_kind` unresolved in the tool-scoping output (record it as
+`response_kind: <pending user decision>`), and let the orchestrator
+resolve it during the Step 5 user gate.
 
 ### Step 7: Write tool-scoping.md
 

@@ -228,7 +228,7 @@ The endpoint-scoper agent will:
 - Assign tool names — keeping originals when possible, renaming only bad ones
 - Write LLM-optimized descriptions focused on separability between tools
 - Add hints for pagination, large responses, quirks
-- Set each tool's `response_kind` (`json`, `text`, or `binary` — see `{skill_base_dir}/assets/generator-contract.md` for what each kind commits to) from the spec's 2xx responses, and flag any endpoint whose 2xx responses mix incompatible media types for the user's decision. Void endpoints (204-style, no 2xx content block) are tagged `json` — the generated client returns `{}` on empty bodies, so the tool yields `{}` rather than a `JSONDecodeError`
+- Set each tool's `response_kind` per the rules in `{skill_base_dir}/assets/generator-contract.md` (section "Picking a kind from the spec"), and flag any endpoint whose 2xx responses mix incompatible media types for the user's decision
 - Write `tool-scoping.md` to the working directory
 
 ---
