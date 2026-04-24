@@ -35,41 +35,45 @@ analysis, tool scoping, validation, and polish). Both need to be visible to
 your AI coding tool. Symlinking from the repo keeps them in sync with
 `git pull`.
 
-**Claude Code** — symlink the skills into `~/.claude/skills/` and the agents
-into `~/.claude/agents/` (user-level, available everywhere). Swap `~/.claude/`
-for a project-level `.claude/` to install locally instead.
+**Claude Code** — symlink the skills into `.claude/skills/` and the agents
+into `.claude/agents/` (project-level). Swap `.claude/` for `~/.claude/`
+to install at the user level (available everywhere) instead.
 
 ```bash
+mkdir -p "$(pwd)/.claude/skills" "$(pwd)/.claude/agents"
+
 # Skills
-ln -s "$PWD/skills/ai-scoping"    ~/.claude/skills/ai-scoping
-ln -s "$PWD/skills/ai-validation" ~/.claude/skills/ai-validation
-ln -s "$PWD/skills/deploy-assist" ~/.claude/skills/deploy-assist
+ln -s "$(pwd)/skills/ai-scoping"    "$(pwd)/.claude/skills/ai-scoping"
+ln -s "$(pwd)/skills/ai-validation" "$(pwd)/.claude/skills/ai-validation"
+ln -s "$(pwd)/skills/deploy-assist" "$(pwd)/.claude/skills/deploy-assist"
 
 # Agents
-ln -s "$PWD/agents/spec-analyzer.md"    ~/.claude/agents/spec-analyzer.md
-ln -s "$PWD/agents/endpoint-scoper.md"  ~/.claude/agents/endpoint-scoper.md
-ln -s "$PWD/agents/code-validator.md"   ~/.claude/agents/code-validator.md
-ln -s "$PWD/agents/polish-suggester.md" ~/.claude/agents/polish-suggester.md
+ln -s "$(pwd)/agents/spec-analyzer.md"    "$(pwd)/.claude/agents/spec-analyzer.md"
+ln -s "$(pwd)/agents/endpoint-scoper.md"  "$(pwd)/.claude/agents/endpoint-scoper.md"
+ln -s "$(pwd)/agents/code-validator.md"   "$(pwd)/.claude/agents/code-validator.md"
+ln -s "$(pwd)/agents/polish-suggester.md" "$(pwd)/.claude/agents/polish-suggester.md"
 ```
 
 Once installed, the skills appear as slash commands: `/ai-scoping`,
 `/ai-validation`, `/deploy-assist`.
 
-**Gemini CLI** — Gemini CLI supports skills at `~/.gemini/skills/` and
-sub-agents at `~/.gemini/agents/` (swap for workspace-level `.gemini/...` if
+**Gemini CLI** — Gemini CLI supports skills at `.gemini/skills/` and
+sub-agents at `.gemini/agents/` (swap for user-level `~/.gemini/...` if
 you prefer). The install is symmetric with Claude Code:
 
 ```bash
+mkdir -p "$(pwd)/.gemini/skills" "$(pwd)/.gemini/agents"
+
 # Skills
-ln -s "$PWD/skills/ai-scoping"    ~/.gemini/skills/ai-scoping
-ln -s "$PWD/skills/ai-validation" ~/.gemini/skills/ai-validation
-ln -s "$PWD/skills/deploy-assist" ~/.gemini/skills/deploy-assist
+ln -s "$(pwd)/skills/ai-scoping"    "$(pwd)/.gemini/skills/ai-scoping"
+ln -s "$(pwd)/skills/ai-validation" "$(pwd)/.gemini/skills/ai-validation"
+ln -s "$(pwd)/skills/deploy-assist" "$(pwd)/.gemini/skills/deploy-assist"
 
 # Agents
-ln -s "$PWD/agents/spec-analyzer.md"    ~/.gemini/agents/spec-analyzer.md
-ln -s "$PWD/agents/endpoint-scoper.md"  ~/.gemini/agents/endpoint-scoper.md
-ln -s "$PWD/agents/code-validator.md"   ~/.gemini/agents/code-validator.md
-ln -s "$PWD/agents/polish-suggester.md" ~/.gemini/agents/polish-suggester.md
+ln -s "$(pwd)/agents/spec-analyzer.md"    "$(pwd)/.gemini/agents/spec-analyzer.md"
+ln -s "$(pwd)/agents/endpoint-scoper.md"  "$(pwd)/.gemini/agents/endpoint-scoper.md"
+ln -s "$(pwd)/agents/code-validator.md"   "$(pwd)/.gemini/agents/code-validator.md"
+ln -s "$(pwd)/agents/polish-suggester.md" "$(pwd)/.gemini/agents/polish-suggester.md"
 ```
 
 Gemini CLI also ships `gemini skills link <path>`, which auto-discovers and
