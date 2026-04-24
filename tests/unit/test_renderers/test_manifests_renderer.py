@@ -396,15 +396,39 @@ class TestRenderDeployReadme:
         out = render_deploy_readme(API_KEY_PLAN)
         assert "secret.yaml" in out
         assert "mcpoidcconfig.yaml" not in out
+        # Apply order matters: secret must exist before the auth config
+        # references it; auth config before the MCPServer that binds it.
+        # Scope to the apply-order section — filenames also appear in the
+        # Files table above, in a different order.
+        apply = out.split("Recommended apply order", 1)[1]
+        assert (
+            apply.index("secret.yaml")
+            < apply.index("mcpexternalauthconfig.yaml")
+            < apply.index("mcpserver.yaml")
+        )
 
     def test_oidc_lists_oidc_config(self) -> None:
         out = render_deploy_readme(OIDC_PLAN)
         assert "mcpoidcconfig.yaml" in out
         assert "secret.yaml" not in out
+        # Embedded-auth apply order: oidc config → external auth config → mcpserver.
+        apply = out.split("Recommended apply order", 1)[1]
+        assert (
+            apply.index("mcpoidcconfig.yaml")
+            < apply.index("mcpexternalauthconfig.yaml")
+            < apply.index("mcpserver.yaml")
+        )
 
     def test_oauth2_lists_oidc_config(self) -> None:
         out = render_deploy_readme(OAUTH2_PLAN)
         assert "mcpoidcconfig.yaml" in out
+        # Same embedded-auth apply order as OIDC.
+        apply = out.split("Recommended apply order", 1)[1]
+        assert (
+            apply.index("mcpoidcconfig.yaml")
+            < apply.index("mcpexternalauthconfig.yaml")
+            < apply.index("mcpserver.yaml")
+        )
 
     def test_none_lists_no_auth_files(self) -> None:
         out = render_deploy_readme(NONE_PLAN)
