@@ -61,7 +61,66 @@ This outputs JSON with all endpoints, security schemes, and quality metrics.
 
 If the command fails (invalid spec, unsupported format), present the error to the user and exit.
 
-#### 2.2: Spawn spec-analyzer agent
+#### 2.2: Resolve URL placeholders and relative URLs
+
+Specs for multi-tenant APIs routinely ship `{placeholder}` literals in `servers[].url` and OAuth URLs (e.g. `https://{companyDomain}.bamboohr.com`). OAuth flows also sometimes declare `authorizationUrl` / `tokenUrl` as server-relative paths (`/authorize.php`), and the analyzer emits `base_url=""` when the spec has no `servers` block. A scope written with any of these shapes propagates verbatim into the generated client and fails at runtime. Resolve all of them here, once, before any downstream step uses the URLs.
+
+1. **Collect URL fields** from `{working_dir}/analyze.json`:
+   - `base_url`
+   - For each `security_schemes[*]` with `type == "oauth2"`, for each flow in its `flows`: `authorization_url` and `token_url`. Track these per `(scheme_name, flow_name)` so multiple OAuth schemes are not collapsed into a single pair.
+
+2. **Detect issues**:
+   - Empty or non-absolute `base_url`: does not start with `http://` or `https://`
+   - Balanced `{…}` placeholder: any `re.findall(r"\{[^{}]+\}", url)` match
+   - Relative OAuth URL: an `authorization_url` / `token_url` that does not start with `http://` or `https://`
+
+   If none found, skip to Step 6 — persistence still runs with passthrough values so downstream steps can read `resolved_urls` unconditionally.
+
+3. **Gather inference hints** for each placeholder (do not commit yet):
+   - Open the raw OpenAPI spec file (from `$ARGUMENTS`). For each placeholder name, look up `servers[*].variables[<name>].default`. This is the standard mechanism spec authors use — treat it as a strong hint.
+   - Cross-reference the user's Step 1.3 auth hint and the workflow descriptions for any domain or subdomain the user already mentioned.
+
+4. **Confirm with the user**:
+   - If `base_url` is empty or non-absolute, ask the user for the concrete absolute base URL first. All relative OAuth URL resolution below depends on it.
+   - Then, for every placeholder (even when a spec-declared default exists), present:
+     - The template URL it appears in
+     - The placeholder name
+     - The spec-declared default (if any)
+     - Any cross-referenced hint
+     - A request for the concrete value to use
+
+   Do not proceed until the base URL is absolute and every placeholder has a concrete user-supplied value.
+
+5. **Resolve relative OAuth URLs** against the concrete (now placeholder-free) `base_url` using `urllib.parse.urljoin` semantics.
+
+6. **Persist a `resolved_urls` mapping** for the rest of the workflow. Always populate it, even on the no-op path — downstream steps read it unconditionally:
+   ```
+   resolved_urls = {
+     "base_url": "<concrete absolute URL>",
+     "oauth": {
+       "<scheme_name>": {
+         "<flow_name>": {
+           "authorization_url": "<concrete absolute URL or None>",
+           "token_url": "<concrete absolute URL or None>",
+         },
+       },
+     },
+   }
+   ```
+
+   Rules for each field:
+   - `base_url`: always a string. On the no-op path, copy the already-absolute value from `analyze.json` verbatim.
+   - `oauth`: always a dict. If the spec has **no OAuth schemes**, use `{}`. Otherwise include one entry per `(scheme_name, flow_name)` present in the spec.
+   - `authorization_url` / `token_url`: strings when the flow declares them (copied verbatim from `analyze.json` on the no-op path, or the resolved value otherwise). Use `None` for a flow that genuinely doesn't declare that URL (e.g. `client_credentials` has no `authorization_url`).
+
+   Example — spec with no OAuth at all:
+   ```
+   resolved_urls = {"base_url": "https://api.example.com", "oauth": {}}
+   ```
+
+   Every downstream step (2.3, 4, 6.1, 6.2, 6.3) uses these values.
+
+#### 2.3: Spawn spec-analyzer agent
 
 Spawn a **spec-analyzer** sub-agent using the Agent tool:
 
@@ -84,6 +143,9 @@ Agent tool parameters:
 
     SPEC ANALYSIS JSON PATH:
     [absolute path to {working_dir}/analyze.json]
+
+    RESOLVED BASE URL:
+    [resolved_urls["base_url"] from Step 2.2 — the concrete, placeholder-free base URL the agent should display instead of the verbatim value in analyze.json]
 - mode: acceptEdits
 - run_in_background: false
 ```
@@ -130,7 +192,7 @@ Agent tool parameters:
     Pipeline context path: [absolute path to {skill_base_dir}/assets/pipeline-context.md]
     Working directory: [absolute path to {working_dir} from Step 1.4]
     Server name: [derived from API — e.g., "google-drive"]
-    Base URL: [from analyze JSON — e.g., "https://www.googleapis.com/drive/v3"]
+    Base URL: [resolved_urls["base_url"] from Step 2.2 — the concrete, placeholder-free base URL, e.g., "https://www.googleapis.com/drive/v3"]
     OpenAPI spec file path: [absolute path to the downloaded OpenAPI spec file]
 
     WORKFLOWS:
@@ -188,7 +250,7 @@ Read the `security_schemes` from `{working_dir}/analyze.json` and map to MCPScop
 |------------------------|---------------------|-------|
 | `openIdConnect` (with `openIdConnectUrl`) | `oidc` | Use the `openIdConnectUrl`'s origin as `issuer`. Fetch `/.well-known/openid-configuration` to pull scopes into `scopes_available`. |
 | `oauth2` (authorization code flow) with a known-OIDC provider (Google, Atlassian, Okta, etc.) | `oidc` | Only if the provider publishes `/.well-known/openid-configuration` — verify by fetching it. |
-| `oauth2` (authorization code flow) otherwise | `oauth2` | Carry `authorization_url`, `token_url` verbatim from the spec; resolve relative paths against `spec.base_url` to produce absolute URLs. |
+| `oauth2` (authorization code flow) otherwise | `oauth2` | Use `resolved_urls["oauth"][<selected_scheme>][<selected_flow>]["authorization_url"]` and `token_url` from Step 2.2 — never the raw analyze.json values. These are already absolute (placeholders substituted, relative paths resolved). Extract scopes from the flow definition. |
 | `http` (bearer) | `api_key` | Static bearer-token pattern; API key in the `Authorization` header. |
 | `apiKey` (header: `X-API-Key`, `Authorization`) | `api_key` | |
 | `apiKey` (query parameter) | `none` | **Not supported** — flag in notes |
@@ -201,7 +263,7 @@ If multiple security schemes exist, select the most ToolHive-compatible one and 
 
 **Scopes — always populate `scopes_available` from the spec.** Copy every scope declared under the OAuth2 flow or the OIDC discovery document into `scopes_available` as a dict of `{scope_name: description}` — do not curate it. Then produce `scopes_required` as the minimal subset needed for the tools in the scope. The full catalog lets downstream reviewers pick different scopes without re-reading the spec.
 
-**URL resolution.** OpenAPI permits relative `authorizationUrl` / `tokenUrl` values; resolve them against `spec.base_url` so the scope carries absolute URLs only. Never emit relative endpoint URLs.
+**URL sourcing.** All OAuth endpoint URLs (`authorization_url`, `token_url`) come from `resolved_urls` in Step 2.2, which has already handled placeholder substitution and relative-path resolution. Never emit relative endpoint URLs or raw `{placeholder}` literals.
 
 **`userinfo_url` for OAuth2 (optional).** OpenAPI has no standard field for this. If the API's OAuth docs declare one, populate it; otherwise ask the user once — if they don't know, omit the field. Do not invent a URL.
 
@@ -218,13 +280,15 @@ Derive the following from the analyze JSON and user context:
 - `server.description`: One-line description of what the MCP server does
 - `spec.source`: The original spec path or URL
 - `spec.format`: `openapi3` or `openapi3.1` (from analyze JSON)
-- `spec.base_url`: From analyze JSON
+- `spec.base_url`: `resolved_urls["base_url"]` from Step 2.2 (concrete, placeholder-free, absolute). Never the raw analyze JSON value.
 - `spec.total_endpoints`: Total count from analyze JSON
 - `spec.scoped_endpoints`: Count of tools in the approved list
 
 #### 6.3: Assemble `mcp-scope.yaml`
 
 Build the YAML following the MCPScope schema exactly. The formal JSON schema was generated when you ran `task generate-schema`.
+
+All URL fields (`spec.base_url`, `auth.oauth.issuer`) use the resolved values from Step 2.2. The assembled YAML must never contain an unresolved `{…}` placeholder or a relative URL.
 
 ```yaml
 version: "1"

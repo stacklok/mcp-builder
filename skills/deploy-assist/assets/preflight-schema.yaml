@@ -1,0 +1,79 @@
+# Schema for .deploy-assist-preflight.yaml
+#
+# The deploy-assist skill writes one of these at the end of Step 2, before the
+# user gate in Step 3. Every top-level key below is required. Leaf fields are
+# required unless marked "(optional)" — an empty or missing required field is a
+# signal that the skill skipped work, and Step 3 must flag it to the user.
+#
+# This file pins the shape. The skill must emit keys in this exact structure.
+
+# Relative path (from cluster repo root) of the MCPServer YAML used as the
+# sibling template. "" if no sibling exists and this is the first MCPServer in
+# the repo.
+sibling_used: ""
+
+# Set-difference between generated deploy/ and the sibling. Every field is
+# required; use an empty list [] rather than omitting the key.
+sibling_diff:
+  # Top-level keys under spec that the generator emits but the sibling lacks.
+  spec_keys_only_in_generated: []
+
+  # Top-level keys under spec that the sibling has but the generator did not
+  # emit. Each entry usually requires a rewrite before copying.
+  spec_keys_only_in_sibling: []
+
+  # CRD kinds referenced by the sibling (e.g. MCPTelemetryConfig,
+  # MCPExternalAuthConfig) that the generator did not emit. Each entry signals
+  # the cluster expects a shared resource the generator produced inline.
+  kinds_only_in_sibling: []
+
+  # Ingress shape comparison. A MISMATCH in any of these typically blocks
+  # first-deploy.
+  ingress:
+    # Example: "mcp-{name}-proxy" (operator-managed) vs "{name}" (plain).
+    sibling_service_name_pattern: ""
+
+    # Exact service name emitted by the generator's ingress.yaml.
+    generated_service_name: ""
+
+    # True if the sibling has a separate ingress for /.well-known/oauth-*
+    # (authinfo) discovery endpoints. Required for OAuth protected-resource
+    # discovery to work.
+    sibling_has_authinfo_ingress: false
+
+    # True if the sibling's ingress path or audience/resourceUrl ends with
+    # /mcp. ToolHive's MCP transport expects this suffix.
+    sibling_path_has_mcp_suffix: false
+
+  # External-auth upstream provider comparison. Present only when the generator
+  # emitted mcpexternalauthconfig.yaml; otherwise both fields are "".
+  external_auth:
+    # "oidc" | "oauth2" | ""
+    sibling_upstream_type: ""
+    generated_upstream_type: ""
+
+# OIDC discovery-doc probe result. Populated only when the generator emitted
+# upstreamProviders[*].type: oidc with a non-empty issuerUrl; otherwise
+# resolvable is false and failure explains why the check was skipped.
+oidc_discovery:
+  issuer_url: ""
+  resolvable: false
+
+  # Free-text reason when resolvable is false: unresolved template literal,
+  # DNS failure, non-compliant discovery doc, or "skipped: type is oauth2".
+  failure: ""
+
+# Planned rewrites the skill will apply in Step 4. Ordered by the order they
+# will be applied. Empty list means no rewrites planned.
+#
+# Known rewrite tokens:
+#   oidc_to_oauth2         — run rewrite_upstream_oidc_to_oauth2 subroutine
+#   replace_template_literal — substitute a {placeholder} across YAML + source
+#   ingress_service_rename — align service.name with sibling pattern
+#   add_authinfo_ingress   — emit missing authinfo ingress
+#   add_mcp_suffix         — append /mcp to audience/resourceUrl/path
+rewrites_planned: []
+
+# Values the user must supply at the Step 3 gate before Step 4 can proceed.
+# Each entry is "name: description". Empty list means nothing needed.
+user_inputs_required: []
