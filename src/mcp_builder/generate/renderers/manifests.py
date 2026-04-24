@@ -5,14 +5,20 @@ Produces Kubernetes-style manifests for deploying a generated MCP server
 on ToolHive:
 
     - MCPServer CRD — always generated
-    - Ingress — always generated (external access)
     - MCPExternalAuthConfig CRD — only when auth is configured
+    - MCPOIDCConfig CRD — only for embedded OAuth/OIDC auth
     - Secret template — only when auth type is api_key (bearerToken)
+    - deploy/README.md — always generated (orientation + placeholders)
 
-Each render_* function returns a YAML string. ``render_manifests()`` is
-the entry point — it returns a dict mapping filenames to content and
-handles the conditional logic for auth-dependent manifests. Templates
-live in ``renderers/templates/*.yaml.jinja2``.
+External access (Ingress / Gateway / LoadBalancer) is intentionally NOT
+emitted: the URL shape is cluster-specific and generating a file that
+looks authoritative but doesn't actually work is worse than generating
+nothing. The README explains this to the user.
+
+Each render_* function returns a string. ``render_manifests()`` is the
+entry point — it returns a dict mapping filenames to content and handles
+the conditional logic for auth-dependent manifests. Templates live in
+``renderers/templates/*.jinja2``.
 """
 
 from __future__ import annotations
@@ -53,7 +59,7 @@ def render_manifests(plan: ServerPlan) -> dict[str, str]:
 
     Returns a dict with 2-4 entries depending on auth type:
         - "mcpserver.yaml" — always present
-        - "ingress.yaml" — always present
+        - "README.md" — always present
         - "mcpexternalauthconfig.yaml" — present when auth.type != "none"
         - "mcpoidcconfig.yaml" — present when auth is oauth2 or oidc
         - "secret.yaml" — present only when auth.type == "api_key"
@@ -62,7 +68,7 @@ def render_manifests(plan: ServerPlan) -> dict[str, str]:
 
     manifests: dict[str, str] = {
         "mcpserver.yaml": render_mcpserver(plan),
-        "ingress.yaml": render_ingress(plan),
+        "README.md": render_deploy_readme(plan),
     }
 
     if plan.auth.type != "none":
@@ -170,13 +176,21 @@ def render_secret(plan: ServerPlan) -> str:
     )
 
 
-def render_ingress(plan: ServerPlan) -> str:
-    """Render the Kubernetes Ingress manifest for external access."""
-    logger.debug("Rendering Ingress for '%s'", plan.server_name)
-    tmpl = _env.get_template("ingress.yaml.jinja2")
+def render_deploy_readme(plan: ServerPlan) -> str:
+    """Render the deploy/README.md orientation doc.
+
+    Explains the emitted files, placeholders, and — crucially — that the
+    user must supply their own Ingress/Gateway/LoadBalancer. The shape of
+    the external URL feeds back into the manifests (audience, issuer,
+    redirectUri) so it can't be picked mechanically here.
+    """
+    logger.debug("Rendering deploy README for '%s'", plan.server_name)
+    tmpl = _env.get_template("deploy_readme.md.jinja2")
     return tmpl.render(
         server_name=plan.server_name,
-        namespace=DEFAULT_NAMESPACE,
+        has_auth=plan.auth.type != "none",
+        is_embedded_auth=isinstance(plan.auth, _EMBEDDED_AUTH_CLASSES),
+        is_api_key=plan.auth.type == "api_key",
     )
 
 

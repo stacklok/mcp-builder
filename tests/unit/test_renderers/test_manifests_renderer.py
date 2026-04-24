@@ -8,8 +8,8 @@ import yaml
 from mcp_builder.generate.plan import ServerPlan
 from mcp_builder.generate.renderers.manifests import (
     _derive_provider_name,
+    render_deploy_readme,
     render_external_auth_config,
-    render_ingress,
     render_manifests,
     render_mcpoidc_config,
     render_mcpserver,
@@ -81,24 +81,42 @@ class TestRenderMcpserver:
         }
 
     def test_auth_ref_when_oidc(self) -> None:
+        # Embedded auth server binds via spec.authServerRef (the inverse,
+        # externalAuthConfigRef, is the controller's legacy path).
         doc = yaml.safe_load(render_mcpserver(OIDC_PLAN))
-        assert doc["spec"]["externalAuthConfigRef"]["name"] == "test-api-auth"
+        ref = doc["spec"]["authServerRef"]
+        assert ref["kind"] == "MCPExternalAuthConfig"
+        assert ref["name"] == "test-api-auth"
+        assert "externalAuthConfigRef" not in doc["spec"]
 
     def test_auth_ref_when_oauth2(self) -> None:
         doc = yaml.safe_load(render_mcpserver(OAUTH2_PLAN))
-        assert doc["spec"]["externalAuthConfigRef"]["name"] == "test-api-auth"
+        ref = doc["spec"]["authServerRef"]
+        assert ref["kind"] == "MCPExternalAuthConfig"
+        assert ref["name"] == "test-api-auth"
+        assert "externalAuthConfigRef" not in doc["spec"]
 
     def test_auth_ref_for_api_key(self) -> None:
+        # bearerToken is an upstream-request-mutation auth type, not an
+        # embedded auth server — it binds via externalAuthConfigRef.
         doc = yaml.safe_load(render_mcpserver(API_KEY_PLAN))
         assert doc["spec"]["externalAuthConfigRef"]["name"] == "test-api-auth"
+        assert "authServerRef" not in doc["spec"]
 
     def test_no_auth_ref_when_none(self) -> None:
         doc = yaml.safe_load(render_mcpserver(NONE_PLAN))
         assert "externalAuthConfigRef" not in doc["spec"]
+        assert "authServerRef" not in doc["spec"]
 
     def test_proxy_port(self, plan: ServerPlan) -> None:
         doc = yaml.safe_load(render_mcpserver(plan))
         assert doc["spec"]["proxyPort"] == 8080
+
+    def test_mcp_port(self, plan: ServerPlan) -> None:
+        # Upstream ToolHive examples and docs consistently set both
+        # proxyPort and mcpPort on MCPServer.
+        doc = yaml.safe_load(render_mcpserver(plan))
+        assert doc["spec"]["mcpPort"] == 8080
 
     def test_resources(self, plan: ServerPlan) -> None:
         doc = yaml.safe_load(render_mcpserver(plan))
@@ -355,51 +373,41 @@ class TestRenderSecret:
 
 
 # ---------------------------------------------------------------------------
-# render_ingress
+# render_deploy_readme
 # ---------------------------------------------------------------------------
 
 
-class TestRenderIngress:
-    def test_valid_yaml(self, plan: ServerPlan) -> None:
-        doc = yaml.safe_load(render_ingress(plan))
-        assert isinstance(doc, dict)
+class TestRenderDeployReadme:
+    def test_contains_server_name(self, plan: ServerPlan) -> None:
+        out = render_deploy_readme(plan)
+        assert plan.server_name in out
 
-    def test_api_version(self, plan: ServerPlan) -> None:
-        doc = yaml.safe_load(render_ingress(plan))
-        assert doc["apiVersion"] == "networking.k8s.io/v1"
+    def test_flags_missing_ingress(self, plan: ServerPlan) -> None:
+        # The README is the only place we tell the user they must provide
+        # external access — this guarantee matters enough to pin.
+        out = render_deploy_readme(plan)
+        assert "external access" in out.lower()
+        assert "ingress" in out.lower()
 
-    def test_kind(self, plan: ServerPlan) -> None:
-        doc = yaml.safe_load(render_ingress(plan))
-        assert doc["kind"] == "Ingress"
+    def test_api_key_lists_secret_file(self) -> None:
+        out = render_deploy_readme(API_KEY_PLAN)
+        assert "secret.yaml" in out
+        assert "mcpoidcconfig.yaml" not in out
 
-    def test_metadata_name(self, plan: ServerPlan) -> None:
-        doc = yaml.safe_load(render_ingress(plan))
-        assert doc["metadata"]["name"] == f"{plan.server_name}-ingress"
+    def test_oidc_lists_oidc_config(self) -> None:
+        out = render_deploy_readme(OIDC_PLAN)
+        assert "mcpoidcconfig.yaml" in out
+        assert "secret.yaml" not in out
 
-    def test_namespace(self, plan: ServerPlan) -> None:
-        doc = yaml.safe_load(render_ingress(plan))
-        assert doc["metadata"]["namespace"] == "toolhive-system"
+    def test_oauth2_lists_oidc_config(self) -> None:
+        out = render_deploy_readme(OAUTH2_PLAN)
+        assert "mcpoidcconfig.yaml" in out
 
-    def test_host_placeholder(self, plan: ServerPlan) -> None:
-        doc = yaml.safe_load(render_ingress(plan))
-        host = doc["spec"]["rules"][0]["host"]
-        assert "REPLACE_ME_DOMAIN" in host
-
-    def test_path(self, plan: ServerPlan) -> None:
-        doc = yaml.safe_load(render_ingress(plan))
-        path = doc["spec"]["rules"][0]["http"]["paths"][0]
-        assert path["path"] == f"/{plan.server_name}"
-        assert path["pathType"] == "Prefix"
-
-    def test_backend_port(self, plan: ServerPlan) -> None:
-        doc = yaml.safe_load(render_ingress(plan))
-        backend = doc["spec"]["rules"][0]["http"]["paths"][0]["backend"]
-        assert backend["service"]["name"] == plan.server_name
-        assert backend["service"]["port"]["number"] == 8080
-
-    def test_has_comment_header(self, plan: ServerPlan) -> None:
-        raw = render_ingress(plan)
-        assert raw.startswith("# Ingress")
+    def test_none_lists_no_auth_files(self) -> None:
+        out = render_deploy_readme(NONE_PLAN)
+        assert "secret.yaml" not in out
+        assert "mcpoidcconfig.yaml" not in out
+        assert "mcpexternalauthconfig.yaml" not in out
 
 
 # ---------------------------------------------------------------------------
@@ -466,7 +474,7 @@ class TestRenderManifests:
         result = render_manifests(API_KEY_PLAN)
         assert set(result.keys()) == {
             "mcpserver.yaml",
-            "ingress.yaml",
+            "README.md",
             "mcpexternalauthconfig.yaml",
             "secret.yaml",
         }
@@ -475,7 +483,7 @@ class TestRenderManifests:
         result = render_manifests(OIDC_PLAN)
         assert set(result.keys()) == {
             "mcpserver.yaml",
-            "ingress.yaml",
+            "README.md",
             "mcpexternalauthconfig.yaml",
             "mcpoidcconfig.yaml",
         }
@@ -484,14 +492,21 @@ class TestRenderManifests:
         result = render_manifests(OAUTH2_PLAN)
         assert set(result.keys()) == {
             "mcpserver.yaml",
-            "ingress.yaml",
+            "README.md",
             "mcpexternalauthconfig.yaml",
             "mcpoidcconfig.yaml",
         }
 
     def test_filenames_without_auth(self) -> None:
         result = render_manifests(NONE_PLAN)
-        assert set(result.keys()) == {"mcpserver.yaml", "ingress.yaml"}
+        assert set(result.keys()) == {"mcpserver.yaml", "README.md"}
+
+    def test_no_ingress_generated(self) -> None:
+        # External access (Ingress/Gateway) is intentionally not emitted —
+        # the URL shape is cluster-specific. The README is where we tell
+        # the user about that.
+        for p in (API_KEY_PLAN, OIDC_PLAN, OAUTH2_PLAN, NONE_PLAN):
+            assert "ingress.yaml" not in render_manifests(p)
 
     def test_all_values_are_strings(self) -> None:
         for content in render_manifests(OIDC_PLAN).values():
@@ -499,13 +514,16 @@ class TestRenderManifests:
         for content in render_manifests(OAUTH2_PLAN).values():
             assert isinstance(content, str)
 
-    def test_all_values_parse_as_yaml(self) -> None:
-        for content in render_manifests(OIDC_PLAN).values():
-            doc = yaml.safe_load(content)
-            assert isinstance(doc, dict)
-        for content in render_manifests(OAUTH2_PLAN).values():
-            doc = yaml.safe_load(content)
-            assert isinstance(doc, dict)
+    def test_all_yaml_values_parse_as_yaml(self) -> None:
+        # README.md is markdown — exclude it from the YAML parse check.
+        for name, content in render_manifests(OIDC_PLAN).items():
+            if name.endswith(".yaml"):
+                doc = yaml.safe_load(content)
+                assert isinstance(doc, dict)
+        for name, content in render_manifests(OAUTH2_PLAN).items():
+            if name.endswith(".yaml"):
+                doc = yaml.safe_load(content)
+                assert isinstance(doc, dict)
 
 
 # ---------------------------------------------------------------------------

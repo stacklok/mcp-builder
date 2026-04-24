@@ -84,12 +84,17 @@ class TestRunPipeline:
         doc = yaml.safe_load(secret.read_text())
         assert doc["stringData"]["token"] == "REPLACE_ME"
 
-    def test_creates_ingress_yaml(self, project_dir: Path) -> None:
-        ingress = project_dir / "deploy" / "ingress.yaml"
-        assert ingress.exists()
-        doc = yaml.safe_load(ingress.read_text())
-        assert doc["kind"] == "Ingress"
-        assert doc["metadata"]["name"] == "test-api-ingress"
+    def test_creates_deploy_readme(self, project_dir: Path) -> None:
+        readme = project_dir / "deploy" / "README.md"
+        assert readme.exists()
+        text = readme.read_text()
+        assert "test-api" in text
+        assert "external access" in text.lower()
+
+    def test_does_not_create_ingress_yaml(self, project_dir: Path) -> None:
+        # External access is intentionally left to the user — the URL shape
+        # is cluster-specific. README.md is where we call this out.
+        assert not (project_dir / "deploy" / "ingress.yaml").exists()
 
 
 class TestRunPipelineOAuth:
