@@ -63,43 +63,52 @@ If the command fails (invalid spec, unsupported format), present the error to th
 
 #### 2.2: Resolve URL placeholders and relative URLs
 
-Specs for multi-tenant APIs routinely ship `{placeholder}` literals in `servers[].url` and OAuth URLs (e.g. `https://{companyDomain}.bamboohr.com`). OAuth flows also sometimes declare `authorizationUrl` / `tokenUrl` as server-relative paths (`/authorize.php`). A scope written with either of these shapes propagates verbatim into the generated client and fails at runtime. Resolve both here, once, before any downstream step uses the URLs.
+Specs for multi-tenant APIs routinely ship `{placeholder}` literals in `servers[].url` and OAuth URLs (e.g. `https://{companyDomain}.bamboohr.com`). OAuth flows also sometimes declare `authorizationUrl` / `tokenUrl` as server-relative paths (`/authorize.php`), and the analyzer emits `base_url=""` when the spec has no `servers` block. A scope written with any of these shapes propagates verbatim into the generated client and fails at runtime. Resolve all of them here, once, before any downstream step uses the URLs.
 
 1. **Collect URL fields** from `{working_dir}/analyze.json`:
    - `base_url`
-   - For each `security_schemes[*]` with `type == "oauth2"`, for each flow in its `flows`: `authorization_url` and `token_url`
+   - For each `security_schemes[*]` with `type == "oauth2"`, for each flow in its `flows`: `authorization_url` and `token_url`. Track these per `(scheme_name, flow_name)` so multiple OAuth schemes are not collapsed into a single pair.
 
 2. **Detect issues**:
+   - Empty or non-absolute `base_url`: does not start with `http://` or `https://`
    - Balanced `{…}` placeholder: any `re.findall(r"\{[^{}]+\}", url)` match
    - Relative OAuth URL: an `authorization_url` / `token_url` that does not start with `http://` or `https://`
 
-   If none found, Step 2.2 is a no-op — proceed to Step 2.3.
+   If none found, skip to Step 6 — persistence still runs with passthrough values so downstream steps can read `resolved_urls` unconditionally.
 
 3. **Gather inference hints** for each placeholder (do not commit yet):
    - Open the raw OpenAPI spec file (from `$ARGUMENTS`). For each placeholder name, look up `servers[*].variables[<name>].default`. This is the standard mechanism spec authors use — treat it as a strong hint.
    - Cross-reference the user's Step 1.3 auth hint and the workflow descriptions for any domain or subdomain the user already mentioned.
 
-4. **Confirm with the user** for every placeholder, even when a spec-declared default exists. Defaults are frequently illustrative (e.g. `api`, `example.com`) rather than tenant-correct. Present, per placeholder:
-   - The template URL it appears in
-   - The placeholder name
-   - The spec-declared default (if any)
-   - Any cross-referenced hint
-   - A request for the concrete value to use
+4. **Confirm with the user**:
+   - If `base_url` is empty or non-absolute, ask the user for the concrete absolute base URL first. All relative OAuth URL resolution below depends on it.
+   - Then, for every placeholder (even when a spec-declared default exists), present:
+     - The template URL it appears in
+     - The placeholder name
+     - The spec-declared default (if any)
+     - Any cross-referenced hint
+     - A request for the concrete value to use
 
-   Do not proceed until every placeholder has a concrete user-supplied value.
+   Do not proceed until the base URL is absolute and every placeholder has a concrete user-supplied value.
 
-5. **Resolve relative OAuth URLs** against the concrete (now placeholder-free) `base_url` using `urllib.parse.urljoin` semantics. No user prompt needed — this is deterministic.
+5. **Resolve relative OAuth URLs** against the concrete (now placeholder-free) `base_url` using `urllib.parse.urljoin` semantics.
 
-6. **Persist a `resolved_urls` mapping** for the rest of the workflow:
+6. **Persist a `resolved_urls` mapping** for the rest of the workflow. Always populate it, even on the no-op path — downstream steps read it unconditionally:
    ```
    resolved_urls = {
      "base_url": "<concrete absolute URL>",
-     "oauth_authorization_url": "<concrete absolute URL or None>",
-     "oauth_token_url": "<concrete absolute URL or None>",
+     "oauth": {
+       "<scheme_name>": {
+         "<flow_name>": {
+           "authorization_url": "<concrete absolute URL or None>",
+           "token_url": "<concrete absolute URL or None>",
+         },
+       },
+     },
    }
    ```
 
-   Every downstream step (2.3, 4, 6.1, 6.2, 6.3) uses these values. `mcp-scope.yaml` must never be written with an unresolved `{…}` or a relative URL.
+   Every downstream step (2.3, 4, 6.1, 6.2, 6.3) uses these values.
 
 #### 2.3: Spawn spec-analyzer agent
 
@@ -229,7 +238,7 @@ Read the `security_schemes` from `{working_dir}/analyze.json` and map to MCPScop
 
 | OpenAPI Security Scheme | MCPScope `auth.type` | Notes |
 |------------------------|---------------------|-------|
-| `oauth2` (authorization code flow) | `oauth_bearer` | Extract issuer from the resolved token URL domain (use `resolved_urls["oauth_token_url"]` from Step 2.2 — never the raw analyze.json value, which may still contain placeholders or be relative). Take the scheme+host. Extract scopes from the flow definition. |
+| `oauth2` (authorization code flow) | `oauth_bearer` | Extract issuer from the resolved token URL domain (use `resolved_urls["oauth"][<selected_scheme>][<selected_flow>]["token_url"]` from Step 2.2 — never the raw analyze.json value). Take the scheme+host. Extract scopes from the flow definition. |
 | `http` (bearer) | `oauth_bearer` | Static token pattern. Issuer may need user input. |
 | `apiKey` (header: `X-API-Key`, `Authorization`) | `api_key` | |
 | `apiKey` (query parameter) | `none` | **Not supported** — flag in notes |
@@ -263,7 +272,7 @@ Derive the following from the analyze JSON and user context:
 
 Build the YAML following the MCPScope schema exactly. The formal JSON schema was generated when you ran `task generate-schema`.
 
-All URL fields (`spec.base_url`, `auth.oauth.issuer`) use the resolved values from Step 2.2. The assembled YAML must never contain an unresolved `{…}` placeholder or a relative URL — if one is about to be written, go back and rerun Step 2.2.
+All URL fields (`spec.base_url`, `auth.oauth.issuer`) use the resolved values from Step 2.2. The assembled YAML must never contain an unresolved `{…}` placeholder or a relative URL.
 
 ```yaml
 version: "1"
