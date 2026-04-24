@@ -5,7 +5,7 @@ the server, and talk MCP protocol over HTTP. They are slow (network + install +
 startup) and meant to be run manually, not in CI.
 
 Usage:
-    # Run all fixtures (requires /Users/laurel/Documents/code/mcp-template-py):
+    # Run all fixtures (requires mcp-template-py checked out as a sibling of mcp-builder):
     uv run pytest e2e/test_server_startup.py -v -s
 
     # Run a single fixture:
@@ -35,8 +35,8 @@ import pytest
 
 from mcp_builder.schema.models import load_scope
 
-REAL_TEMPLATE = Path("/Users/laurel/Documents/code/mcp-template-py")
 E2E_DIR = Path(__file__).parent
+REAL_TEMPLATE = E2E_DIR.parent.parent / "mcp-template-py"
 SYNTHETIC_FIXTURES = E2E_DIR / "fixtures" / "synthetic"
 REAL_FIXTURES = E2E_DIR / "fixtures" / "real"
 E2E_OUTPUT = E2E_DIR / "output"
