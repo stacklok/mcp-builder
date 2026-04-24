@@ -381,6 +381,9 @@ class TestRenderDeployReadme:
     def test_contains_server_name(self, plan: ServerPlan) -> None:
         out = render_deploy_readme(plan)
         assert plan.server_name in out
+        # The README instructs users to expose a specific ClusterIP service
+        # — pin the exact name since users will copy-paste it.
+        assert f"mcp-{plan.server_name}-proxy" in out
 
     def test_flags_missing_ingress(self, plan: ServerPlan) -> None:
         # The README is the only place we tell the user they must provide
