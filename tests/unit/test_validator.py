@@ -673,9 +673,7 @@ class TestResponseKindSpecCompatibility:
         result = validate_scope(_scope_with_tool(tool), small_spec)
         assert not any("ack" in e for e in result.errors)
 
-    def test_text_scope_passes_with_mixed_text_and_pdf_single_status(
-        self, tmp_path
-    ):
+    def test_text_scope_passes_with_mixed_text_and_pdf_single_status(self, tmp_path):
         """A single 2xx offering both text/plain and application/pdf
         passes under text — the author picked text so the Accept
         header negotiates text/* and the PDF branch is irrelevant."""
@@ -707,9 +705,7 @@ class TestResponseKindSpecCompatibility:
         result = validate_scope(_scope_with_tool(tool), small_spec)
         assert not any("get_mixed" in e for e in result.errors), result.errors
 
-    def test_binary_scope_passes_with_mixed_text_and_pdf_single_status(
-        self, tmp_path
-    ):
+    def test_binary_scope_passes_with_mixed_text_and_pdf_single_status(self, tmp_path):
         """Pins current behavior: a single 2xx mixing text/plain and
         application/pdf passes under binary because the text-only rule
         only fires when *every* media on every 2xx is text. The
