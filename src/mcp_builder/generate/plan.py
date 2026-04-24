@@ -98,9 +98,9 @@ class ToolPlan(BaseModel):
     ``Tool.response_kind``. ``"json"`` emits a tool whose return type is
     ``dict`` (the client parses the body as JSON); ``"text"`` emits a tool
     whose return type is ``str`` (the client returns the body decoded as
-    text via the response's declared charset); ``"binary"`` emits a tool
-    whose return type is ``str`` (the client returns the raw bytes
-    base64-encoded for MCP transport).
+    text via the response's declared charset, falling back to UTF-8);
+    ``"binary"`` emits a tool whose return type is ``str`` (the client
+    returns the raw bytes base64-encoded for MCP transport).
 
     Example:
         ToolPlan(
