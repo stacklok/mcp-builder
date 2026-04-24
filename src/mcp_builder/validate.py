@@ -8,6 +8,7 @@ it's a domain operation that consumes the low-level spec/ and schema/ packages.
 from __future__ import annotations
 
 import re
+from typing import Literal
 from urllib.parse import urlparse
 
 import structlog
@@ -170,7 +171,7 @@ def validate_scope(
 
 def _check_response_kind_matches_spec(
     tool_name: str,
-    response_kind: str,
+    response_kind: Literal["json", "text", "binary"],
     responses: list[ExtractedResponse],
     errors: list[str],
     warnings: list[str],
@@ -196,6 +197,7 @@ def _check_response_kind_matches_spec(
     - ``response_kind="json"`` but some 2xx status offers no JSON option: error.
     - ``response_kind="text"`` but some 2xx status offers no text option: error.
     - ``response_kind="binary"`` but some 2xx status offers JSON: error.
+    - ``response_kind="binary"`` but every 2xx status is text-only: error.
     """
     if not responses:
         warnings.append(
