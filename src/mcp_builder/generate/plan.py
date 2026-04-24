@@ -138,13 +138,11 @@ class GroupPlan(BaseModel):
     tool_names: list[str]
 
 
-# The plan layer reuses the schema's auth variants verbatim rather than
-# flattening them — every downstream consumer (renderers) branches on the
-# auth type anyway, and the discriminated union prevents cross-variant
-# field access from compiling/type-checking.
-#
-# The discriminator is attached to the alias itself (rather than at each
-# use site) so any future field typed ``AuthPlan`` picks it up for free.
+# Discriminated union of the four auth variants, keyed on the ``type``
+# literal. Structurally identical to ``schema.models.AuthConfig`` — the
+# plan layer carries the scope's auth instance through unchanged so that
+# renderers can dispatch with ``isinstance(plan.auth, OAuth2Auth)`` etc.
+# and get full type narrowing on variant-specific fields.
 AuthPlan = Annotated[
     OAuth2Auth | OIDCAuth | APIKeyAuth | NoAuth,
     Field(discriminator="type"),
@@ -357,12 +355,7 @@ def _build_param_plans(
 
 
 def _build_auth_plan(scope: MCPScope) -> AuthPlan:
-    """Pass the scope's auth variant through to the plan unchanged.
-
-    The plan's AuthPlan is a type alias for the scope's discriminated union,
-    so no reshaping is needed here — we return the same model instance so
-    renderers can branch on isinstance / match.
-    """
+    """Return the scope's auth variant (the plan uses the same union type)."""
     logger.debug("building auth plan", auth_type=scope.auth.type)
     return scope.auth
 
