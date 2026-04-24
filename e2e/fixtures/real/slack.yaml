@@ -195,6 +195,7 @@ auth:
   authorization_url: "https://slack.com/oauth/v2/authorize"
   token_url: "https://slack.com/api/oauth.v2.access"
   userinfo_url: "https://slack.com/api/users.identity"
+  client_type: confidential
   scopes_available:
     "channels:read": "Read public channel information"
     "channels:history": "Read public channel messages"

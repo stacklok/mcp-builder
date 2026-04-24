@@ -29,8 +29,8 @@ spec:
 {% if is_embedded_auth %}
   oidcConfigRef:
     name: {{ server_name }}-oidc
-    audience: https://mcp.REPLACE_ME_DOMAIN/{{ server_name }}
-    resourceUrl: https://mcp.REPLACE_ME_DOMAIN/{{ server_name }}
+    audience: {{ audience_url }}
+    resourceUrl: {{ audience_url }}
 {% endif %}
   resources:
     requests:

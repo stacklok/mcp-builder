@@ -2,7 +2,7 @@ version: "1"
 
 server:
   name: test-api
-  description: "Test API MCP server with OIDC"
+  description: "Test API MCP server with OIDC, deferred external URL"
 
 spec:
   source: "test_openapi.yaml"
@@ -23,11 +23,12 @@ groups:
             required: true
             location: path
 
+# No external_url_template or client_type — deploy-assist will substitute
+# REPLACE_ME_DOMAIN at deploy time and the clientSecretRef stays as a
+# commented example.
 auth:
   type: oidc
   issuer: "https://accounts.google.com"
-  external_url_template: "https://mcp.example.com/<server_name>"
-  client_type: confidential
   scopes_available:
     openid: "OpenID Connect sign-in"
     email: "User email"

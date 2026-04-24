@@ -75,6 +75,17 @@ The following tools had no description in the spec. Descriptions were inferred f
 - **Scopes required:** {list of scopes}
 - **Scope completeness:** {Complete — from spec / Incomplete — may need additional scopes / Inferred — not in spec, needs verification}
 
+### External URL Template (oauth2/oidc only, if captured)
+
+- **Template:** {external_url_template, or "deferred — deploy-assist will substitute REPLACE_ME_DOMAIN"}
+- **Shape:** {shared-host / path-at-root / subdomain-per-server / custom}
+- **Expected concrete issuer:** {substituted_url, or "not yet known"}
+
+### OAuth Client Type (oauth2/oidc only, if captured)
+
+- **Client type:** {public / confidential, or "deferred — clientSecretRef rendered as commented example"}
+- **Before-deploy checklist (if confidential):** Register redirect URI `{substituted_external_url}/oauth/callback` with the upstream IdP and fill `deploy/secret-oauth.yaml` with the issued `client_secret`.
+
 ### Alternative Schemes (if applicable)
 
 | Scheme | Type | Why Not Selected |

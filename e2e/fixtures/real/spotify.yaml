@@ -109,6 +109,7 @@ auth:
   authorization_url: "https://accounts.spotify.com/authorize"
   token_url: "https://accounts.spotify.com/api/token"
   userinfo_url: "https://api.spotify.com/v1/me"
+  client_type: confidential
   scopes_available:
     user-read-private: "Read private user profile"
     user-read-email: "Read user email"

@@ -29,6 +29,8 @@ auth:
   authorization_url: "https://auth.example.com/oauth/authorize"
   token_url: "https://auth.example.com/oauth/token"
   userinfo_url: "https://api.example.com/userinfo"
+  external_url_template: "https://mcp.example.com/<server_name>"
+  client_type: confidential
   scopes_available:
     read: "Read items"
     write: "Read and write items"

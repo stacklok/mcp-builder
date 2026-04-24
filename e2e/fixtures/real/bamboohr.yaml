@@ -156,6 +156,7 @@ auth:
   authorization_url: "https://{companyDomain}.bamboohr.com/authorize.php"
   token_url: "https://{companyDomain}.bamboohr.com/token.php"
   userinfo_url: "https://{companyDomain}.bamboohr.com/token.php?request=userInfo"
+  client_type: confidential
   scopes_available:
     openid: "OpenID Connect sign-in"
     email: "User email"

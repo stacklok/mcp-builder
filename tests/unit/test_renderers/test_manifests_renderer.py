@@ -8,6 +8,8 @@ import yaml
 from mcp_builder.generate.plan import ServerPlan
 from mcp_builder.generate.renderers.manifests import (
     _derive_provider_name,
+    _split_external_url,
+    _substitute_external_url,
     render_external_auth_config,
     render_ingress,
     render_manifests,
@@ -529,3 +531,275 @@ class TestDeriveProviderName:
     )
     def test_known_providers(self, issuer: str, expected: str) -> None:
         assert _derive_provider_name(issuer) == expected
+
+
+# ---------------------------------------------------------------------------
+# _substitute_external_url
+# ---------------------------------------------------------------------------
+
+
+class TestSubstituteExternalUrl:
+    def test_none_returns_none(self) -> None:
+        assert _substitute_external_url(None, "google-drive") is None
+
+    def test_path_placeholder(self) -> None:
+        assert (
+            _substitute_external_url(
+                "https://mcp.example.com/<server_name>", "google-drive"
+            )
+            == "https://mcp.example.com/google-drive"
+        )
+
+    def test_nested_path_placeholder(self) -> None:
+        assert (
+            _substitute_external_url(
+                "https://example.com/<server_name>/mcp", "google-drive"
+            )
+            == "https://example.com/google-drive/mcp"
+        )
+
+    def test_subdomain_placeholder(self) -> None:
+        assert (
+            _substitute_external_url(
+                "https://<server_name>.example.com/mcp", "google-drive"
+            )
+            == "https://google-drive.example.com/mcp"
+        )
+
+
+# ---------------------------------------------------------------------------
+# _split_external_url
+# ---------------------------------------------------------------------------
+
+
+class TestSplitExternalUrl:
+    @pytest.mark.parametrize(
+        ("url", "expected_host", "expected_path"),
+        [
+            (
+                "https://mcp.example.com/google-drive",
+                "mcp.example.com",
+                "/google-drive",
+            ),
+            (
+                "https://example.com/google-drive/mcp",
+                "example.com",
+                "/google-drive/mcp",
+            ),
+            (
+                "https://google-drive.example.com/mcp",
+                "google-drive.example.com",
+                "/mcp",
+            ),
+            # Host-only URL — path defaults to "/"
+            ("https://example.com", "example.com", "/"),
+            ("https://example.com/", "example.com", "/"),
+        ],
+    )
+    def test_split(self, url: str, expected_host: str, expected_path: str) -> None:
+        host, path = _split_external_url(url)
+        assert host == expected_host
+        assert path == expected_path
+
+    def test_strips_trailing_slash_from_non_root_path(self) -> None:
+        # An auth endpoint URL with a trailing slash should not produce a
+        # double-slash in the ingress path.
+        host, path = _split_external_url("https://example.com/google-drive/")
+        assert host == "example.com"
+        assert path == "/google-drive"
+
+
+# ---------------------------------------------------------------------------
+# external_url_template + client_type end-to-end wiring
+# ---------------------------------------------------------------------------
+
+
+OIDC_PLAN_WITH_URL_CONFIDENTIAL = make_plan(
+    auth=OIDCAuth(
+        type="oidc",
+        issuer="https://accounts.google.com",
+        scopes_required=["openid", "email"],
+        external_url_template="https://mcp.example.com/<server_name>",
+        client_type="confidential",
+    )
+)
+OIDC_PLAN_WITH_URL_PUBLIC = make_plan(
+    auth=OIDCAuth(
+        type="oidc",
+        issuer="https://accounts.google.com",
+        external_url_template="https://example.com/<server_name>/mcp",
+        client_type="public",
+    )
+)
+OAUTH2_PLAN_WITH_URL_CONFIDENTIAL = make_plan(
+    auth=OAuth2Auth(
+        type="oauth2",
+        flow="authorizationCode",
+        authorization_url="https://accounts.spotify.com/authorize",
+        token_url="https://accounts.spotify.com/api/token",
+        external_url_template="https://mcp.example.com/<server_name>",
+        client_type="confidential",
+    )
+)
+OAUTH2_PLAN_WITH_URL_PUBLIC = make_plan(
+    auth=OAuth2Auth(
+        type="oauth2",
+        flow="authorizationCode",
+        authorization_url="https://accounts.spotify.com/authorize",
+        token_url="https://accounts.spotify.com/api/token",
+        external_url_template="https://<server_name>.example.com/mcp",
+        client_type="public",
+    )
+)
+
+
+class TestExternalUrlThreading:
+    """Concrete external URLs flow through every auth-dependent manifest."""
+
+    def test_oidc_externalauthconfig_issuer_concrete(self) -> None:
+        doc = yaml.safe_load(
+            render_external_auth_config(OIDC_PLAN_WITH_URL_CONFIDENTIAL)
+        )
+        assert (
+            doc["spec"]["embeddedAuthServer"]["issuer"]
+            == "https://mcp.example.com/test-api"
+        )
+
+    def test_oidc_externalauthconfig_redirect_uri_concrete(self) -> None:
+        doc = yaml.safe_load(
+            render_external_auth_config(OIDC_PLAN_WITH_URL_CONFIDENTIAL)
+        )
+        provider = doc["spec"]["embeddedAuthServer"]["upstreamProviders"][0]
+        assert (
+            provider["oidcConfig"]["redirectUri"]
+            == "https://mcp.example.com/test-api/oauth/callback"
+        )
+
+    def test_oauth2_externalauthconfig_issuer_concrete(self) -> None:
+        doc = yaml.safe_load(
+            render_external_auth_config(OAUTH2_PLAN_WITH_URL_CONFIDENTIAL)
+        )
+        assert (
+            doc["spec"]["embeddedAuthServer"]["issuer"]
+            == "https://mcp.example.com/test-api"
+        )
+
+    def test_oauth2_externalauthconfig_redirect_uri_concrete(self) -> None:
+        doc = yaml.safe_load(
+            render_external_auth_config(OAUTH2_PLAN_WITH_URL_CONFIDENTIAL)
+        )
+        provider = doc["spec"]["embeddedAuthServer"]["upstreamProviders"][0]
+        assert (
+            provider["oauth2Config"]["redirectUri"]
+            == "https://mcp.example.com/test-api/oauth/callback"
+        )
+
+    def test_mcpserver_audience_and_resource_url_concrete(self) -> None:
+        doc = yaml.safe_load(render_mcpserver(OIDC_PLAN_WITH_URL_CONFIDENTIAL))
+        ref = doc["spec"]["oidcConfigRef"]
+        assert ref["audience"] == "https://mcp.example.com/test-api"
+        assert ref["resourceUrl"] == "https://mcp.example.com/test-api"
+
+    def test_mcpoidcconfig_issuer_concrete(self) -> None:
+        doc = yaml.safe_load(render_mcpoidc_config(OIDC_PLAN_WITH_URL_CONFIDENTIAL))
+        assert doc["spec"]["inline"]["issuer"] == "https://mcp.example.com/test-api"
+
+    def test_ingress_host_and_path_concrete_shared_host(self) -> None:
+        doc = yaml.safe_load(render_ingress(OIDC_PLAN_WITH_URL_CONFIDENTIAL))
+        rule = doc["spec"]["rules"][0]
+        assert rule["host"] == "mcp.example.com"
+        assert rule["http"]["paths"][0]["path"] == "/test-api"
+
+    def test_ingress_host_and_path_concrete_path_at_root(self) -> None:
+        doc = yaml.safe_load(render_ingress(OIDC_PLAN_WITH_URL_PUBLIC))
+        rule = doc["spec"]["rules"][0]
+        assert rule["host"] == "example.com"
+        assert rule["http"]["paths"][0]["path"] == "/test-api/mcp"
+
+    def test_ingress_host_and_path_concrete_subdomain(self) -> None:
+        doc = yaml.safe_load(render_ingress(OAUTH2_PLAN_WITH_URL_PUBLIC))
+        rule = doc["spec"]["rules"][0]
+        assert rule["host"] == "test-api.example.com"
+        assert rule["http"]["paths"][0]["path"] == "/mcp"
+
+    def test_fallback_placeholder_when_template_absent(self) -> None:
+        # Backward-compat: when external_url_template is None, templates emit
+        # the REPLACE_ME_DOMAIN placeholder so deploy-assist can substitute.
+        rendered = render_external_auth_config(OIDC_PLAN)
+        assert "REPLACE_ME_DOMAIN" in rendered
+        assert "https://mcp.REPLACE_ME_DOMAIN/test-api" in rendered
+
+    def test_mcpserver_fallback_when_template_absent(self) -> None:
+        rendered = render_mcpserver(OIDC_PLAN)
+        assert "REPLACE_ME_DOMAIN" in rendered
+
+    def test_ingress_fallback_when_template_absent(self) -> None:
+        rendered = render_ingress(OIDC_PLAN)
+        assert "REPLACE_ME_DOMAIN" in rendered
+
+
+class TestClientTypeRendering:
+    """client_type drives live-vs-commented clientSecretRef and secret-oauth emission."""
+
+    def test_confidential_oidc_renders_client_secret_ref_live(self) -> None:
+        doc = yaml.safe_load(
+            render_external_auth_config(OIDC_PLAN_WITH_URL_CONFIDENTIAL)
+        )
+        provider = doc["spec"]["embeddedAuthServer"]["upstreamProviders"][0]
+        ref = provider["oidcConfig"]["clientSecretRef"]
+        assert ref["name"] == "test-api-oauth-secret"
+        assert ref["key"] == "client-secret"
+
+    def test_confidential_oauth2_renders_client_secret_ref_live(self) -> None:
+        doc = yaml.safe_load(
+            render_external_auth_config(OAUTH2_PLAN_WITH_URL_CONFIDENTIAL)
+        )
+        provider = doc["spec"]["embeddedAuthServer"]["upstreamProviders"][0]
+        ref = provider["oauth2Config"]["clientSecretRef"]
+        assert ref["name"] == "test-api-oauth-secret"
+        assert ref["key"] == "client-secret"
+
+    def test_public_oidc_does_not_emit_client_secret_ref(self) -> None:
+        doc = yaml.safe_load(render_external_auth_config(OIDC_PLAN_WITH_URL_PUBLIC))
+        provider = doc["spec"]["embeddedAuthServer"]["upstreamProviders"][0]
+        assert "clientSecretRef" not in provider["oidcConfig"]
+
+    def test_public_oauth2_does_not_emit_client_secret_ref(self) -> None:
+        doc = yaml.safe_load(render_external_auth_config(OAUTH2_PLAN_WITH_URL_PUBLIC))
+        provider = doc["spec"]["embeddedAuthServer"]["upstreamProviders"][0]
+        assert "clientSecretRef" not in provider["oauth2Config"]
+
+    def test_absent_client_type_does_not_emit_client_secret_ref(self) -> None:
+        # When client_type is None, the template still emits a commented
+        # example block (not a YAML key) so the YAML parses cleanly.
+        doc = yaml.safe_load(render_external_auth_config(OIDC_PLAN))
+        provider = doc["spec"]["embeddedAuthServer"]["upstreamProviders"][0]
+        assert "clientSecretRef" not in provider["oidcConfig"]
+
+
+class TestSecretOauthEmission:
+    """A deploy/secret-oauth.yaml Secret is emitted only when client_type == confidential."""
+
+    def test_confidential_oidc_emits_secret_oauth(self) -> None:
+        result = render_manifests(OIDC_PLAN_WITH_URL_CONFIDENTIAL)
+        assert "secret-oauth.yaml" in result
+        doc = yaml.safe_load(result["secret-oauth.yaml"])
+        assert doc["kind"] == "Secret"
+        assert doc["metadata"]["name"] == "test-api-oauth-secret"
+        assert doc["stringData"]["client-secret"] == "REPLACE_ME"
+
+    def test_confidential_oauth2_emits_secret_oauth(self) -> None:
+        result = render_manifests(OAUTH2_PLAN_WITH_URL_CONFIDENTIAL)
+        assert "secret-oauth.yaml" in result
+
+    def test_public_does_not_emit_secret_oauth(self) -> None:
+        result = render_manifests(OIDC_PLAN_WITH_URL_PUBLIC)
+        assert "secret-oauth.yaml" not in result
+
+    def test_absent_client_type_does_not_emit_secret_oauth(self) -> None:
+        result = render_manifests(OIDC_PLAN)
+        assert "secret-oauth.yaml" not in result
+
+    def test_api_key_does_not_emit_secret_oauth(self) -> None:
+        result = render_manifests(API_KEY_PLAN)
+        assert "secret-oauth.yaml" not in result

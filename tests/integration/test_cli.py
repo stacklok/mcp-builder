@@ -20,6 +20,8 @@ TEMPLATE_DIR = UNIT_FIXTURES / "template"
 SCOPE_YAML = UNIT_FIXTURES / "test_scope.yaml"
 SCOPE_OAUTH = UNIT_FIXTURES / "test_scope_oauth.yaml"
 SCOPE_OIDC = UNIT_FIXTURES / "test_scope_oidc.yaml"
+SCOPE_OAUTH_PUBLIC = UNIT_FIXTURES / "test_scope_oauth_public.yaml"
+SCOPE_OIDC_DEFER = UNIT_FIXTURES / "test_scope_oidc_defer.yaml"
 OPENAPI_SPEC = UNIT_FIXTURES / "test_openapi.yaml"
 
 
@@ -118,6 +120,79 @@ class TestRunPipelineOAuth:
         secret = project_dir / "deploy" / "secret.yaml"
         assert not secret.exists()
 
+    def test_oauth_external_url_threaded_concrete(self, tmp_path: Path) -> None:
+        # test_scope_oauth.yaml sets external_url_template to
+        # https://mcp.example.com/<server_name> and server name "test-api".
+        # Every auth-dependent manifest should carry the concrete URL.
+        project_dir = run_pipeline(SCOPE_OAUTH, OPENAPI_SPEC, TEMPLATE_DIR, tmp_path)
+        deploy = project_dir / "deploy"
+        expected_url = "https://mcp.example.com/test-api"
+
+        auth_doc = yaml.safe_load((deploy / "mcpexternalauthconfig.yaml").read_text())
+        assert auth_doc["spec"]["embeddedAuthServer"]["issuer"] == expected_url
+        provider = auth_doc["spec"]["embeddedAuthServer"]["upstreamProviders"][0]
+        assert (
+            provider["oauth2Config"]["redirectUri"] == f"{expected_url}/oauth/callback"
+        )
+
+        server_doc = yaml.safe_load((deploy / "mcpserver.yaml").read_text())
+        ref = server_doc["spec"]["oidcConfigRef"]
+        assert ref["audience"] == expected_url
+        assert ref["resourceUrl"] == expected_url
+
+        oidc_doc = yaml.safe_load((deploy / "mcpoidcconfig.yaml").read_text())
+        assert oidc_doc["spec"]["inline"]["issuer"] == expected_url
+
+        ingress_doc = yaml.safe_load((deploy / "ingress.yaml").read_text())
+        rule = ingress_doc["spec"]["rules"][0]
+        assert rule["host"] == "mcp.example.com"
+        assert rule["http"]["paths"][0]["path"] == "/test-api"
+
+    def test_oauth_confidential_client_emits_secret_oauth(self, tmp_path: Path) -> None:
+        # test_scope_oauth.yaml has client_type: confidential, so the
+        # MCPExternalAuthConfig renders clientSecretRef live and
+        # deploy/secret-oauth.yaml is emitted.
+        project_dir = run_pipeline(SCOPE_OAUTH, OPENAPI_SPEC, TEMPLATE_DIR, tmp_path)
+        auth_doc = yaml.safe_load(
+            (project_dir / "deploy" / "mcpexternalauthconfig.yaml").read_text()
+        )
+        provider = auth_doc["spec"]["embeddedAuthServer"]["upstreamProviders"][0]
+        assert provider["oauth2Config"]["clientSecretRef"] == {
+            "name": "test-api-oauth-secret",
+            "key": "client-secret",
+        }
+
+        secret_oauth = project_dir / "deploy" / "secret-oauth.yaml"
+        assert secret_oauth.exists()
+        secret_doc = yaml.safe_load(secret_oauth.read_text())
+        assert secret_doc["kind"] == "Secret"
+        assert secret_doc["metadata"]["name"] == "test-api-oauth-secret"
+        assert secret_doc["stringData"]["client-secret"] == "REPLACE_ME"
+
+    def test_oauth_public_client_no_client_secret_ref(self, tmp_path: Path) -> None:
+        project_dir = run_pipeline(
+            SCOPE_OAUTH_PUBLIC, OPENAPI_SPEC, TEMPLATE_DIR, tmp_path
+        )
+        auth_doc = yaml.safe_load(
+            (project_dir / "deploy" / "mcpexternalauthconfig.yaml").read_text()
+        )
+        provider = auth_doc["spec"]["embeddedAuthServer"]["upstreamProviders"][0]
+        assert "clientSecretRef" not in provider["oauth2Config"]
+        assert not (project_dir / "deploy" / "secret-oauth.yaml").exists()
+
+    def test_oauth_public_subdomain_ingress_shape(self, tmp_path: Path) -> None:
+        # test_scope_oauth_public.yaml uses the subdomain-per-server shape:
+        # https://<server_name>.example.com/mcp -> host=test-api.example.com, path=/mcp.
+        project_dir = run_pipeline(
+            SCOPE_OAUTH_PUBLIC, OPENAPI_SPEC, TEMPLATE_DIR, tmp_path
+        )
+        ingress_doc = yaml.safe_load(
+            (project_dir / "deploy" / "ingress.yaml").read_text()
+        )
+        rule = ingress_doc["spec"]["rules"][0]
+        assert rule["host"] == "test-api.example.com"
+        assert rule["http"]["paths"][0]["path"] == "/mcp"
+
 
 class TestRunPipelineOIDC:
     def test_creates_oidc_auth_config(self, tmp_path: Path) -> None:
@@ -142,6 +217,60 @@ class TestRunPipelineOIDC:
         project_dir = run_pipeline(SCOPE_OIDC, OPENAPI_SPEC, TEMPLATE_DIR, tmp_path)
         secret = project_dir / "deploy" / "secret.yaml"
         assert not secret.exists()
+
+    def test_oidc_external_url_threaded_concrete(self, tmp_path: Path) -> None:
+        # test_scope_oidc.yaml uses the shared-host shape. Every auth
+        # manifest carries the concrete URL; ingress host/path are derived.
+        project_dir = run_pipeline(SCOPE_OIDC, OPENAPI_SPEC, TEMPLATE_DIR, tmp_path)
+        deploy = project_dir / "deploy"
+        expected_url = "https://mcp.example.com/test-api"
+
+        auth_doc = yaml.safe_load((deploy / "mcpexternalauthconfig.yaml").read_text())
+        assert auth_doc["spec"]["embeddedAuthServer"]["issuer"] == expected_url
+        provider = auth_doc["spec"]["embeddedAuthServer"]["upstreamProviders"][0]
+        assert provider["oidcConfig"]["redirectUri"] == f"{expected_url}/oauth/callback"
+
+        oidc_doc = yaml.safe_load((deploy / "mcpoidcconfig.yaml").read_text())
+        assert oidc_doc["spec"]["inline"]["issuer"] == expected_url
+
+        ingress_doc = yaml.safe_load((deploy / "ingress.yaml").read_text())
+        rule = ingress_doc["spec"]["rules"][0]
+        assert rule["host"] == "mcp.example.com"
+        assert rule["http"]["paths"][0]["path"] == "/test-api"
+
+    def test_oidc_confidential_emits_secret_oauth(self, tmp_path: Path) -> None:
+        project_dir = run_pipeline(SCOPE_OIDC, OPENAPI_SPEC, TEMPLATE_DIR, tmp_path)
+        auth_doc = yaml.safe_load(
+            (project_dir / "deploy" / "mcpexternalauthconfig.yaml").read_text()
+        )
+        provider = auth_doc["spec"]["embeddedAuthServer"]["upstreamProviders"][0]
+        assert provider["oidcConfig"]["clientSecretRef"] == {
+            "name": "test-api-oauth-secret",
+            "key": "client-secret",
+        }
+        assert (project_dir / "deploy" / "secret-oauth.yaml").exists()
+
+    def test_oidc_defer_preserves_placeholders(self, tmp_path: Path) -> None:
+        # When neither external_url_template nor client_type is set, the
+        # generated manifests fall back to the REPLACE_ME_DOMAIN placeholder
+        # shape and do not emit secret-oauth.yaml — backward-compatible
+        # behavior for scopes authored before this feature existed.
+        project_dir = run_pipeline(
+            SCOPE_OIDC_DEFER, OPENAPI_SPEC, TEMPLATE_DIR, tmp_path
+        )
+        deploy = project_dir / "deploy"
+        auth_doc = yaml.safe_load((deploy / "mcpexternalauthconfig.yaml").read_text())
+        assert "REPLACE_ME_DOMAIN" in auth_doc["spec"]["embeddedAuthServer"]["issuer"]
+        provider = auth_doc["spec"]["embeddedAuthServer"]["upstreamProviders"][0]
+        assert "clientSecretRef" not in provider["oidcConfig"]
+
+        oidc_doc = yaml.safe_load((deploy / "mcpoidcconfig.yaml").read_text())
+        assert "REPLACE_ME_DOMAIN" in oidc_doc["spec"]["inline"]["issuer"]
+
+        ingress_doc = yaml.safe_load((deploy / "ingress.yaml").read_text())
+        assert ingress_doc["spec"]["rules"][0]["host"] == "mcp.REPLACE_ME_DOMAIN"
+
+        assert not (deploy / "secret-oauth.yaml").exists()
 
 
 class TestRunPipelineNoAuth:

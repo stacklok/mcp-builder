@@ -434,6 +434,215 @@ class TestInvalidAuth:
             MCPScope.model_validate(data)
 
 
+class TestExternalUrlTemplate:
+    """auth.external_url_template: optional; https only; exactly one <server_name>."""
+
+    def _oauth2_auth(self, **overrides: object) -> dict:
+        base: dict = {
+            "type": "oauth2",
+            "flow": "authorizationCode",
+            "authorization_url": "https://auth.example.com/authorize",
+            "token_url": "https://auth.example.com/token",
+        }
+        base.update(overrides)
+        return base
+
+    def _oidc_auth(self, **overrides: object) -> dict:
+        base: dict = {
+            "type": "oidc",
+            "issuer": "https://accounts.google.com",
+        }
+        base.update(overrides)
+        return base
+
+    def test_oauth2_valid_template(self) -> None:
+        from mcp_builder.schema.models import OAuth2Auth
+
+        scope = MCPScope.model_validate(
+            _minimal_scope(
+                auth=self._oauth2_auth(
+                    external_url_template="https://mcp.example.com/<server_name>"
+                )
+            )
+        )
+        assert isinstance(scope.auth, OAuth2Auth)
+        assert (
+            scope.auth.external_url_template == "https://mcp.example.com/<server_name>"
+        )
+
+    def test_oidc_valid_template(self) -> None:
+        from mcp_builder.schema.models import OIDCAuth
+
+        scope = MCPScope.model_validate(
+            _minimal_scope(
+                auth=self._oidc_auth(
+                    external_url_template="https://example.com/<server_name>/mcp"
+                )
+            )
+        )
+        assert isinstance(scope.auth, OIDCAuth)
+        assert (
+            scope.auth.external_url_template == "https://example.com/<server_name>/mcp"
+        )
+
+    def test_subdomain_shape_valid(self) -> None:
+        from mcp_builder.schema.models import OAuth2Auth
+
+        scope = MCPScope.model_validate(
+            _minimal_scope(
+                auth=self._oauth2_auth(
+                    external_url_template="https://<server_name>.example.com/mcp"
+                )
+            )
+        )
+        assert isinstance(scope.auth, OAuth2Auth)
+        assert (
+            scope.auth.external_url_template == "https://<server_name>.example.com/mcp"
+        )
+
+    def test_missing_placeholder_rejected(self) -> None:
+        data = _minimal_scope(
+            auth=self._oauth2_auth(
+                external_url_template="https://mcp.example.com/fixed"
+            )
+        )
+        with pytest.raises(ValidationError, match="<server_name>"):
+            MCPScope.model_validate(data)
+
+    def test_double_placeholder_rejected(self) -> None:
+        data = _minimal_scope(
+            auth=self._oauth2_auth(
+                external_url_template="https://<server_name>.example.com/<server_name>"
+            )
+        )
+        with pytest.raises(ValidationError, match="<server_name>"):
+            MCPScope.model_validate(data)
+
+    def test_non_https_scheme_rejected(self) -> None:
+        data = _minimal_scope(
+            auth=self._oauth2_auth(
+                external_url_template="http://mcp.example.com/<server_name>"
+            )
+        )
+        with pytest.raises(ValidationError, match="https"):
+            MCPScope.model_validate(data)
+
+    def test_absent_on_oauth2_ok(self) -> None:
+        from mcp_builder.schema.models import OAuth2Auth
+
+        # Omitting the field is valid — the deploy-assist skill fills it later.
+        scope = MCPScope.model_validate(_minimal_scope(auth=self._oauth2_auth()))
+        assert isinstance(scope.auth, OAuth2Auth)
+        assert scope.auth.external_url_template is None
+
+    def test_absent_on_oidc_ok(self) -> None:
+        from mcp_builder.schema.models import OIDCAuth
+
+        scope = MCPScope.model_validate(_minimal_scope(auth=self._oidc_auth()))
+        assert isinstance(scope.auth, OIDCAuth)
+        assert scope.auth.external_url_template is None
+
+    def test_api_key_rejects_external_url_template(self) -> None:
+        data = _minimal_scope(
+            auth={
+                "type": "api_key",
+                "external_url_template": "https://mcp.example.com/<server_name>",
+            }
+        )
+        with pytest.raises(ValidationError, match="external_url_template"):
+            MCPScope.model_validate(data)
+
+    def test_none_rejects_external_url_template(self) -> None:
+        data = _minimal_scope(
+            auth={
+                "type": "none",
+                "external_url_template": "https://mcp.example.com/<server_name>",
+            }
+        )
+        with pytest.raises(ValidationError, match="external_url_template"):
+            MCPScope.model_validate(data)
+
+
+class TestClientType:
+    """auth.client_type: optional Literal['public', 'confidential'] on OAuth2/OIDC only."""
+
+    def _oauth2_auth(self, **overrides: object) -> dict:
+        base: dict = {
+            "type": "oauth2",
+            "flow": "authorizationCode",
+            "authorization_url": "https://auth.example.com/authorize",
+            "token_url": "https://auth.example.com/token",
+        }
+        base.update(overrides)
+        return base
+
+    def _oidc_auth(self, **overrides: object) -> dict:
+        base: dict = {
+            "type": "oidc",
+            "issuer": "https://accounts.google.com",
+        }
+        base.update(overrides)
+        return base
+
+    def test_oauth2_public(self) -> None:
+        from mcp_builder.schema.models import OAuth2Auth
+
+        scope = MCPScope.model_validate(
+            _minimal_scope(auth=self._oauth2_auth(client_type="public"))
+        )
+        assert isinstance(scope.auth, OAuth2Auth)
+        assert scope.auth.client_type == "public"
+
+    def test_oauth2_confidential(self) -> None:
+        from mcp_builder.schema.models import OAuth2Auth
+
+        scope = MCPScope.model_validate(
+            _minimal_scope(auth=self._oauth2_auth(client_type="confidential"))
+        )
+        assert isinstance(scope.auth, OAuth2Auth)
+        assert scope.auth.client_type == "confidential"
+
+    def test_oidc_public(self) -> None:
+        from mcp_builder.schema.models import OIDCAuth
+
+        scope = MCPScope.model_validate(
+            _minimal_scope(auth=self._oidc_auth(client_type="public"))
+        )
+        assert isinstance(scope.auth, OIDCAuth)
+        assert scope.auth.client_type == "public"
+
+    def test_oidc_confidential(self) -> None:
+        from mcp_builder.schema.models import OIDCAuth
+
+        scope = MCPScope.model_validate(
+            _minimal_scope(auth=self._oidc_auth(client_type="confidential"))
+        )
+        assert isinstance(scope.auth, OIDCAuth)
+        assert scope.auth.client_type == "confidential"
+
+    def test_oauth2_absent_defaults_none(self) -> None:
+        from mcp_builder.schema.models import OAuth2Auth
+
+        scope = MCPScope.model_validate(_minimal_scope(auth=self._oauth2_auth()))
+        assert isinstance(scope.auth, OAuth2Auth)
+        assert scope.auth.client_type is None
+
+    def test_invalid_value_rejected(self) -> None:
+        data = _minimal_scope(auth=self._oauth2_auth(client_type="hybrid"))
+        with pytest.raises(ValidationError, match="client_type"):
+            MCPScope.model_validate(data)
+
+    def test_api_key_rejects_client_type(self) -> None:
+        data = _minimal_scope(auth={"type": "api_key", "client_type": "confidential"})
+        with pytest.raises(ValidationError, match="client_type"):
+            MCPScope.model_validate(data)
+
+    def test_none_rejects_client_type(self) -> None:
+        data = _minimal_scope(auth={"type": "none", "client_type": "public"})
+        with pytest.raises(ValidationError, match="client_type"):
+            MCPScope.model_validate(data)
+
+
 class TestInvalidEndpoint:
     def test_missing_method(self) -> None:
         data = _minimal_scope()

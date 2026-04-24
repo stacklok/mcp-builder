@@ -141,6 +141,7 @@ groups:
 auth:
   type: oidc
   issuer: "https://accounts.google.com"
+  client_type: confidential
   scopes_available:
     openid: "OpenID Connect sign-in"
     email: "View the user's email address"
