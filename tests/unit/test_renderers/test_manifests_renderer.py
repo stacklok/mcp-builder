@@ -117,6 +117,9 @@ class TestRenderMcpserver:
         # proxyPort and mcpPort on MCPServer.
         doc = yaml.safe_load(render_mcpserver(plan))
         assert doc["spec"]["mcpPort"] == 8080
+        # Both ports are the core claim of this PR — pin them together
+        # so dropping one while leaving the other can't silently pass.
+        assert {"proxyPort", "mcpPort"} <= doc["spec"].keys()
 
     def test_resources(self, plan: ServerPlan) -> None:
         doc = yaml.safe_load(render_mcpserver(plan))
