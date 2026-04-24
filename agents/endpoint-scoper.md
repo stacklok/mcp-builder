@@ -55,7 +55,11 @@ Common reasons to flag (but NOT auto-remove):
 - **Potentially duplicative** — provides similar functionality to another endpoint (note which one)
 - **Admin/elevated scope** — may require elevated privileges (note: admin endpoints are valid use cases, just flag for awareness)
 - **Low workflow relevance** — not directly related to any provided workflow
-- **Mixed-media 2xx responses** — different 2xx statuses declare incompatible media types (e.g. `200` returns `application/pdf`, `202` returns `application/json`), or a single status simultaneously declares JSON plus non-JSON media types the user may care about. There is no single safe default: a single endpoint cannot both return parsed JSON and base64 bytes. List the kinds the user can realistically pick (per the generator contract at `skills/ai-scoping/assets/generator-contract.md`) and let the orchestrator resolve the choice at the Step 5 approval gate. Typical options: (a) exclude the endpoint, (b) `json` — non-JSON responses would crash at runtime, (c) `text` — JSON responses would be returned as a raw string rather than a parsed dict, (d) `binary` — JSON/text responses would be base64-wrapped.
+- **Mixed-media 2xx responses** — different 2xx statuses declare incompatible media types (e.g. `200` returns `application/pdf`, `202` returns `application/json`), or a single status simultaneously declares JSON plus non-JSON media types. Leave `response_kind` pending and flag the endpoint with the realistic options for the Step 5 approval gate (per the generator contract):
+  - **exclude** — drop the endpoint from the scope.
+  - **`json`** — non-JSON responses would crash at runtime.
+  - **`text`** — JSON responses would be returned as a raw string rather than a parsed dict.
+  - **`binary`** — JSON/text responses would be base64-wrapped and hidden from the model.
 
 Present ALL endpoints (both included and flagged) in the output. The user will make the final inclusion/exclusion decision in the approval step.
 
