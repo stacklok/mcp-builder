@@ -763,6 +763,8 @@ class TestIsTextMediaType:
             "text/xml",
             "TEXT/PLAIN",  # case-insensitive
             "text/plain; charset=utf-8",  # parameter stripped
+            " text/plain",  # leading whitespace stripped
+            "text/plain ",  # trailing whitespace stripped
             "application/xml",
             "application/xhtml+xml",
             "application/atom+xml",  # RFC 6839 structured suffix
@@ -781,7 +783,14 @@ class TestIsTextMediaType:
             "application/pdf",
             "application/octet-stream",
             "image/jpeg",
+            # SVG is text-decodable XML but the regex only matches
+            # `application/...xml`. Pinned as a deliberate rejection so
+            # a future contributor doesn't widen the regex to include
+            # `image/...xml` (most APIs serve SVG as image bytes, not
+            # text) without confronting the semantic change.
+            "image/svg+xml",
             "multipart/form-data",
+            "",  # empty input is not a media type
         ],
     )
     def test_rejects(self, media_type):
