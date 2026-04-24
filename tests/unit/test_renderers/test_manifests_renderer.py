@@ -560,15 +560,22 @@ class TestRenderManifests:
             assert isinstance(content, str)
 
     def test_all_yaml_values_parse_as_yaml(self) -> None:
-        # README.md is markdown — exclude it from the YAML parse check.
+        # README.md is markdown — exclude it from the YAML parse check,
+        # but still guard against unrendered Jinja delimiters leaking.
         for name, content in render_manifests(OIDC_PLAN).items():
             if name.endswith(".yaml"):
                 doc = yaml.safe_load(content)
                 assert isinstance(doc, dict)
+            elif name.endswith(".md"):
+                assert content.strip()
+                assert "{{" not in content and "{%" not in content
         for name, content in render_manifests(OAUTH2_PLAN).items():
             if name.endswith(".yaml"):
                 doc = yaml.safe_load(content)
                 assert isinstance(doc, dict)
+            elif name.endswith(".md"):
+                assert content.strip()
+                assert "{{" not in content and "{%" not in content
 
 
 # ---------------------------------------------------------------------------
