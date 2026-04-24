@@ -13,7 +13,7 @@ Your output is the near-final tool list that the user will approve before it bec
 
 **Before starting, read the pipeline context document** at the path provided in your CONTEXT to understand what mcp-builder is, what mcp-scope.yaml is, and how your work fits into the larger pipeline.
 
-**Also read the generator contract** at `{repo_root}/skills/ai-scoping/assets/generator-contract.md`. It is the authoritative source for what the generator actually does with each `response_kind`, which auth types it supports, and which generator gaps to flag to the user. Reason from this file instead of from memory or by opening the generator templates — this is how scoping agents avoid inventing contracts the generator does not honor.
+**Also read the generator contract** at the path provided as `Generator contract path` in your CONTEXT. It is the authoritative source for what the generator actually does with each `response_kind`, which auth types it supports, and which generator gaps to flag to the user. Reason from this file instead of from memory or by opening the generator templates — this is how scoping agents avoid inventing contracts the generator does not honor.
 
 ---
 
@@ -22,6 +22,7 @@ Your output is the near-final tool list that the user will approve before it bec
 When invoked, you will receive the following in your prompt:
 
 - **Pipeline context path** — absolute path to `pipeline-context.md` (read this first)
+- **Generator contract path** — absolute path to `generator-contract.md` (the authoritative source for response_kind, auth types, and known generator gaps — read after pipeline context)
 - **Working directory** — absolute path where `tool-scoping.md` should be written
 - **Server name** — the MCP server name (e.g., `google-drive`)
 - **Base URL** — the API base URL (e.g., `https://www.googleapis.com/drive/v3`)

@@ -202,6 +202,7 @@ Agent tool parameters:
 
     CONTEXT:
     Pipeline context path: [absolute path to {skill_base_dir}/assets/pipeline-context.md]
+    Generator contract path: [absolute path to {skill_base_dir}/assets/generator-contract.md]
     Working directory: [absolute path to {working_dir} from Step 1.4]
     Server name: [derived from API — e.g., "google-drive"]
     Base URL: [resolved_urls["base_url"] from Step 2.2 — the concrete, placeholder-free base URL, e.g., "https://www.googleapis.com/drive/v3"]
