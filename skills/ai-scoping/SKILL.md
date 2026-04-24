@@ -186,8 +186,10 @@ Read the `security_schemes` from `{working_dir}/analyze.json` and map to MCPScop
 
 | OpenAPI Security Scheme | MCPScope `auth.type` | Notes |
 |------------------------|---------------------|-------|
-| `oauth2` (authorization code flow) | `oauth_bearer` | Extract issuer from token URL domain. Extract scopes from the flow definition. |
-| `http` (bearer) | `oauth_bearer` | Static token pattern. Issuer may need user input. |
+| `openIdConnect` (with `openIdConnectUrl`) | `oidc` | Use the `openIdConnectUrl`'s origin as `issuer`. Fetch `/.well-known/openid-configuration` to pull scopes into `scopes_available`. |
+| `oauth2` (authorization code flow) with a known-OIDC provider (Google, Atlassian, Okta, etc.) | `oidc` | Only if the provider publishes `/.well-known/openid-configuration` — verify by fetching it. |
+| `oauth2` (authorization code flow) otherwise | `oauth2` | Carry `authorization_url`, `token_url` verbatim from the spec; resolve relative paths against `spec.base_url` to produce absolute URLs. |
+| `http` (bearer) | `api_key` | Static bearer-token pattern; API key in the `Authorization` header. |
 | `apiKey` (header: `X-API-Key`, `Authorization`) | `api_key` | |
 | `apiKey` (query parameter) | `none` | **Not supported** — flag in notes |
 | `http` (basic) | `none` | **Not supported** — flag in notes |
@@ -195,15 +197,19 @@ Read the `security_schemes` from `{working_dir}/analyze.json` and map to MCPScop
 
 If multiple security schemes exist, select the most ToolHive-compatible one and document alternatives in `auth.notes`.
 
-For OAuth scopes: pull from the spec when available. If scopes look incomplete or are missing, add a note flagging this for human review.
+**Pick `oauth2` over `oidc` when uncertain.** OIDC is a specialization of OAuth2 — if the spec declares `oauth2` and you cannot confirm OIDC discovery-doc compliance, stay with `oauth2`. Inventing an `issuer` for a non-OIDC provider (as the old `oauth_bearer` type did) is what this schema is designed to prevent.
 
-**Discovery-doc conformance check (soft warning, do not block):** If the selected auth is `oauth_bearer` and the issuer URL is resolvable, fetch `{issuer}/.well-known/openid-configuration` once and confirm these fields are present: `response_types_supported`, `id_token_signing_alg_values_supported`, `subject_types_supported`, `authorization_endpoint`, `token_endpoint`, `jwks_uri`. If any are missing, add a line to `auth.notes` like:
+**Scopes — always populate `scopes_available` from the spec.** Copy every scope declared under the OAuth2 flow or the OIDC discovery document into `scopes_available` as a dict of `{scope_name: description}` — do not curate it. Then produce `scopes_required` as the minimal subset needed for the tools in the scope. The full catalog lets downstream reviewers pick different scopes without re-reading the spec.
 
-> Upstream issuer publishes a non-compliant discovery doc (missing: `<field1>`, `<field2>`). The deploy step should rewrite the generated `MCPExternalAuthConfig` to use `upstreamProviders[*].type: oauth2` with explicit `authorizationEndpoint`, `tokenEndpoint`, and `userInfo` pulled from the discovery doc. Template placeholders in issuer URLs (e.g. `{companyDomain}`) also block this check — substitute a concrete value before deploy.
+**URL resolution.** OpenAPI permits relative `authorizationUrl` / `tokenUrl` values; resolve them against `spec.base_url` so the scope carries absolute URLs only. Never emit relative endpoint URLs.
 
-If the issuer is unreachable or the URL contains a template literal, note that too. This is a soft warning — do not block the gate or change the selected auth type.
+**`userinfo_url` for OAuth2 (optional).** OpenAPI has no standard field for this. If the API's OAuth docs declare one, populate it; otherwise ask the user once — if they don't know, omit the field. Do not invent a URL.
 
-**USER GATE:** Present the auth detection result to the user (selected scheme, issuer, chosen scopes, any discovery-doc warning, and any alternatives you rejected). **Do NOT proceed to Step 6.2 until the user confirms the auth block.** This gate is easy to skip by accident — do not.
+**Discovery-doc conformance check for OIDC (soft warning):** When `auth.type` is `oidc` and the issuer URL is resolvable, fetch `{issuer}/.well-known/openid-configuration` and confirm these fields are present: `response_types_supported`, `id_token_signing_alg_values_supported`, `subject_types_supported`, `authorization_endpoint`, `token_endpoint`, `jwks_uri`. If any are missing, the provider probably is not genuinely OIDC — downgrade to `oauth2`, populate the endpoint URLs from the discovery doc, and note the downgrade. Template placeholders in the issuer (e.g. `{companyDomain}`) also block this check — note it and keep the placeholder.
+
+Do not run this check for `oauth2` — there is no discovery doc to probe.
+
+**USER GATE:** Present the auth detection result to the user (selected type, endpoints or issuer, selected scopes from the full catalog, any discovery-doc warning, and any alternatives you rejected). **Do NOT proceed to Step 6.2 until the user confirms the auth block.** This gate is easy to skip by accident — do not.
 
 #### 6.2: Determine Server Metadata
 
@@ -256,14 +262,45 @@ groups:
         hints:
           - "{hint}"
 
+# Auth takes one of four discriminated-union shapes. Emit ONLY the fields
+# listed for the selected type — extra fields are rejected at load time.
+#
+# Option A: OIDC (upstream publishes a discovery document)
 auth:
-  type: {oauth_bearer|api_key|none}
-  oauth:  # only if type is oauth_bearer
-    issuer: "{issuer_url}"
-    scopes:
-      - {scope}
+  type: oidc
+  issuer: "{issuer_url}"
+  scopes_available:
+    "{scope_name}": "{description}"
+    # ... full catalog from the OIDC discovery document
+  scopes_required:
+    - {scope}
   notes: >
-    {auth notes — how the auth works, any caveats}
+    {auth notes}
+
+# Option B: OAuth2 (no OIDC discovery; endpoints declared inline)
+auth:
+  type: oauth2
+  flow: authorizationCode
+  authorization_url: "{absolute_authorization_url}"
+  token_url: "{absolute_token_url}"
+  userinfo_url: "{absolute_userinfo_url}"   # optional; omit if unknown
+  scopes_available:
+    "{scope_name}": "{description}"
+    # ... full catalog from the OpenAPI oauth2 flow
+  scopes_required:
+    - {scope}
+  notes: >
+    {auth notes}
+
+# Option C: API key (static bearer token in the Authorization header)
+auth:
+  type: api_key
+  notes: >
+    {auth notes}
+
+# Option D: no auth
+auth:
+  type: none
 ```
 
 Copy each tool's `response_kind` from the approved `tool-scoping.md`
