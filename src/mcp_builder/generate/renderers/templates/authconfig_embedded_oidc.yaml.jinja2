@@ -4,6 +4,12 @@
 # authentication to an upstream OIDC identity provider. Endpoints come from
 # the upstream's /.well-known/openid-configuration at runtime.
 #
+{% if external_url %}
+# External URL was captured at scoping time — `issuer` and `redirectUri`
+# below are already concrete. If you need to relocate this server to a
+# different cluster, rewrite both (they must agree with ingress.yaml host+path
+# and mcpserver.yaml audience/resourceUrl).
+{% else %}
 # REQUIRED — fill in before applying:
 #   1. Determine the external URL under which this ToolHive-issued auth
 #      endpoint will be reachable from OAuth clients, and set both
@@ -20,15 +26,25 @@
 #      `deploy-assist` skill to infer the shape from your cluster repo's
 #      sibling manifests and rewrite all occurrences, or rewrite them by
 #      hand.
+{% endif %}
 #   2. Set `upstreamProviders[0].oidcConfig.clientId` to the OAuth client
 #      ID registered with the upstream identity provider.
 #
+{% if client_type == "confidential" %}
+# This is a confidential OAuth client — the upstream IdP issued a
+# client_secret when the app was registered. The emitted
+# `secret-oauth.yaml` is a template for the Secret referenced below;
+# fill in the real secret value before applying.
+{% elif client_type == "public" %}
+# This is a public OAuth client (PKCE only) — no client_secret needed.
+{% else %}
 # OPTIONAL:
 #   - clientSecretRef: uncomment and add a Secret reference if your OAuth
 #     app is a confidential client (not using PKCE). Example:
 #       clientSecretRef:
 #         name: {{ server_name }}-oauth-secret
 #         key: client-secret
+{% endif %}
 #   - signingKeySecretRefs / hmacSecretRefs: omitted here, so ToolHive will
 #     auto-generate ephemeral keys at runtime. This works for development
 #     and demos but tokens are lost on restart. For production, create
@@ -48,14 +64,19 @@ metadata:
 spec:
   type: embeddedAuthServer
   embeddedAuthServer:
-    issuer: https://mcp.REPLACE_ME_DOMAIN/{{ server_name }}
+    issuer: {{ issuer_url }}
     upstreamProviders:
     - name: {{ provider_name }}
       type: oidc
       oidcConfig:
-        issuerUrl: "{{ issuer_url }}"
+        issuerUrl: "{{ upstream_issuer_url }}"
         clientId: REPLACE_ME
-        redirectUri: https://mcp.REPLACE_ME_DOMAIN/{{ server_name }}/oauth/callback
+{% if client_type == "confidential" %}
+        clientSecretRef:
+          name: {{ server_name }}-oauth-secret
+          key: client-secret
+{% endif %}
+        redirectUri: {{ redirect_uri }}
 {% if scopes %}
         scopes:
 {% for scope in scopes %}

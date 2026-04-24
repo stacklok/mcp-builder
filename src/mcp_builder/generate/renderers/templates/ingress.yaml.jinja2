@@ -1,8 +1,13 @@
 # Ingress — external access for {{ server_name }}.
 #
+{% if external_url %}
+# External URL was captured at scoping time — `host` and `path` below are
+# already concrete (derived from the scope's auth.external_url_template).
+{% else %}
 # Before applying:
 #   1. Replace REPLACE_ME_DOMAIN with your actual domain.
 #   2. Ensure an Ingress controller (e.g., AWS ALB) is installed.
+{% endif %}
 #
 # Namespace must match the MCPServer.
 #
@@ -20,10 +25,10 @@ metadata:
 spec:
   ingressClassName: alb
   rules:
-  - host: mcp.REPLACE_ME_DOMAIN
+  - host: {{ ingress_host }}
     http:
       paths:
-      - path: /{{ server_name }}
+      - path: {{ ingress_path }}
         pathType: Prefix
         backend:
           service:

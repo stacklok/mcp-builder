@@ -4,8 +4,12 @@
 # resource because this operator version does not accept an inline
 # spec.oidcConfig on MCPServer.
 #
+{% if external_url %}
+# External URL was captured at scoping time — `issuer` below is concrete.
+{% else %}
 # Before applying:
 #   1. Replace REPLACE_ME_DOMAIN with your actual domain.
+{% endif %}
 #
 # Namespace must match the MCPServer that references this config.
 #
@@ -19,4 +23,4 @@ metadata:
 spec:
   type: inline
   inline:
-    issuer: https://mcp.REPLACE_ME_DOMAIN/{{ server_name }}
+    issuer: {{ issuer_url }}
