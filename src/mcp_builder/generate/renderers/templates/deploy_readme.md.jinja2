@@ -47,11 +47,10 @@ for the operator's view of external access.
 {% if is_api_key %}
 - `REPLACE_ME` (in `secret.yaml`) — the upstream API bearer token.
 {% endif %}
-{% if not has_auth %}
-- None in this configuration. The container image in `mcpserver.yaml`
-  (`{{ server_name }}-mcp:latest`) still needs to be pushed to a registry
-  your cluster can pull from.
-{% endif %}
+
+In all configurations, the container image in `mcpserver.yaml`
+(`{{ server_name }}-mcp:latest`) needs to be pushed to a registry
+your cluster can pull from.
 
 ## Recommended apply order
 
