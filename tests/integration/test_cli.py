@@ -19,6 +19,7 @@ UNIT_FIXTURES = Path(__file__).parent.parent / "unit" / "fixtures"
 TEMPLATE_DIR = UNIT_FIXTURES / "template"
 SCOPE_YAML = UNIT_FIXTURES / "test_scope.yaml"
 SCOPE_OAUTH = UNIT_FIXTURES / "test_scope_oauth.yaml"
+SCOPE_OIDC = UNIT_FIXTURES / "test_scope_oidc.yaml"
 OPENAPI_SPEC = UNIT_FIXTURES / "test_openapi.yaml"
 
 
@@ -94,7 +95,8 @@ class TestRunPipeline:
 class TestRunPipelineOAuth:
     def test_creates_oauth2_auth_config(self, tmp_path: Path) -> None:
         # SCOPE_OAUTH is an oauth2 fixture (no OIDC discovery) — the
-        # generated CRD should use oauth2Config with inline endpoints.
+        # generated CRD should use oauth2Config with inline endpoints and
+        # must NOT leak any OIDC-specific shape into the manifest.
         project_dir = run_pipeline(SCOPE_OAUTH, OPENAPI_SPEC, TEMPLATE_DIR, tmp_path)
         auth_config = project_dir / "deploy" / "mcpexternalauthconfig.yaml"
         doc = yaml.safe_load(auth_config.read_text())
@@ -107,9 +109,37 @@ class TestRunPipelineOAuth:
             cfg["authorizationEndpoint"] == "https://auth.example.com/oauth/authorize"
         )
         assert cfg["tokenEndpoint"] == "https://auth.example.com/oauth/token"
+        # Negative assertions: no OIDC bleed-through.
+        assert "oidcConfig" not in providers[0]
+        assert "issuerUrl" not in auth_config.read_text()
 
     def test_no_secret_for_oauth(self, tmp_path: Path) -> None:
         project_dir = run_pipeline(SCOPE_OAUTH, OPENAPI_SPEC, TEMPLATE_DIR, tmp_path)
+        secret = project_dir / "deploy" / "secret.yaml"
+        assert not secret.exists()
+
+
+class TestRunPipelineOIDC:
+    def test_creates_oidc_auth_config(self, tmp_path: Path) -> None:
+        # SCOPE_OIDC is an oidc fixture — the generated CRD should use
+        # oidcConfig with issuerUrl and must NOT carry inline oauth2
+        # endpoints (those come from the discovery document at runtime).
+        project_dir = run_pipeline(SCOPE_OIDC, OPENAPI_SPEC, TEMPLATE_DIR, tmp_path)
+        auth_config = project_dir / "deploy" / "mcpexternalauthconfig.yaml"
+        doc = yaml.safe_load(auth_config.read_text())
+        assert doc["spec"]["type"] == "embeddedAuthServer"
+        providers = doc["spec"]["embeddedAuthServer"]["upstreamProviders"]
+        assert len(providers) == 1
+        assert providers[0]["type"] == "oidc"
+        cfg = providers[0]["oidcConfig"]
+        assert cfg["issuerUrl"].startswith("https://")
+        # Negative assertions: no oauth2 bleed-through.
+        assert "oauth2Config" not in providers[0]
+        assert "authorizationEndpoint" not in auth_config.read_text()
+        assert "tokenEndpoint" not in auth_config.read_text()
+
+    def test_no_secret_for_oidc(self, tmp_path: Path) -> None:
+        project_dir = run_pipeline(SCOPE_OIDC, OPENAPI_SPEC, TEMPLATE_DIR, tmp_path)
         secret = project_dir / "deploy" / "secret.yaml"
         assert not secret.exists()
 

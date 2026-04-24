@@ -323,8 +323,10 @@ class TestInvalidAuth:
 
     def test_oauth_bearer_no_longer_accepted(self) -> None:
         # The old catch-all type is gone — callers must pick oauth2 or oidc.
+        # Pin the error message so a future refactor can't silently degrade the
+        # migration breadcrumb that tells users which replacement types exist.
         data = _minimal_scope(auth={"type": "oauth_bearer"})
-        with pytest.raises(ValidationError):
+        with pytest.raises(ValidationError, match=r"oauth2.*oidc|expected tags"):
             MCPScope.model_validate(data)
 
     def test_oauth2_missing_required_endpoints(self) -> None:
@@ -341,13 +343,21 @@ class TestInvalidAuth:
                 "flow": "authorizationCode",
                 "authorization_url": "https://auth.example.com/authorize",
                 "token_url": "https://auth.example.com/token",
-                "scopes_available": {"read": "Read items"},
+                "userinfo_url": "https://api.example.com/me",
+                "scopes_available": {"read": "Read items", "write": "Write items"},
                 "scopes_required": ["read"],
             }
         )
         scope = MCPScope.model_validate(data)
         assert isinstance(scope.auth, OAuth2Auth)
         assert scope.auth.authorization_url == "https://auth.example.com/authorize"
+        assert scope.auth.token_url == "https://auth.example.com/token"
+        assert scope.auth.userinfo_url == "https://api.example.com/me"
+        assert scope.auth.scopes_required == ["read"]
+        assert scope.auth.scopes_available == {
+            "read": "Read items",
+            "write": "Write items",
+        }
 
     def test_oauth2_rejects_issuer(self) -> None:
         # Cross-over prevention: issuer is an OIDC concept, not OAuth2.
@@ -370,12 +380,18 @@ class TestInvalidAuth:
             auth={
                 "type": "oidc",
                 "issuer": "https://accounts.google.com",
-                "scopes_required": ["openid"],
+                "scopes_available": {"openid": "Sign-in", "email": "User email"},
+                "scopes_required": ["openid", "email"],
             }
         )
         scope = MCPScope.model_validate(data)
         assert isinstance(scope.auth, OIDCAuth)
         assert scope.auth.issuer == "https://accounts.google.com"
+        assert scope.auth.scopes_required == ["openid", "email"]
+        assert scope.auth.scopes_available == {
+            "openid": "Sign-in",
+            "email": "User email",
+        }
 
     def test_oidc_missing_issuer(self) -> None:
         data = _minimal_scope(auth={"type": "oidc"})
@@ -390,6 +406,28 @@ class TestInvalidAuth:
                 "type": "oidc",
                 "issuer": "https://accounts.google.com",
                 "authorization_url": "https://accounts.google.com/authorize",
+            }
+        )
+        with pytest.raises(ValidationError, match="authorization_url"):
+            MCPScope.model_validate(data)
+
+    def test_api_key_rejects_oauth_fields(self) -> None:
+        # Cross-over prevention: api_key has no OAuth concept.
+        data = _minimal_scope(
+            auth={
+                "type": "api_key",
+                "issuer": "https://auth.example.com",
+            }
+        )
+        with pytest.raises(ValidationError, match="issuer"):
+            MCPScope.model_validate(data)
+
+    def test_none_rejects_oauth_fields(self) -> None:
+        # Cross-over prevention: `none` carries no auth configuration at all.
+        data = _minimal_scope(
+            auth={
+                "type": "none",
+                "authorization_url": "https://auth.example.com/authorize",
             }
         )
         with pytest.raises(ValidationError, match="authorization_url"):
