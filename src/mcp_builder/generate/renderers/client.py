@@ -97,6 +97,11 @@ _CLIENT_TEMPLATE = textwrap.dedent('''\
             """
             params = _strip_none(params)
             headers = _auth_headers()
+            # The `*/*;q=0.8` fallback is deliberate: some servers reject
+            # bare `text/*` with 406 even when they have a text
+            # representation. The validator catches scope/spec mismatches
+            # at scope time, so the runtime fallback only matters for
+            # specs that escape validation (no 2xx content declared).
             headers["Accept"] = "text/*, */*;q=0.8"
             async with httpx.AsyncClient(base_url=self._base_url) as client:
                 response = await client.request(
