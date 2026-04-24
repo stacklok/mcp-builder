@@ -436,6 +436,21 @@ class TestRenderDeployReadme:
         assert "mcpoidcconfig.yaml" not in out
         assert "mcpexternalauthconfig.yaml" not in out
 
+    @pytest.mark.parametrize("embedded_plan", [OIDC_PLAN, OAUTH2_PLAN])
+    def test_embedded_auth_flags_replace_me_domain_in_all_files(
+        self, embedded_plan: ServerPlan
+    ) -> None:
+        # The README is the only user-facing place that enumerates which
+        # files carry REPLACE_ME_DOMAIN and warns that all occurrences must
+        # agree. Pin those guarantees — a silent drop would produce subtly
+        # broken OAuth flows at runtime.
+        out = render_deploy_readme(embedded_plan)
+        assert "REPLACE_ME_DOMAIN" in out
+        assert "mcpserver.yaml" in out
+        assert "mcpexternalauthconfig.yaml" in out
+        assert "mcpoidcconfig.yaml" in out
+        assert "All occurrences must agree" in out
+
 
 # ---------------------------------------------------------------------------
 # render_mcpoidc_config
