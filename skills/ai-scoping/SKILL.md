@@ -61,7 +61,47 @@ This outputs JSON with all endpoints, security schemes, and quality metrics.
 
 If the command fails (invalid spec, unsupported format), present the error to the user and exit.
 
-#### 2.2: Spawn spec-analyzer agent
+#### 2.2: Resolve URL placeholders and relative URLs
+
+Specs for multi-tenant APIs routinely ship `{placeholder}` literals in `servers[].url` and OAuth URLs (e.g. `https://{companyDomain}.bamboohr.com`). OAuth flows also sometimes declare `authorizationUrl` / `tokenUrl` as server-relative paths (`/authorize.php`). A scope written with either of these shapes propagates verbatim into the generated client and fails at runtime. Resolve both here, once, before any downstream step uses the URLs.
+
+1. **Collect URL fields** from `{working_dir}/analyze.json`:
+   - `base_url`
+   - For each `security_schemes[*]` with `type == "oauth2"`, for each flow in its `flows`: `authorization_url` and `token_url`
+
+2. **Detect issues**:
+   - Balanced `{…}` placeholder: any `re.findall(r"\{[^{}]+\}", url)` match
+   - Relative OAuth URL: an `authorization_url` / `token_url` that does not start with `http://` or `https://`
+
+   If none found, Step 2.2 is a no-op — proceed to Step 2.3.
+
+3. **Gather inference hints** for each placeholder (do not commit yet):
+   - Open the raw OpenAPI spec file (from `$ARGUMENTS`). For each placeholder name, look up `servers[*].variables[<name>].default`. This is the standard mechanism spec authors use — treat it as a strong hint.
+   - Cross-reference the user's Step 1.3 auth hint and the workflow descriptions for any domain or subdomain the user already mentioned.
+
+4. **Confirm with the user** for every placeholder, even when a spec-declared default exists. Defaults are frequently illustrative (e.g. `api`, `example.com`) rather than tenant-correct. Present, per placeholder:
+   - The template URL it appears in
+   - The placeholder name
+   - The spec-declared default (if any)
+   - Any cross-referenced hint
+   - A request for the concrete value to use
+
+   Do not proceed until every placeholder has a concrete user-supplied value.
+
+5. **Resolve relative OAuth URLs** against the concrete (now placeholder-free) `base_url` using `urllib.parse.urljoin` semantics. No user prompt needed — this is deterministic.
+
+6. **Persist a `resolved_urls` mapping** for the rest of the workflow:
+   ```
+   resolved_urls = {
+     "base_url": "<concrete absolute URL>",
+     "oauth_authorization_url": "<concrete absolute URL or None>",
+     "oauth_token_url": "<concrete absolute URL or None>",
+   }
+   ```
+
+   Every downstream step (2.3, 4, 6.1, 6.2, 6.3) uses these values. `mcp-scope.yaml` must never be written with an unresolved `{…}` or a relative URL.
+
+#### 2.3: Spawn spec-analyzer agent
 
 Spawn a **spec-analyzer** sub-agent using the Agent tool:
 
@@ -84,6 +124,9 @@ Agent tool parameters:
 
     SPEC ANALYSIS JSON PATH:
     [absolute path to {working_dir}/analyze.json]
+
+    RESOLVED BASE URL:
+    [resolved_urls["base_url"] from Step 2.2 — the concrete, placeholder-free base URL the agent should display instead of the verbatim value in analyze.json]
 - mode: acceptEdits
 - run_in_background: false
 ```
@@ -130,7 +173,7 @@ Agent tool parameters:
     Pipeline context path: [absolute path to {skill_base_dir}/assets/pipeline-context.md]
     Working directory: [absolute path to {working_dir} from Step 1.4]
     Server name: [derived from API — e.g., "google-drive"]
-    Base URL: [from analyze JSON — e.g., "https://www.googleapis.com/drive/v3"]
+    Base URL: [resolved_urls["base_url"] from Step 2.2 — the concrete, placeholder-free base URL, e.g., "https://www.googleapis.com/drive/v3"]
     OpenAPI spec file path: [absolute path to the downloaded OpenAPI spec file]
 
     WORKFLOWS:
@@ -186,7 +229,7 @@ Read the `security_schemes` from `{working_dir}/analyze.json` and map to MCPScop
 
 | OpenAPI Security Scheme | MCPScope `auth.type` | Notes |
 |------------------------|---------------------|-------|
-| `oauth2` (authorization code flow) | `oauth_bearer` | Extract issuer from token URL domain. Extract scopes from the flow definition. |
+| `oauth2` (authorization code flow) | `oauth_bearer` | Extract issuer from the resolved token URL domain (use `resolved_urls["oauth_token_url"]` from Step 2.2 — never the raw analyze.json value, which may still contain placeholders or be relative). Take the scheme+host. Extract scopes from the flow definition. |
 | `http` (bearer) | `oauth_bearer` | Static token pattern. Issuer may need user input. |
 | `apiKey` (header: `X-API-Key`, `Authorization`) | `api_key` | |
 | `apiKey` (query parameter) | `none` | **Not supported** — flag in notes |
@@ -199,9 +242,9 @@ For OAuth scopes: pull from the spec when available. If scopes look incomplete o
 
 **Discovery-doc conformance check (soft warning, do not block):** If the selected auth is `oauth_bearer` and the issuer URL is resolvable, fetch `{issuer}/.well-known/openid-configuration` once and confirm these fields are present: `response_types_supported`, `id_token_signing_alg_values_supported`, `subject_types_supported`, `authorization_endpoint`, `token_endpoint`, `jwks_uri`. If any are missing, add a line to `auth.notes` like:
 
-> Upstream issuer publishes a non-compliant discovery doc (missing: `<field1>`, `<field2>`). The deploy step should rewrite the generated `MCPExternalAuthConfig` to use `upstreamProviders[*].type: oauth2` with explicit `authorizationEndpoint`, `tokenEndpoint`, and `userInfo` pulled from the discovery doc. Template placeholders in issuer URLs (e.g. `{companyDomain}`) also block this check — substitute a concrete value before deploy.
+> Upstream issuer publishes a non-compliant discovery doc (missing: `<field1>`, `<field2>`). The deploy step should rewrite the generated `MCPExternalAuthConfig` to use `upstreamProviders[*].type: oauth2` with explicit `authorizationEndpoint`, `tokenEndpoint`, and `userInfo` pulled from the discovery doc.
 
-If the issuer is unreachable or the URL contains a template literal, note that too. This is a soft warning — do not block the gate or change the selected auth type.
+If the issuer is unreachable, note that too. This is a soft warning — do not block the gate or change the selected auth type. (URL placeholders are resolved in Step 2.2 and cannot reach this check.)
 
 **USER GATE:** Present the auth detection result to the user (selected scheme, issuer, chosen scopes, any discovery-doc warning, and any alternatives you rejected). **Do NOT proceed to Step 6.2 until the user confirms the auth block.** This gate is easy to skip by accident — do not.
 
@@ -212,13 +255,15 @@ Derive the following from the analyze JSON and user context:
 - `server.description`: One-line description of what the MCP server does
 - `spec.source`: The original spec path or URL
 - `spec.format`: `openapi3` or `openapi3.1` (from analyze JSON)
-- `spec.base_url`: From analyze JSON
+- `spec.base_url`: `resolved_urls["base_url"]` from Step 2.2 (concrete, placeholder-free, absolute). Never the raw analyze JSON value.
 - `spec.total_endpoints`: Total count from analyze JSON
 - `spec.scoped_endpoints`: Count of tools in the approved list
 
 #### 6.3: Assemble `mcp-scope.yaml`
 
 Build the YAML following the MCPScope schema exactly. The formal JSON schema was generated when you ran `task generate-schema`.
+
+All URL fields (`spec.base_url`, `auth.oauth.issuer`) use the resolved values from Step 2.2. The assembled YAML must never contain an unresolved `{…}` placeholder or a relative URL — if one is about to be written, go back and rerun Step 2.2.
 
 ```yaml
 version: "1"

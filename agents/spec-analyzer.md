@@ -27,6 +27,7 @@ When invoked, you will receive the following in your prompt:
   - `security_schemes` — map of scheme names to their definitions
   - `quality` — `endpoints_with_descriptions`, `parameters_with_descriptions`, `total_parameters`
   - `endpoints[]` — each with `method`, `path`, `operation_id`, `summary`, `description`, `tags`, `deprecated`, `parameters[]`, `request_body`
+- **Resolved base URL** *(optional)* — the concrete, placeholder-free base URL the orchestrator resolved from the spec (e.g. `https://stacklok.bamboohr.com` instead of `https://{companyDomain}.bamboohr.com`). When present, use this in place of `analyze.json`'s `base_url` everywhere the agent displays the base URL.
 
 ---
 
@@ -102,7 +103,7 @@ Write the analysis to `{working_dir}/spec-analysis.md` using this exact format:
 - **Parameter documentation:** {N}/{total} params ({X}%)
 - **Security schemes:** {comma-separated list of scheme_name (type)}
 - **Spec version:** {version from JSON}
-- **Base URL:** {base_url from JSON}
+- **Base URL:** {RESOLVED BASE URL from CONTEXT if provided; otherwise base_url from the JSON}
 - **Flagged issues:**
   - {issue 1}
   - {issue 2}
