@@ -13,6 +13,8 @@ Your output is the near-final tool list that the user will approve before it bec
 
 **Before starting, read the pipeline context document** at the path provided in your CONTEXT to understand what mcp-builder is, what mcp-scope.yaml is, and how your work fits into the larger pipeline.
 
+**Also read the generator contract** at `{repo_root}/skills/ai-scoping/assets/generator-contract.md`. It is the authoritative source for what the generator actually does with each `response_kind`, which auth types it supports, and which generator gaps to flag to the user. Reason from this file instead of from memory or by opening the generator templates — this is how scoping agents avoid inventing contracts the generator does not honor.
+
 ---
 
 ## Required Context
@@ -52,7 +54,7 @@ Common reasons to flag (but NOT auto-remove):
 - **Potentially duplicative** — provides similar functionality to another endpoint (note which one)
 - **Admin/elevated scope** — may require elevated privileges (note: admin endpoints are valid use cases, just flag for awareness)
 - **Low workflow relevance** — not directly related to any provided workflow
-- **Mixed-media 2xx responses** — some 2xx responses declare JSON and others declare a non-JSON media type (e.g. `200` returns `application/pdf`, `202` returns `application/json`). There is no safe default: a single endpoint cannot both return parsed JSON and base64 bytes. Flag it with the three options the user will choose from in the approval step: (a) exclude the endpoint, (b) keep as `binary` — JSON responses would be base64-wrapped, (c) keep as `json` — non-JSON responses would crash at runtime.
+- **Mixed-media 2xx responses** — different 2xx statuses declare incompatible media types (e.g. `200` returns `application/pdf`, `202` returns `application/json`), or a single status simultaneously declares JSON plus non-JSON media types the user may care about. There is no single safe default: a single endpoint cannot both return parsed JSON and base64 bytes. List the kinds the user can realistically pick (per the generator contract at `skills/ai-scoping/assets/generator-contract.md`) and let the orchestrator resolve the choice at the Step 5 approval gate. Typical options: (a) exclude the endpoint, (b) `json` — non-JSON responses would crash at runtime, (c) `text` — JSON responses would be returned as a raw string rather than a parsed dict, (d) `binary` — JSON/text responses would be base64-wrapped.
 
 Present ALL endpoints (both included and flagged) in the output. The user will make the final inclusion/exclusion decision in the approval step.
 
@@ -211,21 +213,39 @@ Only add hints that are genuinely useful. An endpoint with no special behavior n
 ### Step 6: Response Kind
 
 Every tool must declare a `response_kind`: the generator forks the
-client path on this value (JSON is parsed into a `dict`; binary is
-returned as raw bytes and base64-wrapped for MCP transport). Decide it
-now so the approval gate shows a fully-resolved tool definition.
+client path on this value. The authoritative description of what each
+kind does lives in the **generator contract** you read up front
+(`skills/ai-scoping/assets/generator-contract.md`). A one-paragraph
+summary:
+
+- `json` — parsed into a `dict`. For endpoints that declare
+  `application/json` (or a `+json` variant).
+- `text` — returned verbatim as a decoded `str`. For endpoints that
+  declare a `text/*` media type (plain, HTML, CSV, Markdown, XML, or
+  exported Google Docs).
+- `binary` — base64-wrapped `str`. For endpoints that return opaque
+  bytes (PDF, image, `application/octet-stream`).
+
+Decide the kind now so the approval gate shows a fully-resolved tool
+definition.
 
 For each tool, inspect its 2xx responses in the spec:
 
 - Every 2xx response with content declares at least one JSON media
   type (or every 2xx is 204-style with no body) → `response_kind: json`.
-- Every 2xx response with content declares a non-JSON media type (PDF,
-  image, `application/octet-stream`, …) → `response_kind: binary`.
-- Mixed — some 2xx are JSON and some are not — do **not** guess. Flag
-  the endpoint in Step 1 with the three options listed there, leave
-  `response_kind` unresolved in the tool-scoping output (record it as
-  `response_kind: <pending user decision>`), and let the orchestrator
-  resolve it during the Step 5 user gate.
+- Every 2xx response with content declares a `text/*` (or XML) media
+  type and no JSON → `response_kind: text`. Prefer `text` over `binary`
+  for any human-readable textual content: `binary` base64-wraps the
+  body and hides it from the model.
+- Every 2xx response with content declares an opaque binary media type
+  (PDF, image, `application/octet-stream`, …) and no JSON or text →
+  `response_kind: binary`.
+- Mixed — different statuses or a single status declaring incompatible
+  media types — do **not** guess. Flag the endpoint in Step 1 with the
+  options from the generator contract, leave `response_kind`
+  unresolved in the tool-scoping output (record it as `response_kind:
+  <pending user decision>`), and let the orchestrator resolve it
+  during the Step 5 user gate.
 
 ### Step 7: Write tool-scoping.md
 
@@ -254,7 +274,7 @@ The following endpoints are flagged for your review. They are included by defaul
 - **Endpoint:** {METHOD} {/path}
 - **Original operationId:** {operationId} {(renamed: reason) | (kept)}
 - **Description:** {LLM-optimized description}
-- **Response kind:** {json | binary | <pending user decision — see flagged endpoint>}
+- **Response kind:** {json | text | binary | <pending user decision — see flagged endpoint>}
 - **Parameters:**
   - {name} ({required|optional}, {path|query|body}): {description}
   - {name} ({required|optional}, {path|query|body}): {description}

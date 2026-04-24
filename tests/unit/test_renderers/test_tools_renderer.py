@@ -18,7 +18,7 @@ def _make_tool(
     query_params: list[ParamPlan] | None = None,
     body_fields: list[ParamPlan] | None = None,
     hints: list[str] | None = None,
-    response_kind: Literal["json", "binary"] = "json",
+    response_kind: Literal["json", "text", "binary"] = "json",
 ) -> ToolPlan:
     return ToolPlan(
         tool_name=name,
@@ -410,3 +410,81 @@ class TestRenderToolsModuleBinaryBranch:
         photo_section = source.split("async def get_employee_photo")[1]
         assert "-> str:" in photo_section
         assert "request_bytes(" in photo_section
+
+
+class TestRenderToolsModuleTextBranch:
+    """Text tools go through request_text() and return the decoded body
+    directly — no base64 wrapping, no JSON parsing."""
+
+    def _text_tool(self) -> ToolPlan:
+        return _make_tool(
+            name="export_doc",
+            path="/files/{fileId}/export",
+            path_params=[_make_param("file_id", original_name="fileId")],
+            query_params=[
+                _make_param(
+                    "mime_type",
+                    original_name="mimeType",
+                    location=ParamLocation.QUERY,
+                    required=True,
+                )
+            ],
+            description="Export a Google Doc as text.",
+            response_kind="text",
+        )
+
+    def test_text_tool_returns_str(self) -> None:
+        source = render_tools_module(make_plan(tools=[self._text_tool()]))
+        assert "async def export_doc(self" in source
+        text_section = source.split("async def export_doc")[1]
+        assert "-> str:" in text_section
+
+    def test_text_tool_calls_request_text(self) -> None:
+        source = render_tools_module(make_plan(tools=[self._text_tool()]))
+        text_section = source.split("async def export_doc")[1].split("async def", 1)[0]
+        assert "self._client.request_text(" in text_section
+        # Neither JSON nor bytes paths may leak into a text tool.
+        assert "self._client.request(" not in text_section
+        assert "self._client.request_bytes(" not in text_section
+
+    def test_text_tool_does_not_base64_encode(self) -> None:
+        source = render_tools_module(make_plan(tools=[self._text_tool()]))
+        text_section = source.split("async def export_doc")[1].split("async def", 1)[0]
+        assert "base64" not in text_section
+
+    def test_text_only_tools_do_not_import_base64(self) -> None:
+        source = render_tools_module(make_plan(tools=[self._text_tool()]))
+        assert "import base64" not in source
+
+    def test_text_tool_compiles(self) -> None:
+        source = render_tools_module(make_plan(tools=[self._text_tool()]))
+        compile(source, "<test>", "exec")
+
+    def test_all_three_kinds_coexist(self) -> None:
+        """A server with json, text, and binary tools renders all three
+        shapes from the same template invocation."""
+        json_tool = _make_tool(
+            name="get_item",
+            path="/items/{itemId}",
+            path_params=[_make_param("item_id", original_name="itemId")],
+        )
+        binary_tool = _make_tool(
+            name="get_employee_photo",
+            path="/employees/{employeeId}/photo",
+            path_params=[_make_param("employee_id", original_name="employeeId")],
+            description="Fetch the employee photo.",
+            response_kind="binary",
+        )
+        plan = make_plan(tools=[json_tool, self._text_tool(), binary_tool])
+        source = render_tools_module(plan)
+        compile(source, "<test>", "exec")
+        assert "import base64" in source  # needed for binary
+        json_section = source.split("async def get_item")[1].split("async def", 1)[0]
+        assert "-> dict:" in json_section
+        assert "self._client.request(" in json_section
+        text_section = source.split("async def export_doc")[1].split("async def", 1)[0]
+        assert "-> str:" in text_section
+        assert "request_text(" in text_section
+        binary_section = source.split("async def get_employee_photo")[1]
+        assert "-> str:" in binary_section
+        assert "request_bytes(" in binary_section

@@ -6,7 +6,7 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
-from mcp_builder.spec.media import is_json_media_type
+from mcp_builder.spec.media import is_json_media_type, is_text_media_type
 from mcp_builder.validate import validate_scope
 from mcp_builder.schema.models import (
     APIKeyAuth,
@@ -428,6 +428,239 @@ class TestResponseKindSpecCompatibility:
         assert "response_kind='binary'" in msg
         assert "include JSON" in msg
         assert "application/json" in msg
+
+    def test_text_scope_with_text_plain_spec_passes(self, tmp_path):
+        """response_kind=text against a text/plain endpoint is the
+        intended happy path for plaintext bodies (exported Google Docs,
+        plain logs, etc.)."""
+        small_spec = _mini_spec(
+            tmp_path,
+            {
+                "/export": {
+                    "get": {
+                        "responses": {
+                            "200": {
+                                "description": "ok",
+                                "content": {"text/plain": {}},
+                            },
+                        }
+                    }
+                }
+            },
+        )
+        tool = Tool(
+            tool_name="export_doc",
+            endpoint="GET /export",
+            description="Export a doc as text.",
+            response_kind="text",
+            parameters=[],
+        )
+        result = validate_scope(_scope_with_tool(tool), small_spec)
+        assert not any("export_doc" in e for e in result.errors), result.errors
+
+    def test_text_scope_against_json_endpoint_errors(self, tmp_path):
+        """Declaring text against a JSON-only endpoint would still work
+        at runtime (response.text decodes anything) but hides the
+        author's intent — the scope should use json so the model sees
+        parsed structure."""
+        small_spec = _mini_spec(
+            tmp_path,
+            {
+                "/items": {
+                    "get": {
+                        "responses": {
+                            "200": {
+                                "description": "ok",
+                                "content": {"application/json": {}},
+                            },
+                        }
+                    }
+                }
+            },
+        )
+        tool = Tool(
+            tool_name="list_items",
+            endpoint="GET /items",
+            description="List items.",
+            response_kind="text",
+            parameters=[],
+        )
+        result = validate_scope(_scope_with_tool(tool), small_spec)
+        matching = [e for e in result.errors if "list_items" in e]
+        assert matching, result.errors
+        (msg,) = matching
+        assert "response_kind='text'" in msg
+        assert "no text/*" in msg
+
+    def test_text_scope_against_binary_endpoint_errors(self, tmp_path):
+        """Declaring text against a PDF-only endpoint would return
+        garbled bytes (httpx.text on a PDF is nonsense) — error so the
+        author picks binary instead."""
+        small_spec = _mini_spec(
+            tmp_path,
+            {
+                "/download": {
+                    "get": {
+                        "responses": {
+                            "200": {
+                                "description": "ok",
+                                "content": {"application/pdf": {}},
+                            },
+                        }
+                    }
+                }
+            },
+        )
+        tool = Tool(
+            tool_name="download",
+            endpoint="GET /download",
+            description="Download a PDF.",
+            response_kind="text",
+            parameters=[],
+        )
+        result = validate_scope(_scope_with_tool(tool), small_spec)
+        matching = [e for e in result.errors if "download" in e]
+        assert matching, result.errors
+        (msg,) = matching
+        assert "response_kind='text'" in msg
+        assert "application/pdf" in msg
+
+    def test_text_scope_passes_when_spec_mixes_text_and_json(self, tmp_path):
+        """A single 2xx offering both JSON and text is valid under text —
+        the author explicitly picked text over json, and the Accept
+        header negotiates text/*."""
+        small_spec = _mini_spec(
+            tmp_path,
+            {
+                "/mixed": {
+                    "get": {
+                        "responses": {
+                            "200": {
+                                "description": "ok",
+                                "content": {
+                                    "application/json": {},
+                                    "text/plain": {},
+                                },
+                            },
+                        }
+                    }
+                }
+            },
+        )
+        tool = Tool(
+            tool_name="get_mixed",
+            endpoint="GET /mixed",
+            description="Mixed JSON+text response.",
+            response_kind="text",
+            parameters=[],
+        )
+        result = validate_scope(_scope_with_tool(tool), small_spec)
+        assert not any("get_mixed" in e for e in result.errors), result.errors
+
+    def test_text_scope_accepts_xml(self, tmp_path):
+        """application/xml is text-decodable and belongs under the text
+        kind, not binary (binary would base64-wrap readable XML)."""
+        small_spec = _mini_spec(
+            tmp_path,
+            {
+                "/feed": {
+                    "get": {
+                        "responses": {
+                            "200": {
+                                "description": "ok",
+                                "content": {"application/xml": {}},
+                            },
+                        }
+                    }
+                }
+            },
+        )
+        tool = Tool(
+            tool_name="get_feed",
+            endpoint="GET /feed",
+            description="Fetch an XML feed.",
+            response_kind="text",
+            parameters=[],
+        )
+        result = validate_scope(_scope_with_tool(tool), small_spec)
+        assert not any("get_feed" in e for e in result.errors), result.errors
+
+    def test_binary_scope_against_text_only_spec_errors(self, tmp_path):
+        """binary against a text-only endpoint base64-wraps readable text
+        and hides it from the model. Validator steers the author to
+        response_kind=text."""
+        small_spec = _mini_spec(
+            tmp_path,
+            {
+                "/export": {
+                    "get": {
+                        "responses": {
+                            "200": {
+                                "description": "ok",
+                                "content": {"text/plain": {}},
+                            },
+                        }
+                    }
+                }
+            },
+        )
+        tool = Tool(
+            tool_name="export_doc",
+            endpoint="GET /export",
+            description="Export a doc.",
+            response_kind="binary",
+            parameters=[],
+        )
+        result = validate_scope(_scope_with_tool(tool), small_spec)
+        matching = [e for e in result.errors if "export_doc" in e]
+        assert matching, result.errors
+        (msg,) = matching
+        assert "response_kind='binary'" in msg
+        assert "all text" in msg
+        assert "response_kind='text'" in msg
+
+
+class TestIsTextMediaType:
+    """Direct coverage of the text-media-type predicate.
+
+    Mirrors TestIsJsonMediaType — the validator's text branch hinges on
+    this predicate, and a misclassification would either pass an unsafe
+    scope or error on a safe one.
+    """
+
+    @pytest.mark.parametrize(
+        "media_type",
+        [
+            "text/plain",
+            "text/html",
+            "text/csv",
+            "text/markdown",
+            "text/xml",
+            "TEXT/PLAIN",  # case-insensitive
+            "text/plain; charset=utf-8",  # parameter stripped
+            "application/xml",
+            "application/xhtml+xml",
+            "application/atom+xml",  # RFC 6839 structured suffix
+        ],
+    )
+    def test_accepts(self, media_type):
+        assert is_text_media_type(media_type) is True
+
+    @pytest.mark.parametrize(
+        "media_type",
+        [
+            "application/json",  # JSON is not text for our purposes
+            "text/json",  # legacy JSON variant
+            "text/foo+json",  # +json variant
+            "application/vnd.api+json",
+            "application/pdf",
+            "application/octet-stream",
+            "image/jpeg",
+            "multipart/form-data",
+        ],
+    )
+    def test_rejects(self, media_type):
+        assert is_text_media_type(media_type) is False
 
 
 class TestIsJsonMediaType:

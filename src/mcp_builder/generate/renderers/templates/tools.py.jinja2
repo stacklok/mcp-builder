@@ -25,8 +25,8 @@ class Tools:
     async def {{ tool.method_name }}(self{{ tool.signature }}) -> str:
         """{{ tool.description | py_string }}
 
-        Upstream returns a non-JSON body; the raw bytes are
-        base64-encoded so the value survives MCP transport.
+        Upstream returns opaque bytes; they are base64-encoded so the
+        value survives MCP transport.
         """
 {% for hint in tool.hints %}
         # Hint: {{ hint | py_string }}
@@ -42,6 +42,27 @@ class Tools:
 {% endif %}
         )
         return base64.b64encode(raw).decode("ascii")
+{% elif tool.response_kind == "text" %}
+
+    async def {{ tool.method_name }}(self{{ tool.signature }}) -> str:
+        """{{ tool.description | py_string }}
+
+        Upstream returns a text body; it is decoded using the response's
+        declared charset (falling back to UTF-8) and returned verbatim.
+        """
+{% for hint in tool.hints %}
+        # Hint: {{ hint | py_string }}
+{% endfor %}
+        return await self._client.request_text(
+            "{{ tool.http_method }}",
+            {{ tool.path_expr }},
+{% if tool.params_expr %}
+            params={{ tool.params_expr }},
+{% endif %}
+{% if tool.body_expr %}
+            json_body={{ tool.body_expr }},
+{% endif %}
+        )
 {% else %}
 
     async def {{ tool.method_name }}(self{{ tool.signature }}) -> dict:

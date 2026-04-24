@@ -33,14 +33,24 @@ class TestRenderClientModule:
         # JSON path is still a single .json() read.
         assert "return response.json()" in source
 
+    def test_has_request_text_method(self, plan: ServerPlan) -> None:
+        """Text endpoints need a str-returning path so the tool renderer
+        can hand the model decoded text (Drive export, HTML, CSV, ...)
+        without base64 wrapping."""
+        source = render_client_module(plan)
+        assert "async def request_text(" in source
+        assert "return response.text" in source
+
     def test_accept_header_split_by_response_kind(self, plan: ServerPlan) -> None:
         """JSON path advertises Accept: application/json so content-
-        negotiating servers hand us JSON. Binary path uses */* so
-        non-JSON media types (PDF, octet-stream) aren't rejected by
-        stricter servers."""
+        negotiating servers hand us JSON. Text path prefers text/* with
+        a */* fallback for servers that don't honor the quality
+        weighting. Binary path uses */* so non-JSON media types (PDF,
+        octet-stream) aren't rejected by stricter servers."""
         source = render_client_module(plan)
         assert '"Accept"' in source
         assert '"application/json"' in source
+        assert '"text/*, */*;q=0.8"' in source
         assert '"*/*"' in source
 
     def test_json_path_handles_empty_body(self, plan: ServerPlan) -> None:
