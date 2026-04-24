@@ -160,14 +160,14 @@ auth:
     openid: "OpenID Connect sign-in"
     email: "User email"
     offline_access: "Refresh tokens for long-lived access"
-    employees.read: "Read employee directory"
+    employee_directory: "Read employee directory"
     time_off: "Time off policies and requests"
     employee: "Read and manage employee records"
   scopes_required:
     - openid
     - email
     - offline_access
-    - employees.read
+    - employee_directory
   notes: >
     BambooHR uses OAuth2 authorization code flow with company-specific
     endpoints. The {companyDomain} placeholder must be replaced with the
