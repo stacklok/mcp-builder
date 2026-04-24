@@ -551,18 +551,42 @@ class TestUnresolvedPlaceholders:
         ]
         assert matching, result.errors
 
-    def test_oidc_issuer_with_placeholder_errors(self):
+    def test_oidc_issuer_with_placeholder_does_not_error(self):
+        """V-TENANT-01 deliberately skips ``auth.issuer``: OIDC issuers are
+        identifiers consumed by deploy-assist (discovery fetch), and
+        multi-tenant IdPs (Azure Entra v2) ship placeholders in the canonical
+        issuer shape ``https://login.microsoftonline.com/{tenantId}/v2.0``."""
         scope = _scope_with_auth(
             OIDCAuth(
                 type="oidc",
-                issuer="https://{tenant}.example.com",
+                issuer="https://login.microsoftonline.com/{tenantId}/v2.0",
             )
         )
         result = validate_scope(scope)
-        matching = [
-            e for e in result.errors if "V-TENANT-01" in e and "auth.issuer" in e
-        ]
-        assert matching, result.errors
+        assert not any("V-TENANT-01" in e for e in result.errors)
+
+    def test_multiple_placeholders_in_single_url_each_reported(self):
+        """Each occurrence of a placeholder in a single URL produces its own
+        error — pins ``findall`` behavior so a future switch to ``search``
+        doesn't silently regress."""
+        scope = load_scope(FIXTURES / "test_scope.yaml")
+        scope.spec.base_url = "https://{region}.{tenant}.api.example.com"
+        result = validate_scope(scope)
+        tenant_errors = [e for e in result.errors if "V-TENANT-01" in e]
+        assert len(tenant_errors) == 2, tenant_errors
+        assert any("{region}" in e for e in tenant_errors)
+        assert any("{tenant}" in e for e in tenant_errors)
+
+    def test_hyphenated_and_dotted_placeholders_caught(self):
+        """Scoping can emit ``{company-domain}`` or ``{tenant.region}``; the
+        regex must catch those shapes, not just bare identifiers."""
+        scope = load_scope(FIXTURES / "test_scope.yaml")
+        scope.spec.base_url = "https://{company-domain}.{tenant.region}.example.com"
+        result = validate_scope(scope)
+        tenant_errors = [e for e in result.errors if "V-TENANT-01" in e]
+        assert len(tenant_errors) == 2, tenant_errors
+        assert any("{company-domain}" in e for e in tenant_errors)
+        assert any("{tenant.region}" in e for e in tenant_errors)
 
     def test_multiple_placeholders_each_reported(self):
         """Two placeholders in different fields produce two distinct errors,
@@ -753,15 +777,70 @@ class TestAuthAbsoluteUrls:
         matching = [e for e in result.errors if "V-AUTH-02" in e and "issuer" in e]
         assert matching, result.errors
 
-    def test_absolute_urls_pass(self):
+    def test_absolute_https_urls_pass(self):
+        scope = _scope_with_auth(
+            OAuth2Auth(
+                type="oauth2",
+                flow="authorizationCode",
+                authorization_url="https://example.com/authorize",
+                token_url="https://example.com/token",
+                userinfo_url="https://example.com/me",
+            )
+        )
+        result = validate_scope(scope)
+        assert not any("V-AUTH-02" in e for e in result.errors)
+
+    def test_plaintext_http_token_url_errors(self):
+        """Plaintext OAuth endpoints violate RFC 6749 §3.1 — tokens cross the
+        wire in cleartext. Validate refuses rather than green-lighting it."""
         scope = _scope_with_auth(
             OAuth2Auth(
                 type="oauth2",
                 flow="authorizationCode",
                 authorization_url="https://example.com/authorize",
                 token_url="http://example.com/token",
-                userinfo_url="https://example.com/me",
+            )
+        )
+        result = validate_scope(scope)
+        matching = [e for e in result.errors if "V-AUTH-02" in e and "token_url" in e]
+        assert matching, result.errors
+        assert "plaintext" in matching[0]
+
+    def test_plaintext_http_oidc_issuer_errors(self):
+        """OIDC issuer over plaintext violates OIDC Core §16.17."""
+        scope = _scope_with_auth(
+            OIDCAuth(type="oidc", issuer="http://example.com"),
+        )
+        result = validate_scope(scope)
+        matching = [e for e in result.errors if "V-AUTH-02" in e and "issuer" in e]
+        assert matching, result.errors
+        assert "plaintext" in matching[0]
+
+    def test_uppercase_scheme_accepted(self):
+        """``urlparse`` normalizes the scheme, so ``HTTPS://`` is absolute."""
+        scope = _scope_with_auth(
+            OAuth2Auth(
+                type="oauth2",
+                flow="authorizationCode",
+                authorization_url="HTTPS://example.com/authorize",
+                token_url="https://example.com/token",
             )
         )
         result = validate_scope(scope)
         assert not any("V-AUTH-02" in e for e in result.errors)
+
+    def test_scheme_without_host_errors(self):
+        """``https:///nohost`` has a scheme but no netloc — not a usable URL."""
+        scope = _scope_with_auth(
+            OAuth2Auth(
+                type="oauth2",
+                flow="authorizationCode",
+                authorization_url="https:///authorize",
+                token_url="https://example.com/token",
+            )
+        )
+        result = validate_scope(scope)
+        matching = [
+            e for e in result.errors if "V-AUTH-02" in e and "authorization_url" in e
+        ]
+        assert matching, result.errors
