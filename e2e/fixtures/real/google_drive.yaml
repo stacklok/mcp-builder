@@ -9,10 +9,11 @@ spec:
   format: openapi3
   base_url: "https://www.googleapis.com/drive/v3"
   total_endpoints: 60
-  scoped_endpoints: 5
+  scoped_endpoints: 6
 
 workflows:
   - "Engineers search for and read design docs and specs"
+  - "Engineers export Google Docs as plain text for LLM-assisted review"
   - "Team members create shared documents and leave review comments"
 
 groups:
@@ -73,6 +74,32 @@ groups:
             location: query
         hints:
           - "response has 50+ fields — consider field selection"
+
+      - tool_name: export_file
+        endpoint: GET /files/{fileId}/export
+        description: >
+          Export a Google Workspace document (Doc, Sheet, Slide, Drawing)
+          to a requested text-based MIME type and return the exported
+          body verbatim. Use mimeType="text/plain" for model-readable doc
+          content; other text MIME types include "text/html" and
+          "text/csv" (for Sheets). Exported content is capped at 10 MB
+          by the Drive API.
+        response_kind: text
+        parameters:
+          - name: fileId
+            description: "The ID of the Google Workspace file to export."
+            required: true
+            location: path
+          - name: mimeType
+            description: >
+              Target MIME type for the exported content. Use "text/plain"
+              for model-readable Doc content, "text/html" for formatted
+              Docs, or "text/csv" for Sheets.
+            required: true
+            location: query
+        hints:
+          - "text-only: use a text/* mimeType so the returned body is readable"
+          - "upstream caps exported content at 10 MB"
 
       - tool_name: create_file
         endpoint: POST /files

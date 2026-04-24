@@ -8,12 +8,13 @@ it's a domain operation that consumes the low-level spec/ and schema/ packages.
 from __future__ import annotations
 
 import re
+from typing import Literal
 from urllib.parse import urlparse
 
 import structlog
 from pydantic import BaseModel, Field
 
-from mcp_builder.spec.media import is_json_media_type
+from mcp_builder.spec.media import is_json_media_type, is_text_media_type
 from mcp_builder.schema.models import (
     AuthConfig,
     MCPScope,
@@ -170,7 +171,7 @@ def validate_scope(
 
 def _check_response_kind_matches_spec(
     tool_name: str,
-    response_kind: str,
+    response_kind: Literal["json", "text", "binary"],
     responses: list[ExtractedResponse],
     errors: list[str],
     warnings: list[str],
@@ -182,20 +183,21 @@ def _check_response_kind_matches_spec(
     author controls the scope YAML; the upstream OpenAPI spec they
     typically don't.
 
-    The generated client sends ``Accept: application/json`` for
-    ``response_kind=json`` and ``Accept: */*`` for ``response_kind=binary``.
-    A status that offers both JSON and non-JSON (e.g. 200 returns
-    ``application/json, application/xml``) is therefore safe for
-    ``json`` — content negotiation picks JSON — but unsafe for
-    ``binary``, which could hand the caller base64-wrapped JSON
-    depending on the server's default.
+    The generated client sends a different ``Accept`` header per kind:
+    ``application/json`` for ``json``, ``text/*, */*;q=0.8`` for
+    ``text``, and ``*/*`` for ``binary``. A status that offers JSON plus
+    text is therefore safe for either ``json`` or ``text`` — the
+    author picks based on what the tool should return — but unsafe for
+    ``binary``, which could hand the caller base64-wrapped JSON.
 
     Outcomes:
 
     - Spec declares no 2xx responses: warning (can't verify the choice).
     - Spec's 2xx responses all have empty content (204-style): silent pass.
     - ``response_kind="json"`` but some 2xx status offers no JSON option: error.
+    - ``response_kind="text"`` but some 2xx status offers no text option: error.
     - ``response_kind="binary"`` but some 2xx status offers JSON: error.
+    - ``response_kind="binary"`` but every 2xx status is text-only: error.
     """
     if not responses:
         warnings.append(
@@ -227,20 +229,22 @@ def _check_response_kind_matches_spec(
             errors.append(
                 f"Tool '{tool_name}': scope declares response_kind='json' "
                 f"but spec's 2xx responses have no JSON content type "
-                f"({detail}). Update the scope to response_kind='binary' "
-                "or drop the endpoint from the scope."
+                f"({detail}). Update the scope's response_kind to match "
+                "the spec's media types (see the generator contract's "
+                "'Picking a kind from the spec' section), or drop the "
+                "endpoint from the scope."
             )
         return
 
-    if response_kind == "binary":
-        # No 2xx status may offer JSON — the generated client sends
-        # ``Accept: */*``, so a JSON-capable server could return JSON
-        # that would then get base64-wrapped and returned as opaque
-        # bytes.
+    if response_kind == "text":
+        # Every 2xx with content must offer at least one text/* (or XML)
+        # media type so ``response.text`` returns a meaningful decode.
+        # A status that offers text plus JSON is fine — the author
+        # picked text intentionally over the json kind.
         bad = [
             r
             for r in responses_with_content
-            if any(is_json_media_type(mt) for mt in r.media_types)
+            if not any(is_text_media_type(mt) for mt in r.media_types)
         ]
         if bad:
             detail = "; ".join(
@@ -248,10 +252,55 @@ def _check_response_kind_matches_spec(
                 for resp in sorted(bad, key=lambda r: r.status_code)
             )
             errors.append(
+                f"Tool '{tool_name}': scope declares response_kind='text' "
+                f"but spec's 2xx responses have no text/* (or XML) content "
+                f"type ({detail}). Update the scope's response_kind to "
+                "match the spec's media types (see the generator "
+                "contract's 'Picking a kind from the spec' section), or "
+                "drop the endpoint from the scope."
+            )
+        return
+
+    if response_kind == "binary":
+        # No 2xx status may offer JSON — the generated client sends
+        # ``Accept: */*``, so a JSON-capable server could return JSON
+        # that would then get base64-wrapped and returned as opaque
+        # bytes. Text/* media types are also generator-supported via
+        # ``response_kind: text`` and should not be forced through the
+        # base64 path, which hides human-readable content from the
+        # model.
+        json_bad = [
+            r
+            for r in responses_with_content
+            if any(is_json_media_type(mt) for mt in r.media_types)
+        ]
+        if json_bad:
+            detail = "; ".join(
+                f"{resp.status_code} returns {', '.join(resp.media_types)}"
+                for resp in sorted(json_bad, key=lambda r: r.status_code)
+            )
+            errors.append(
                 f"Tool '{tool_name}': scope declares response_kind='binary' "
                 f"but spec's 2xx responses include JSON ({detail}). Update "
                 "the scope to response_kind='json' or drop the endpoint "
                 "from the scope."
+            )
+            return
+        text_only = all(
+            all(is_text_media_type(mt) for mt in r.media_types)
+            for r in responses_with_content
+        )
+        if text_only:
+            detail = "; ".join(
+                f"{resp.status_code} returns {', '.join(resp.media_types)}"
+                for resp in sorted(responses_with_content, key=lambda r: r.status_code)
+            )
+            errors.append(
+                f"Tool '{tool_name}': scope declares response_kind='binary' "
+                f"but spec's 2xx responses are all text ({detail}). "
+                "response_kind='binary' base64-wraps readable text and "
+                "hides it from the model. Update the scope to "
+                "response_kind='text'."
             )
         return
 

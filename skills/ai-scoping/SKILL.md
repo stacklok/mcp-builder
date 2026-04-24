@@ -6,7 +6,19 @@ argument-hint: <openapi-spec-path>
 
 # AI Scoping Skill
 
-This skill orchestrates Phase 1 of the mcp-builder pipeline: transforming an OpenAPI spec and workflow descriptions into a validated `mcp-scope.yaml` and a `scoping-summary.md` documenting the AI's reasoning. The `scoping-summary.md` provides a human-readable explanation of the AI's decisions used in Phase 2 for the human to approve the MCP scoping doc. Once approved, the `mcp-scope.yaml` serves as the contract for deterministic code generation in Phase 3 that generates an MCP server. 
+This skill orchestrates Phase 1 of the mcp-builder pipeline: transforming an OpenAPI spec and workflow descriptions into a validated `mcp-scope.yaml` and a `scoping-summary.md` documenting the AI's reasoning. The `scoping-summary.md` provides a human-readable explanation of the AI's decisions used in Phase 2 for the human to approve the MCP scoping doc. Once approved, the `mcp-scope.yaml` serves as the contract for deterministic code generation in Phase 3 that generates an MCP server.
+
+## Ground rules
+
+These apply throughout the workflow. Violating any of them is a skill failure even if the final output looks correct.
+
+1. **USER GATEs are hard stops.** Steps marked USER GATE (group selection, tool approval, auth detection) end with a question and nothing else. Do not pre-compute the next step's content, do not spawn the next sub-agent, and do not write any file associated with the next step in the same turn. Wait for the user's explicit answer before continuing. Pre-computing corrupts the gate — users cannot cleanly redirect when you have already acted.
+
+2. **Reason from the generator contract, not from memory.** The authoritative description of what the code generator actually does lives at `{skill_base_dir}/assets/generator-contract.md` (`response_kind` behavior, supported auth types, known generator gaps). Before claiming that the generator will produce or reject something, read that file. Do not infer generator behavior from training data or by opening the generator templates directly.
+
+3. **Recap before acting.** Before spawning a sub-agent, running `uv run mcp-builder`, or writing a file in the working directory, state in one sentence what you are about to do. Silent execution hides the decisions that need to be gated.
+
+4. **Flag generator gaps explicitly.** When a natural scoping choice hits a limitation listed in the "Known gaps" section of `generator-contract.md` (streaming, multipart uploads, per-tool base URLs, etc.), surface it to the user with their options — do not flip-flop recommendations or silently drop the tool.
 
 ## Startup
 
@@ -171,7 +183,7 @@ Once the spec-analyzer agent completes, explain to the user that you need help d
 4. Recommend which groups to include based on workflow alignment (suggest all high-relevance groups, optionally medium)
 5. Ask the user which groups to include
 
-**Do NOT proceed to Step 4 until the user has selected their groups.**
+**Do NOT proceed to Step 4 until the user has selected their groups.** (See ground rule 1.)
 
 After selection, extract the endpoint details for the selected groups from `spec-analysis.md`. You will pass this filtered data to the endpoint-scoper agent.
 
@@ -190,6 +202,7 @@ Agent tool parameters:
 
     CONTEXT:
     Pipeline context path: [absolute path to {skill_base_dir}/assets/pipeline-context.md]
+    Generator contract path: [absolute path to {skill_base_dir}/assets/generator-contract.md]
     Working directory: [absolute path to {working_dir} from Step 1.4]
     Server name: [derived from API — e.g., "google-drive"]
     Base URL: [resolved_urls["base_url"] from Step 2.2 — the concrete, placeholder-free base URL, e.g., "https://www.googleapis.com/drive/v3"]
@@ -215,7 +228,7 @@ The endpoint-scoper agent will:
 - Assign tool names — keeping originals when possible, renaming only bad ones
 - Write LLM-optimized descriptions focused on separability between tools
 - Add hints for pagination, large responses, quirks
-- Set each tool's `response_kind` (`json` or `binary`) from the spec's 2xx responses, and flag any endpoint whose 2xx responses mix JSON and non-JSON media types for the user's decision. Void endpoints (204-style, no 2xx content block) are tagged `json` — the generated client returns `{}` on empty bodies, so the tool yields `{}` rather than a `JSONDecodeError`
+- Set each tool's `response_kind` per the rules in `{skill_base_dir}/assets/generator-contract.md` (section "Picking a kind from the spec"), and flag any endpoint whose 2xx responses mix incompatible media types for the user's decision
 - Write `tool-scoping.md` to the working directory
 
 ---
@@ -232,7 +245,7 @@ Once the endpoint-scoper agent completes:
 3. Ask the user to approve the tool list or request changes (including which flagged endpoints to remove, if any)
 4. Do a final audit of the user tool selections for consistency. Make sure tools that need to appear together are all selected or that the user understands the implications of removing certain tools (e.g., if they remove an endpoint that is a prerequisite for another tool, flag that for review).
 
-**Do NOT proceed to Step 6 until the user approves.**
+**Do NOT proceed to Step 6 until the user approves.** (See ground rule 1.)
 
 If the user requests changes:
 - For minor edits (rename a tool, tweak a description), apply them directly
@@ -271,7 +284,7 @@ If multiple security schemes exist, select the most ToolHive-compatible one and 
 
 Do not run this check for `oauth2` — there is no discovery doc to probe.
 
-**USER GATE:** Present the auth detection result to the user (selected type, endpoints or issuer, selected scopes from the full catalog, any discovery-doc warning, and any alternatives you rejected). **Do NOT proceed to Step 6.2 until the user confirms the auth block.** This gate is easy to skip by accident — do not.
+**USER GATE:** Present the auth detection result to the user (selected type, endpoints or issuer, selected scopes from the full catalog, any discovery-doc warning, and any alternatives you rejected). **Do NOT proceed to Step 6.2 until the user confirms the auth block.** (See ground rule 1.) This gate is easy to skip by accident — do not.
 
 #### 6.2: Determine Server Metadata
 
@@ -317,7 +330,7 @@ groups:
         endpoint: {METHOD} {/path}
         description: >
           {LLM-optimized description}
-        response_kind: {json|binary}
+        response_kind: {json|text|binary}
         parameters:
           - name: {param_name}
             description: "{param description}"
@@ -385,7 +398,7 @@ This checks:
 - Schema compliance (tool names unique, snake_case, <=40 chars; server name is DNS label; auth config valid; path params declared; `response_kind` set)
 - Cross-validation (every endpoint in the scope exists in the spec's paths)
 - Parameter coverage (every YAML parameter exists in the spec — warnings flag params missing from the spec whose types will default to `str`, which usually means the spec is incomplete)
-- Response-kind compatibility (scope's `response_kind` must match what the spec actually declares — e.g. `response_kind: json` against a PDF-only endpoint errors)
+- Response-kind compatibility (scope's `response_kind` must match what the spec actually declares — e.g. `response_kind: json` against a PDF-only endpoint errors; `response_kind: binary` against a `text/plain`-only endpoint errors because it would base64-wrap readable text)
 
 If validation fails or warns:
 1. Read the error/warning output

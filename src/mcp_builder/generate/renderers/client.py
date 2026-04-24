@@ -80,6 +80,40 @@ _CLIENT_TEMPLATE = textwrap.dedent('''\
                     return {{}}
                 return response.json()
 
+        async def request_text(
+            self,
+            method: str,
+            path: str,
+            *,
+            params: dict | None = None,
+            json_body: dict | None = None,
+        ) -> str:
+            """Send an HTTP request to a text endpoint and return the decoded body.
+
+            Used for endpoints whose success responses declare a ``text/*``
+            media type (plain text, HTML, CSV, Markdown, XML, exported
+            Google Docs). httpx decodes the body using the response's
+            declared charset, falling back to UTF-8.
+            """
+            params = _strip_none(params)
+            headers = _auth_headers()
+            # The `*/*;q=0.8` fallback is deliberate: some servers reject
+            # bare `text/*` with 406 even when they have a text
+            # representation. The validator catches scope/spec mismatches
+            # at scope time, so the runtime fallback only matters for
+            # specs that escape validation (no 2xx content declared).
+            headers["Accept"] = "text/*, */*;q=0.8"
+            async with httpx.AsyncClient(base_url=self._base_url) as client:
+                response = await client.request(
+                    method,
+                    path,
+                    params=params,
+                    json=json_body,
+                    headers=headers,
+                )
+                response.raise_for_status()
+                return response.text
+
         async def request_bytes(
             self,
             method: str,
@@ -90,8 +124,8 @@ _CLIENT_TEMPLATE = textwrap.dedent('''\
         ) -> bytes:
             """Send an HTTP request to a binary endpoint and return the raw bytes.
 
-            Used for endpoints whose success responses declare a non-JSON
-            media type (images, PDFs, octet-streams). The caller is
+            Used for endpoints whose success responses declare an opaque
+            binary media type (images, PDFs, octet-streams). The caller is
             responsible for any further encoding (e.g. base64 for MCP
             transport).
             """

@@ -96,9 +96,11 @@ class ToolPlan(BaseModel):
 
     ``response_kind`` is copied verbatim from the scope YAML's
     ``Tool.response_kind``. ``"json"`` emits a tool whose return type is
-    ``dict`` (the client parses the body as JSON); ``"binary"`` emits a
-    tool whose return type is ``str`` (the client returns the raw bytes
-    base64-encoded for MCP transport).
+    ``dict`` (the client parses the body as JSON); ``"text"`` emits a tool
+    whose return type is ``str`` (the client returns the body decoded as
+    text via the response's declared charset, falling back to UTF-8);
+    ``"binary"`` emits a tool whose return type is ``str`` (the client
+    returns the raw bytes base64-encoded for MCP transport).
 
     Example:
         ToolPlan(
@@ -124,7 +126,7 @@ class ToolPlan(BaseModel):
     body_fields: list[ParamPlan]
     hints: list[str]
     group_name: str
-    response_kind: Literal["json", "binary"]
+    response_kind: Literal["json", "text", "binary"]
 
 
 class GroupPlan(BaseModel):
