@@ -53,7 +53,11 @@ for the operator's view of external access.
   your cluster can pull from.
 {% endif %}
 
-## Apply order
+## Recommended apply order
+
+The operator reconciles asynchronously, so out-of-order apply works — you'll
+just see transient `NotFound` conditions on MCPServer until the other
+resources are created.
 
 {% if is_api_key %}
 1. `kubectl apply -f secret.yaml`
