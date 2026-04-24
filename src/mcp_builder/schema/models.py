@@ -181,6 +181,26 @@ class Group(BaseModel):
     tools: list[Tool] = Field(min_length=1)
 
 
+def _validate_external_url_template(template: str) -> str:
+    """Shared validator for the external_url_template field on OAuth2Auth/OIDCAuth.
+
+    The template uses the literal substring ``<server_name>`` (angle brackets,
+    no braces) as a placeholder — we reject anything that isn't https or that
+    doesn't contain exactly one placeholder occurrence.
+    """
+    if not template.startswith("https://"):
+        raise ValueError(
+            f"external_url_template '{template}' must start with 'https://'"
+        )
+    placeholder_count = template.count("<server_name>")
+    if placeholder_count != 1:
+        raise ValueError(
+            f"external_url_template '{template}' must contain the literal "
+            f"'<server_name>' placeholder exactly once (found {placeholder_count})."
+        )
+    return template
+
+
 class OAuth2Auth(BaseModel):
     """OAuth2 auth variant — matches OpenAPI's oauth2 security scheme shape.
 
@@ -199,7 +219,22 @@ class OAuth2Auth(BaseModel):
     userinfo_url: str | None = None
     scopes_available: dict[str, str] = Field(default_factory=dict)
     scopes_required: list[str] = Field(default_factory=list)
+    # The full URL template under which this ToolHive-issued auth endpoint
+    # will be reachable from OAuth clients, using the literal placeholder
+    # ``<server_name>`` (angle brackets). If absent, generated manifests
+    # emit a REPLACE_ME_DOMAIN placeholder that deploy-assist rewrites.
+    external_url_template: str | None = None
+    # Whether the OAuth client registered with the upstream IdP is a public
+    # client (PKCE only, no secret) or confidential (uses a client_secret).
+    # When ``"confidential"``, the generated MCPExternalAuthConfig renders
+    # clientSecretRef live and a deploy/secret-oauth.yaml Secret is emitted.
+    client_type: Literal["public", "confidential"] | None = None
     notes: str | None = None
+
+    @field_validator("external_url_template")
+    @classmethod
+    def validate_external_url_template(cls, v: str | None) -> str | None:
+        return None if v is None else _validate_external_url_template(v)
 
 
 class OIDCAuth(BaseModel):
@@ -217,7 +252,14 @@ class OIDCAuth(BaseModel):
     issuer: str
     scopes_available: dict[str, str] = Field(default_factory=dict)
     scopes_required: list[str] = Field(default_factory=list)
+    external_url_template: str | None = None
+    client_type: Literal["public", "confidential"] | None = None
     notes: str | None = None
+
+    @field_validator("external_url_template")
+    @classmethod
+    def validate_external_url_template(cls, v: str | None) -> str | None:
+        return None if v is None else _validate_external_url_template(v)
 
 
 class APIKeyAuth(BaseModel):
