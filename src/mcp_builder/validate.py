@@ -7,11 +7,20 @@ it's a domain operation that consumes the low-level spec/ and schema/ packages.
 
 from __future__ import annotations
 
+import re
+from urllib.parse import urlparse
+
 import structlog
 from pydantic import BaseModel, Field
 
 from mcp_builder.spec.media import is_json_media_type
-from mcp_builder.schema.models import MCPScope, ParamLocation
+from mcp_builder.schema.models import (
+    AuthConfig,
+    MCPScope,
+    OAuth2Auth,
+    OIDCAuth,
+    ParamLocation,
+)
 from mcp_builder.spec import (
     ExtractedResponse,
     OpenAPISpec,
@@ -20,6 +29,13 @@ from mcp_builder.spec import (
     get_response_content_types,
     parse_endpoint,
 )
+
+# Matches one ``{name}`` placeholder. The inner grammar matches what the
+# scoping stage emits for tenant substitution — identifier-shaped tokens
+# plus hyphens and dots (e.g. ``{company-domain}``, ``{tenant.region}``).
+# The leading-char restriction keeps regex literals (``{0,5}``) and YAML
+# brace usage from masquerading as unresolved placeholders.
+_PLACEHOLDER_RE = re.compile(r"\{[A-Za-z_][A-Za-z0-9_.\-]*\}")
 
 logger = structlog.get_logger()
 
@@ -50,6 +66,9 @@ def validate_scope(
     logger.info("validating scope", server_name=scope.server.name)
     errors: list[str] = []
     warnings: list[str] = []
+
+    _check_unresolved_placeholders(scope, errors)
+    _check_auth_consistency(scope, errors)
 
     # Check that groups have descriptions
     for group in scope.groups:
@@ -235,3 +254,114 @@ def _check_response_kind_matches_spec(
                 "from the scope."
             )
         return
+
+
+def _auth_url_fields(auth: AuthConfig) -> list[tuple[str, str | None]]:
+    """Return (name, value) pairs for every dialable URL on the auth block.
+
+    Shared between V-TENANT-01 and V-AUTH-02 so adding a new URL field to
+    ``OAuth2Auth`` or ``OIDCAuth`` (e.g. ``revocation_url``) updates both
+    checks at once rather than silently dropping one.
+
+    ``auth.issuer`` is intentionally excluded: it's an OIDC identifier
+    consumed by deploy-assist when it fetches the discovery document,
+    not a URL the generated server dials at request time. See
+    ``_check_unresolved_placeholders`` for why placeholders in the
+    issuer are handled differently.
+    """
+    if isinstance(auth, OAuth2Auth):
+        return [
+            ("auth.authorization_url", auth.authorization_url),
+            ("auth.token_url", auth.token_url),
+            ("auth.userinfo_url", auth.userinfo_url),
+        ]
+    if isinstance(auth, OIDCAuth):
+        return [("auth.issuer", auth.issuer)]
+    return []
+
+
+def _check_unresolved_placeholders(scope: MCPScope, errors: list[str]) -> None:
+    """Fail if any dialed URL still carries a ``{name}`` placeholder.
+
+    Tenant-specific values (subdomain, region) belong in the scoping
+    output, not in fields the deployed server will hit at request time.
+    A placeholder reaching validate means scoping skipped substitution
+    and the generated client will SSL-error on the literal hostname.
+
+    ``auth.issuer`` is intentionally *not* scanned. For OIDC, the issuer
+    is an identifier consumed by deploy-assist when it fetches the
+    discovery document, and multi-tenant IdPs legitimately ship with
+    placeholders in the issuer (Azure Entra v2's canonical issuer is
+    ``https://login.microsoftonline.com/{tenantId}/v2.0``). Substitution
+    for the issuer is deferred to deploy-assist, where the tenant
+    context exists.
+
+    Free-form fields (``notes``, descriptions) are also not scanned:
+    prose can legitimately quote a placeholder for the reader.
+    """
+    fields: list[tuple[str, str | None]] = [("spec.base_url", scope.spec.base_url)]
+    auth = scope.auth
+    if isinstance(auth, OAuth2Auth):
+        fields.append(("auth.authorization_url", auth.authorization_url))
+        fields.append(("auth.token_url", auth.token_url))
+        fields.append(("auth.userinfo_url", auth.userinfo_url))
+
+    for field_name, value in fields:
+        if value is None:
+            continue
+        for match in _PLACEHOLDER_RE.findall(value):
+            errors.append(
+                f"V-TENANT-01 {field_name} contains unresolved placeholder "
+                f"{match}. Substitute with the concrete value before running "
+                "generate."
+            )
+
+
+def _check_auth_consistency(scope: MCPScope, errors: list[str]) -> None:
+    """Catch auth-block bugs Pydantic's discriminated union can't.
+
+    The schema enforces shape (which fields belong to which auth type);
+    these checks catch *content* bugs in fields that did parse:
+
+    - **V-AUTH-01** scopes_required ⊆ scopes_available — asking the IdP
+      for a scope you never declared as available is almost always a
+      typo the user wants to know about now, not at consent-screen time.
+      Set semantics are used for the subset check, so duplicate entries
+      in ``scopes_required`` (e.g. ``["read", "read"]``) are not flagged;
+      deduplication is out of scope for this check.
+    - **V-AUTH-02** URLs must be absolute and TLS-protected. OAuth and
+      OIDC endpoints over plaintext HTTP violate RFC 6749 §3.1 and OIDC
+      Core §16.17; allowing ``http://`` through validate would green-light
+      a deployment where tokens cross the wire in cleartext.
+    """
+    auth = scope.auth
+
+    if isinstance(auth, (OAuth2Auth, OIDCAuth)):
+        missing = sorted(set(auth.scopes_required) - set(auth.scopes_available.keys()))
+        if missing:
+            errors.append(
+                f"V-AUTH-01 scopes_required contains {missing} not present "
+                f"in scopes_available {sorted(auth.scopes_available.keys())}. "
+                "Add the scope to scopes_available or drop it from "
+                "scopes_required."
+            )
+
+    for field_name, value in _auth_url_fields(auth):
+        if value is None:
+            continue
+        parsed = urlparse(value)
+        scheme = parsed.scheme.lower()
+        if scheme == "https" and parsed.netloc:
+            continue
+        if scheme == "http" and parsed.netloc:
+            errors.append(
+                f"V-AUTH-02 {field_name} uses plaintext http:// "
+                f"(got '{value}'). Use https:// — OAuth/OIDC endpoints over "
+                "plaintext violate RFC 6749 §3.1 and OIDC Core §16.17."
+            )
+            continue
+        errors.append(
+            f"V-AUTH-02 {field_name} is not an absolute https:// URL "
+            f"(got '{value}'). An absolute URL with scheme https and a "
+            "host is required."
+        )

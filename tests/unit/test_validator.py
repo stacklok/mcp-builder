@@ -9,8 +9,11 @@ from pydantic import ValidationError
 from mcp_builder.spec.media import is_json_media_type
 from mcp_builder.validate import validate_scope
 from mcp_builder.schema.models import (
+    APIKeyAuth,
     Group,
     MCPScope,
+    OAuth2Auth,
+    OIDCAuth,
     ParamLocation,
     Parameter,
     Tool,
@@ -470,3 +473,374 @@ class TestIsJsonMediaType:
     )
     def test_rejects(self, media_type):
         assert is_json_media_type(media_type) is False
+
+
+# ===================================================================
+# Tenant placeholder check (V-TENANT-01)
+# ===================================================================
+
+
+def _scope_with_auth(auth) -> MCPScope:
+    """Build a minimal scope with the given auth block."""
+    scope = load_scope(FIXTURES / "test_scope.yaml")
+    scope.auth = auth
+    return scope
+
+
+class TestUnresolvedPlaceholders:
+    """V-TENANT-01: any ``{name}`` left in a URL field fails validation.
+
+    Substitution belongs in scoping; if validate sees a placeholder the
+    scope was never tenant-resolved and a downstream HTTP client would
+    SSL-error on the literal hostname.
+    """
+
+    def test_base_url_with_placeholder_errors(self):
+        scope = load_scope(FIXTURES / "test_scope.yaml")
+        scope.spec.base_url = "https://{companyDomain}.bamboohr.com"
+        result = validate_scope(scope)
+        matching = [e for e in result.errors if "V-TENANT-01" in e]
+        assert matching, result.errors
+        (msg,) = matching
+        assert "spec.base_url" in msg
+        assert "{companyDomain}" in msg
+
+    def test_oauth2_authorization_url_with_placeholder_errors(self):
+        scope = _scope_with_auth(
+            OAuth2Auth(
+                type="oauth2",
+                flow="authorizationCode",
+                authorization_url="https://{companyDomain}.bamboohr.com/authorize.php",
+                token_url="https://example.com/token",
+            )
+        )
+        result = validate_scope(scope)
+        matching = [
+            e for e in result.errors if "V-TENANT-01" in e and "authorization_url" in e
+        ]
+        assert matching, result.errors
+
+    def test_oauth2_token_url_with_placeholder_errors(self):
+        scope = _scope_with_auth(
+            OAuth2Auth(
+                type="oauth2",
+                flow="authorizationCode",
+                authorization_url="https://example.com/authorize",
+                token_url="https://{companyDomain}.bamboohr.com/token.php",
+            )
+        )
+        result = validate_scope(scope)
+        matching = [
+            e for e in result.errors if "V-TENANT-01" in e and "auth.token_url" in e
+        ]
+        assert matching, result.errors
+
+    def test_oauth2_userinfo_url_with_placeholder_errors(self):
+        scope = _scope_with_auth(
+            OAuth2Auth(
+                type="oauth2",
+                flow="authorizationCode",
+                authorization_url="https://example.com/authorize",
+                token_url="https://example.com/token",
+                userinfo_url="https://{companyDomain}.bamboohr.com/me",
+            )
+        )
+        result = validate_scope(scope)
+        matching = [
+            e for e in result.errors if "V-TENANT-01" in e and "auth.userinfo_url" in e
+        ]
+        assert matching, result.errors
+
+    def test_oidc_issuer_with_placeholder_does_not_error(self):
+        """V-TENANT-01 deliberately skips ``auth.issuer``: OIDC issuers are
+        identifiers consumed by deploy-assist (discovery fetch), and
+        multi-tenant IdPs (Azure Entra v2) ship placeholders in the canonical
+        issuer shape ``https://login.microsoftonline.com/{tenantId}/v2.0``."""
+        scope = _scope_with_auth(
+            OIDCAuth(
+                type="oidc",
+                issuer="https://login.microsoftonline.com/{tenantId}/v2.0",
+            )
+        )
+        result = validate_scope(scope)
+        assert not any("V-TENANT-01" in e for e in result.errors)
+
+    def test_multiple_placeholders_in_single_url_each_reported(self):
+        """Each occurrence of a placeholder in a single URL produces its own
+        error — pins ``findall`` behavior so a future switch to ``search``
+        doesn't silently regress."""
+        scope = load_scope(FIXTURES / "test_scope.yaml")
+        scope.spec.base_url = "https://{region}.{tenant}.api.example.com"
+        result = validate_scope(scope)
+        tenant_errors = [e for e in result.errors if "V-TENANT-01" in e]
+        assert len(tenant_errors) == 2, tenant_errors
+        assert any("{region}" in e for e in tenant_errors)
+        assert any("{tenant}" in e for e in tenant_errors)
+
+    def test_hyphenated_and_dotted_placeholders_caught(self):
+        """Scoping can emit ``{company-domain}`` or ``{tenant.region}``; the
+        regex must catch those shapes, not just bare identifiers."""
+        scope = load_scope(FIXTURES / "test_scope.yaml")
+        scope.spec.base_url = "https://{company-domain}.{tenant.region}.example.com"
+        result = validate_scope(scope)
+        tenant_errors = [e for e in result.errors if "V-TENANT-01" in e]
+        assert len(tenant_errors) == 2, tenant_errors
+        assert any("{company-domain}" in e for e in tenant_errors)
+        assert any("{tenant.region}" in e for e in tenant_errors)
+
+    def test_multiple_placeholders_each_reported(self):
+        """Two placeholders in different fields produce two distinct errors,
+        so the user fixes both in one cycle."""
+        scope = load_scope(FIXTURES / "test_scope.yaml")
+        scope.spec.base_url = "https://{companyDomain}.bamboohr.com"
+        scope.auth = OAuth2Auth(
+            type="oauth2",
+            flow="authorizationCode",
+            authorization_url="https://{companyDomain}.bamboohr.com/authorize.php",
+            token_url="https://example.com/token",
+        )
+        result = validate_scope(scope)
+        tenant_errors = [e for e in result.errors if "V-TENANT-01" in e]
+        assert len(tenant_errors) == 2, tenant_errors
+
+    def test_placeholder_in_notes_does_not_error(self):
+        """Free-form prose fields are not URL fields; placeholders there are
+        documentation, not unresolved configuration."""
+        scope = _scope_with_auth(
+            OAuth2Auth(
+                type="oauth2",
+                flow="authorizationCode",
+                authorization_url="https://example.com/authorize",
+                token_url="https://example.com/token",
+                notes="Replace {companyDomain} with the customer subdomain.",
+            )
+        )
+        result = validate_scope(scope)
+        assert not any("V-TENANT-01" in e for e in result.errors)
+
+    def test_clean_scope_no_tenant_errors(self, scope):
+        result = validate_scope(scope)
+        assert not any("V-TENANT-01" in e for e in result.errors)
+
+
+# ===================================================================
+# Auth schema consistency
+# ===================================================================
+
+
+class TestAuthScopesSubset:
+    """V-AUTH-01: scopes_required must be a subset of scopes_available.
+
+    Pydantic enforces shape; this catches a soft authoring bug — asking
+    the IdP for a scope you never declared as available.
+    """
+
+    def test_oauth2_required_not_in_available_errors(self):
+        scope = _scope_with_auth(
+            OAuth2Auth(
+                type="oauth2",
+                flow="authorizationCode",
+                authorization_url="https://example.com/authorize",
+                token_url="https://example.com/token",
+                scopes_available={"read": "Read", "write": "Write"},
+                scopes_required=["admin"],
+            )
+        )
+        result = validate_scope(scope)
+        matching = [e for e in result.errors if "V-AUTH-01" in e]
+        assert matching, result.errors
+        (msg,) = matching
+        assert "admin" in msg
+        assert "scopes_required" in msg
+        assert "scopes_available" in msg
+
+    def test_oidc_required_not_in_available_errors(self):
+        scope = _scope_with_auth(
+            OIDCAuth(
+                type="oidc",
+                issuer="https://example.com",
+                scopes_available={"openid": "Sign-in"},
+                scopes_required=["openid", "profile"],
+            )
+        )
+        result = validate_scope(scope)
+        matching = [e for e in result.errors if "V-AUTH-01" in e]
+        assert matching, result.errors
+        assert "profile" in matching[0]
+
+    def test_required_subset_of_available_passes(self):
+        scope = _scope_with_auth(
+            OAuth2Auth(
+                type="oauth2",
+                flow="authorizationCode",
+                authorization_url="https://example.com/authorize",
+                token_url="https://example.com/token",
+                scopes_available={"read": "Read", "write": "Write"},
+                scopes_required=["read"],
+            )
+        )
+        result = validate_scope(scope)
+        assert not any("V-AUTH-01" in e for e in result.errors)
+
+    def test_empty_available_with_required_errors(self):
+        """No scopes declared at all but required asks for one — still a
+        subset violation."""
+        scope = _scope_with_auth(
+            OAuth2Auth(
+                type="oauth2",
+                flow="authorizationCode",
+                authorization_url="https://example.com/authorize",
+                token_url="https://example.com/token",
+                scopes_required=["read"],
+            )
+        )
+        result = validate_scope(scope)
+        assert any("V-AUTH-01" in e for e in result.errors)
+
+    def test_empty_required_passes(self):
+        scope = _scope_with_auth(
+            OAuth2Auth(
+                type="oauth2",
+                flow="authorizationCode",
+                authorization_url="https://example.com/authorize",
+                token_url="https://example.com/token",
+                scopes_available={"read": "Read"},
+            )
+        )
+        result = validate_scope(scope)
+        assert not any("V-AUTH-01" in e for e in result.errors)
+
+    def test_api_key_no_subset_check(self):
+        """api_key has no scopes block; the check is silently skipped."""
+        scope = _scope_with_auth(APIKeyAuth(type="api_key"))
+        result = validate_scope(scope)
+        assert not any("V-AUTH-01" in e for e in result.errors)
+
+
+class TestAuthAbsoluteUrls:
+    """V-AUTH-02: every URL in the auth block must be absolute.
+
+    Scoping resolves relative paths against ``spec.base_url``. A relative
+    URL in the auth block at validate time means scoping skipped resolution
+    and the generated client would assemble a broken IdP request.
+    """
+
+    def test_oauth2_relative_authorization_url_errors(self):
+        scope = _scope_with_auth(
+            OAuth2Auth(
+                type="oauth2",
+                flow="authorizationCode",
+                authorization_url="/oauth/authorize",
+                token_url="https://example.com/token",
+            )
+        )
+        result = validate_scope(scope)
+        matching = [
+            e for e in result.errors if "V-AUTH-02" in e and "authorization_url" in e
+        ]
+        assert matching, result.errors
+
+    def test_oauth2_relative_token_url_errors(self):
+        scope = _scope_with_auth(
+            OAuth2Auth(
+                type="oauth2",
+                flow="authorizationCode",
+                authorization_url="https://example.com/authorize",
+                token_url="/oauth/token",
+            )
+        )
+        result = validate_scope(scope)
+        matching = [e for e in result.errors if "V-AUTH-02" in e and "token_url" in e]
+        assert matching, result.errors
+
+    def test_oauth2_relative_userinfo_url_errors(self):
+        scope = _scope_with_auth(
+            OAuth2Auth(
+                type="oauth2",
+                flow="authorizationCode",
+                authorization_url="https://example.com/authorize",
+                token_url="https://example.com/token",
+                userinfo_url="/me",
+            )
+        )
+        result = validate_scope(scope)
+        matching = [
+            e for e in result.errors if "V-AUTH-02" in e and "userinfo_url" in e
+        ]
+        assert matching, result.errors
+
+    def test_oidc_relative_issuer_errors(self):
+        scope = _scope_with_auth(
+            OIDCAuth(type="oidc", issuer="example.com"),
+        )
+        result = validate_scope(scope)
+        matching = [e for e in result.errors if "V-AUTH-02" in e and "issuer" in e]
+        assert matching, result.errors
+
+    def test_absolute_https_urls_pass(self):
+        scope = _scope_with_auth(
+            OAuth2Auth(
+                type="oauth2",
+                flow="authorizationCode",
+                authorization_url="https://example.com/authorize",
+                token_url="https://example.com/token",
+                userinfo_url="https://example.com/me",
+            )
+        )
+        result = validate_scope(scope)
+        assert not any("V-AUTH-02" in e for e in result.errors)
+
+    def test_plaintext_http_token_url_errors(self):
+        """Plaintext OAuth endpoints violate RFC 6749 §3.1 — tokens cross the
+        wire in cleartext. Validate refuses rather than green-lighting it."""
+        scope = _scope_with_auth(
+            OAuth2Auth(
+                type="oauth2",
+                flow="authorizationCode",
+                authorization_url="https://example.com/authorize",
+                token_url="http://example.com/token",
+            )
+        )
+        result = validate_scope(scope)
+        matching = [e for e in result.errors if "V-AUTH-02" in e and "token_url" in e]
+        assert matching, result.errors
+        assert "plaintext" in matching[0]
+
+    def test_plaintext_http_oidc_issuer_errors(self):
+        """OIDC issuer over plaintext violates OIDC Core §16.17."""
+        scope = _scope_with_auth(
+            OIDCAuth(type="oidc", issuer="http://example.com"),
+        )
+        result = validate_scope(scope)
+        matching = [e for e in result.errors if "V-AUTH-02" in e and "issuer" in e]
+        assert matching, result.errors
+        assert "plaintext" in matching[0]
+
+    def test_uppercase_scheme_accepted(self):
+        """``urlparse`` normalizes the scheme, so ``HTTPS://`` is absolute."""
+        scope = _scope_with_auth(
+            OAuth2Auth(
+                type="oauth2",
+                flow="authorizationCode",
+                authorization_url="HTTPS://example.com/authorize",
+                token_url="https://example.com/token",
+            )
+        )
+        result = validate_scope(scope)
+        assert not any("V-AUTH-02" in e for e in result.errors)
+
+    def test_scheme_without_host_errors(self):
+        """``https:///nohost`` has a scheme but no netloc — not a usable URL."""
+        scope = _scope_with_auth(
+            OAuth2Auth(
+                type="oauth2",
+                flow="authorizationCode",
+                authorization_url="https:///authorize",
+                token_url="https://example.com/token",
+            )
+        )
+        result = validate_scope(scope)
+        matching = [
+            e for e in result.errors if "V-AUTH-02" in e and "authorization_url" in e
+        ]
+        assert matching, result.errors
