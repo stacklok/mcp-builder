@@ -38,7 +38,8 @@ Given a generated project directory, mcp-scope.yaml, and OpenAPI spec path ($ARG
 3. Validation gate (user gate)
 4. Polish suggestions (agent)
 5. Polish application gate (user gate)
-6. Present results
+6. Final build verification (if code was modified)
+7. Present results
 
 ---
 
@@ -336,7 +337,33 @@ Agent tool parameters:
 
 ---
 
-### Step 6: Present Results
+### Step 6: Final Build Verification (conditional)
+
+Skip this step entirely if no code was modified — no fixes were applied in Step 3b AND no polish was applied in Step 5b. The validation report's existing Build Verification result is still accurate and stands as-is.
+
+Otherwise, rebuild the Docker image to confirm the post-fix / post-polish code still builds. The validator ran its build check against the generator's original output; edits applied after that (either error fixes or polish) may have introduced problems the initial build can't catch.
+
+1. Run the build from the generated project directory:
+
+   ```bash
+   cd {project_dir} && docker build -t {server_name}-mcp:validation-test . 2>&1
+   ```
+
+2. Append a **Final Build Verification** subsection to `{working_dir}/validation-report.md` (do not overwrite the original Build Verification row — the reader should be able to see both the pre-fix and post-fix results). Record PASS/FAIL/SKIP and, for FAIL or SKIP, the concrete reason including enough build output for the user to understand what broke.
+
+3. If the final build **failed**, present the failure to the user with AskUserQuestion. Summarize what code was modified (errors fixed, polish applied, or both) and paste the failing build excerpt. Offer:
+
+   - Have AI investigate and fix the build (spawn an inline fix agent scoped to the build failure, then re-run this step)
+   - Fix manually and re-run the skill later
+   - Acknowledge and continue to Step 7
+
+   Do not loop more than 2 AI-fix attempts here. If the build still fails after 2 rounds, ask the user to fix manually.
+
+4. If the final build **passed** or was **skipped** (Docker not installed etc.), continue to Step 7 without a gate.
+
+---
+
+### Step 7: Present Results
 
 Present the user with:
 
@@ -344,7 +371,7 @@ Present the user with:
 - Path to `{working_dir}/polish-suggestions.md` (if generated)
 - Summary:
   - Validation: X checks passed, Y failed
-  - Build: PASS/FAIL/SKIP
+  - Build: PASS/FAIL/SKIP (report the **final** build outcome from Step 6 if it ran; otherwise the validator's original result)
   - Polish: N suggestions generated, M applied (if any)
   - Files modified (if any fixes or polish were applied)
 
