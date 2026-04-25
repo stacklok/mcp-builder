@@ -176,9 +176,8 @@ _CLIENT_TEMPLATE = textwrap.dedent('''\
             """
             params = _strip_none(params)
             headers = _auth_headers()
-            # Accept: */* mirrors request_bytes — auto opts out of
-            # content negotiation and relies on the server's default
-            # representation, then decodes by the response's actual type.
+            # */* — request_auto can't pre-negotiate; the response
+            # Content-Type drives decoding.
             headers["Accept"] = "*/*"
             async with httpx.AsyncClient(base_url=self._base_url) as client:
                 response = await client.request(

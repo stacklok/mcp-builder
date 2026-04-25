@@ -289,7 +289,7 @@ The polish-suggester agent will read all files and write `{working_dir}/polish-s
 
    **Length:** do not truncate Problem / Impact / Proposed fix — they are the whole point. DO wrap long diffs in `<details>` so the chat stays scannable.
 
-   If there are no suggestions, say so briefly and skip to Step 6.
+   If there are no suggestions, say so briefly and skip to Step 7 (Step 6 is a no-op when no code was modified).
 
 3. Use AskUserQuestion to ask the user how they want to handle the suggestions. Summarize the counts by severity, then offer these paths:
 

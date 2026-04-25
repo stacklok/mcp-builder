@@ -330,7 +330,7 @@ groups:
         endpoint: {METHOD} {/path}
         description: >
           {LLM-optimized description}
-        response_kind: {json|text|binary}
+        response_kind: {json|text|binary|auto}
         parameters:
           - name: {param_name}
             description: "{param description}"

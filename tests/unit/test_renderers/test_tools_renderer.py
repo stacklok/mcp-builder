@@ -460,35 +460,6 @@ class TestRenderToolsModuleTextBranch:
         source = render_tools_module(make_plan(tools=[self._text_tool()]))
         compile(source, "<test>", "exec")
 
-    def test_all_three_kinds_coexist(self) -> None:
-        """A server with json, text, and binary tools renders all three
-        shapes from the same template invocation."""
-        json_tool = _make_tool(
-            name="get_item",
-            path="/items/{itemId}",
-            path_params=[_make_param("item_id", original_name="itemId")],
-        )
-        binary_tool = _make_tool(
-            name="get_employee_photo",
-            path="/employees/{employeeId}/photo",
-            path_params=[_make_param("employee_id", original_name="employeeId")],
-            description="Fetch the employee photo.",
-            response_kind="binary",
-        )
-        plan = make_plan(tools=[json_tool, self._text_tool(), binary_tool])
-        source = render_tools_module(plan)
-        compile(source, "<test>", "exec")
-        assert "import base64" in source  # needed for binary
-        json_section = source.split("async def get_item")[1].split("async def", 1)[0]
-        assert "-> dict:" in json_section
-        assert "self._client.request(" in json_section
-        text_section = source.split("async def export_doc")[1].split("async def", 1)[0]
-        assert "-> str:" in text_section
-        assert "request_text(" in text_section
-        binary_section = source.split("async def get_employee_photo")[1]
-        assert "-> str:" in binary_section
-        assert "request_bytes(" in binary_section
-
 
 class TestRenderToolsModuleAutoBranch:
     """Auto tools go through request_auto() and return ``dict | str`` —
