@@ -172,6 +172,17 @@ BambooHR, Stripe, Slack, and more) if you want something to try against.
        --output-dir ./out
    ```
 
+3. Create a lock file for the generated project:
+
+   ```bash
+   cd ./out/{server-name}-mcp && uv sync
+   ```
+
+   The generator intentionally doesn't copy `uv.lock` from the template —
+   the template's lock pins its own package name, which the generator
+   rewrites. `uv sync` produces a fresh lock that matches the generated
+   `pyproject.toml`.
+
 This step is fully deterministic — no AI in the loop. Output is a complete
 MCP server project plus ToolHive deployment manifests in `./out`.
 

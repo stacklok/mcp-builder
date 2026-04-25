@@ -46,10 +46,18 @@ def scaffold_project(plan: ServerPlan, template_dir: Path, output_dir: Path) -> 
         template_dir=str(template_dir),
     )
 
+    # uv.lock is intentionally skipped: the template's lock file pins the
+    # template's own workspace member name (mcp-template-py), and the
+    # scaffold step renames the package to {server_name}-mcp. Copying the
+    # stale lock makes every `uv` command in the generated project warn
+    # about a mismatched workspace member. The generated project's README
+    # instructs the user to run `uv sync` to create a fresh lock.
     shutil.copytree(
         template_dir,
         project_dir,
-        ignore=shutil.ignore_patterns("__pycache__", ".git", ".venv", "*.pyc"),
+        ignore=shutil.ignore_patterns(
+            "__pycache__", ".git", ".venv", "*.pyc", "uv.lock"
+        ),
     )
     logger.debug("copied template tree", project_dir=str(project_dir))
 
