@@ -8,7 +8,7 @@ this file in the same PR.
 ## Response kinds
 
 A tool's `response_kind` is a required field in `mcp-scope.yaml` and
-commits the generated tool to exactly one decode path. There are three
+commits the generated tool to exactly one decode path. There are four
 kinds.
 
 | `response_kind` | Generated tool returns | Client method | Accept header | Use for |
@@ -16,6 +16,7 @@ kinds.
 | `json` | `dict` | `request()` | `application/json` | Endpoints that return parsed JSON |
 | `text` | `str` (decoded text) | `request_text()` | `text/*, */*;q=0.8` | Endpoints that return `text/*` (plain text, HTML, CSV, Markdown, XML, exported Google Docs) |
 | `binary` | `str` (base64-encoded) | `request_bytes()` | `*/*` | Endpoints that return opaque bytes (PDF, images, `application/octet-stream`) |
+| `auto` | `dict \| str` (runtime dispatch) | `request_auto()` | `*/*` | Endpoints whose response shape varies based on request inputs (e.g., Drive `files.export` mimeType-driven output) |
 
 ### What each kind actually does at runtime
 
@@ -27,21 +28,40 @@ kinds.
 - `binary`: client returns `response.content`; the tool base64-encodes
   it to ASCII so the bytes survive MCP transport. The model sees a
   base64 blob, which is only useful if downstream tooling decodes it.
+- `auto`: client inspects the response's `Content-Type` header and
+  dispatches at runtime. JSON-y types (RFC 6839 `+json` variants
+  included) → parsed `dict`. `text/*` → decoded `str`. Anything else →
+  base64-encoded `str`. The model sees a union, so it must inspect the
+  value's type at use time.
 
 ### Picking a kind from the spec
 
 Inspect the operation's 2xx responses in the OpenAPI spec and pick the
-kind whose media type fits:
+kind whose media type fits. **Always prefer a fixed kind (`json`,
+`text`, or `binary`) when the spec commits to one.** `auto` widens the
+generated tool's return type to a union, which weakens the input schema
+the LLM caller sees — only reach for it when the operation's response
+shape genuinely cannot be pinned at scope time.
 
 - Every 2xx response declares at least one `application/json` (or every
-  2xx is 204-style with no body) → `json`.
+  2xx is 204-style with no body) → `json`. This is the right choice
+  even when the spec lists JSON alongside other types like XML —
+  `Accept: application/json` forces the server to honor it.
 - Every 2xx response declares a `text/*` media type (and no JSON) →
   `text`.
 - Every 2xx response declares an opaque binary media type (PDF, image,
   `application/octet-stream`) and no JSON or text → `binary`.
+- The same operation can return either text or binary depending on a
+  query parameter value (Drive `files.export` with `mimeType`, an
+  endpoint with `format=json|csv`, an `alt=media` polymorphism that
+  returns metadata or content from one path) and no fixed kind would
+  be correct → `auto`. Hint: read the description prose, not just the
+  declared content types — Google's specs in particular underspecify
+  these polymorphic operations.
 - Mixed — some 2xx are JSON and some are not, or the spec simultaneously
-  offers JSON and non-JSON on the same status — **do not guess**. Flag
-  the endpoint so the user picks the kind during the approval gate.
+  offers JSON and non-JSON on the same status, but the operation
+  conceptually has one shape — **do not guess**. Flag the endpoint so
+  the user picks the kind during the approval gate.
 
 ### Known gotchas
 
@@ -70,8 +90,12 @@ media types and errors (not warns) on mismatch:
 - `binary`: error if any 2xx response with content declares JSON — the
   client's `Accept: */*` could return JSON, which would then be
   base64-wrapped and returned as opaque bytes.
+- `auto`: silent pass — runtime `Content-Type` dispatch is the author's
+  explicit choice and the spec's declared shape is irrelevant. The
+  validator does not cross-check `auto` against the spec at all.
 - No 2xx responses declared in the spec → warning (can't verify); the
-  scope passes but the author should confirm.
+  scope passes but the author should confirm. (`auto` does not warn —
+  it opted out of the check.)
 - All 2xx responses are 204-style (no body) → silent pass regardless
   of kind.
 

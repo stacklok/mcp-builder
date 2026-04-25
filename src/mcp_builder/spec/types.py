@@ -107,8 +107,9 @@ class ExtractedResponse(BaseModel):
     """Declared media types for a single 2xx response of an operation.
 
     Consumed by the codegen validator to cross-check a scope's declared
-    ``response_kind`` (``json``, ``text``, or ``binary``) against the
-    media types the spec actually declares.
+    ``response_kind`` (``json``, ``text``, or ``binary``; ``auto`` opts
+    out of the cross-check) against the media types the spec actually
+    declares.
 
     ``media_types`` is sorted for stable error messages. An empty list
     means the response is declared with no ``content`` block (e.g. 204

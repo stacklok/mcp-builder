@@ -41,6 +41,28 @@ class TestRenderClientModule:
         assert "async def request_text(" in source
         assert "return response.text" in source
 
+    def test_has_request_auto_method(self, plan: ServerPlan) -> None:
+        """Operations whose response shape varies at request time use
+        request_auto, which decodes by Content-Type into ``dict | str``.
+        Drive ``files.export`` is the canonical case (mimeType chooses
+        between text and binary outputs)."""
+        source = render_client_module(plan)
+        assert "async def request_auto(" in source
+        assert "-> dict | str:" in source
+        # All three branches must be present.
+        assert "_JSON_CONTENT_TYPE_RE" in source
+        assert 'startswith("text/")' in source
+        assert 'base64.b64encode(response.content).decode("ascii")' in source
+
+    def test_request_auto_imports_base64_unconditionally(
+        self, plan: ServerPlan
+    ) -> None:
+        """The client always carries request_auto, so base64 is now a
+        client-level import regardless of which kinds the tools use."""
+        source = render_client_module(plan)
+        assert "import base64" in source
+        assert "import re" in source
+
     def test_accept_header_split_by_response_kind(self, plan: ServerPlan) -> None:
         """JSON path advertises Accept: application/json so content-
         negotiating servers hand us JSON. Text path prefers text/* with

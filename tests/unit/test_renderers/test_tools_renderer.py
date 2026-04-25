@@ -18,7 +18,7 @@ def _make_tool(
     query_params: list[ParamPlan] | None = None,
     body_fields: list[ParamPlan] | None = None,
     hints: list[str] | None = None,
-    response_kind: Literal["json", "text", "binary"] = "json",
+    response_kind: Literal["json", "text", "binary", "auto"] = "json",
 ) -> ToolPlan:
     return ToolPlan(
         tool_name=name,
@@ -460,13 +460,82 @@ class TestRenderToolsModuleTextBranch:
         source = render_tools_module(make_plan(tools=[self._text_tool()]))
         compile(source, "<test>", "exec")
 
-    def test_all_three_kinds_coexist(self) -> None:
-        """A server with json, text, and binary tools renders all three
-        shapes from the same template invocation."""
+
+class TestRenderToolsModuleAutoBranch:
+    """Auto tools go through request_auto() and return ``dict | str`` —
+    the decoder picks at runtime from the response Content-Type."""
+
+    def _auto_tool(self) -> ToolPlan:
+        return _make_tool(
+            name="export_anything",
+            path="/files/{fileId}/export",
+            path_params=[_make_param("file_id", original_name="fileId")],
+            query_params=[
+                _make_param(
+                    "mime_type",
+                    original_name="mimeType",
+                    location=ParamLocation.QUERY,
+                    required=True,
+                )
+            ],
+            description="Export with runtime-determined shape.",
+            response_kind="auto",
+        )
+
+    def test_auto_tool_returns_union(self) -> None:
+        source = render_tools_module(make_plan(tools=[self._auto_tool()]))
+        section = source.split("async def export_anything")[1].split("async def", 1)[0]
+        assert "-> dict | str:" in section
+
+    def test_auto_tool_calls_request_auto(self) -> None:
+        source = render_tools_module(make_plan(tools=[self._auto_tool()]))
+        section = source.split("async def export_anything")[1].split("async def", 1)[0]
+        assert "self._client.request_auto(" in section
+        # Other request paths must not leak into an auto tool.
+        assert "self._client.request(" not in section
+        assert "self._client.request_text(" not in section
+        assert "self._client.request_bytes(" not in section
+
+    def test_auto_tool_does_not_base64_in_tool_body(self) -> None:
+        # base64 wrapping is the client's job, not the tool's — the tool
+        # returns whatever request_auto handed back. Allow the term in
+        # the docstring (which describes runtime behavior to a reader),
+        # but disallow any actual base64 call.
+        source = render_tools_module(make_plan(tools=[self._auto_tool()]))
+        section = source.split("async def export_anything")[1].split("async def", 1)[0]
+        assert "base64.b64encode" not in section
+
+    def test_auto_only_tools_do_not_import_base64(self) -> None:
+        # base64 import is gated on any_binary; auto-only servers don't need it.
+        source = render_tools_module(make_plan(tools=[self._auto_tool()]))
+        assert "import base64" not in source
+
+    def test_auto_tool_compiles(self) -> None:
+        source = render_tools_module(make_plan(tools=[self._auto_tool()]))
+        compile(source, "<test>", "exec")
+
+    def test_all_four_kinds_coexist(self) -> None:
+        """A server with json, text, binary, and auto tools renders all
+        four shapes from the same template invocation."""
         json_tool = _make_tool(
             name="get_item",
             path="/items/{itemId}",
             path_params=[_make_param("item_id", original_name="itemId")],
+        )
+        text_tool = _make_tool(
+            name="export_doc",
+            path="/files/{fileId}/export",
+            path_params=[_make_param("file_id", original_name="fileId")],
+            query_params=[
+                _make_param(
+                    "mime_type",
+                    original_name="mimeType",
+                    location=ParamLocation.QUERY,
+                    required=True,
+                )
+            ],
+            description="Export a Google Doc as text.",
+            response_kind="text",
         )
         binary_tool = _make_tool(
             name="get_employee_photo",
@@ -475,16 +544,10 @@ class TestRenderToolsModuleTextBranch:
             description="Fetch the employee photo.",
             response_kind="binary",
         )
-        plan = make_plan(tools=[json_tool, self._text_tool(), binary_tool])
+        plan = make_plan(tools=[json_tool, text_tool, binary_tool, self._auto_tool()])
         source = render_tools_module(plan)
         compile(source, "<test>", "exec")
-        assert "import base64" in source  # needed for binary
-        json_section = source.split("async def get_item")[1].split("async def", 1)[0]
-        assert "-> dict:" in json_section
-        assert "self._client.request(" in json_section
-        text_section = source.split("async def export_doc")[1].split("async def", 1)[0]
-        assert "-> str:" in text_section
-        assert "request_text(" in text_section
-        binary_section = source.split("async def get_employee_photo")[1]
-        assert "-> str:" in binary_section
-        assert "request_bytes(" in binary_section
+        # Auto tool keeps its dict | str signature.
+        auto_section = source.split("async def export_anything")[1]
+        assert "-> dict | str:" in auto_section
+        assert "request_auto(" in auto_section

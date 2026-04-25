@@ -100,7 +100,11 @@ class ToolPlan(BaseModel):
     whose return type is ``str`` (the client returns the body decoded as
     text via the response's declared charset, falling back to UTF-8);
     ``"binary"`` emits a tool whose return type is ``str`` (the client
-    returns the raw bytes base64-encoded for MCP transport).
+    returns the raw bytes base64-encoded for MCP transport); ``"auto"``
+    emits a tool whose return type is ``dict | str`` (the client inspects
+    the response's ``Content-Type`` header at request time and decodes
+    accordingly: JSON-y types → dict, ``text/*`` → str, anything else →
+    base64-encoded str).
 
     Example:
         ToolPlan(
@@ -126,7 +130,7 @@ class ToolPlan(BaseModel):
     body_fields: list[ParamPlan]
     hints: list[str]
     group_name: str
-    response_kind: Literal["json", "text", "binary"]
+    response_kind: Literal["json", "text", "binary", "auto"]
 
 
 class GroupPlan(BaseModel):
