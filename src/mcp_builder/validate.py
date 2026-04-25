@@ -171,7 +171,7 @@ def validate_scope(
 
 def _check_response_kind_matches_spec(
     tool_name: str,
-    response_kind: Literal["json", "text", "binary"],
+    response_kind: Literal["json", "text", "binary", "auto"],
     responses: list[ExtractedResponse],
     errors: list[str],
     warnings: list[str],
@@ -185,13 +185,18 @@ def _check_response_kind_matches_spec(
 
     The generated client sends a different ``Accept`` header per kind:
     ``application/json`` for ``json``, ``text/*, */*;q=0.8`` for
-    ``text``, and ``*/*`` for ``binary``. A status that offers JSON plus
-    text is therefore safe for either ``json`` or ``text`` — the
-    author picks based on what the tool should return — but unsafe for
-    ``binary``, which could hand the caller base64-wrapped JSON.
+    ``text``, and ``*/*`` for ``binary`` and ``auto``. A status that
+    offers JSON plus text is therefore safe for either ``json`` or
+    ``text`` — the author picks based on what the tool should return —
+    but unsafe for ``binary``, which could hand the caller
+    base64-wrapped JSON. ``auto`` opts out of this cross-check entirely:
+    the author has signed up for runtime ``Content-Type`` dispatch
+    precisely because no single decode path is correct for the operation.
 
     Outcomes:
 
+    - ``response_kind="auto"``: silent pass (runtime dispatch is the
+      author's explicit choice; spec shape is irrelevant).
     - Spec declares no 2xx responses: warning (can't verify the choice).
     - Spec's 2xx responses all have empty content (204-style): silent pass.
     - ``response_kind="json"`` but some 2xx status offers no JSON option: error.
@@ -199,6 +204,9 @@ def _check_response_kind_matches_spec(
     - ``response_kind="binary"`` but some 2xx status offers JSON: error.
     - ``response_kind="binary"`` but every 2xx status is text-only: error.
     """
+    if response_kind == "auto":
+        return
+
     if not responses:
         warnings.append(
             f"Tool '{tool_name}': spec declares no 2xx responses — "

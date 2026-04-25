@@ -89,9 +89,17 @@ class Tool(BaseModel):
 
     ``response_kind`` declares how the generated tool decodes the response
     body: ``"json"`` returns a ``dict``, ``"text"`` returns decoded text
-    as a ``str``, and ``"binary"`` returns a base64-encoded ``str``. It is
-    required at scoping time so the decision is explicit in the scope YAML
-    and cannot be silently inferred from an ambiguous spec. See
+    as a ``str``, ``"binary"`` returns a base64-encoded ``str``, and
+    ``"auto"`` decides at runtime from the response's ``Content-Type``
+    header (returns ``dict | str``). Use ``auto`` only when the operation's
+    response shape varies based on request inputs — Google Drive
+    ``files.export`` is the canonical example: a ``mimeType`` query
+    parameter chooses between text and binary outputs. Prefer a fixed kind
+    whenever the spec commits to one, since ``auto`` widens the tool's
+    return type and weakens the LLM caller's input schema.
+
+    It is required at scoping time so the decision is explicit in the
+    scope YAML and cannot be silently inferred from an ambiguous spec. See
     ``skills/ai-scoping/assets/generator-contract.md`` for the full
     contract each kind commits to.
 
@@ -115,7 +123,7 @@ class Tool(BaseModel):
     tool_name: str
     endpoint: str
     description: str
-    response_kind: Literal["json", "text", "binary"]
+    response_kind: Literal["json", "text", "binary", "auto"]
     parameters: list[Parameter] = Field(default_factory=list)
     hints: list[str] | None = None
 

@@ -176,6 +176,19 @@ class TestResponseKindSchema:
                 }
             )
 
+    def test_auto_response_kind_accepted_at_load(self):
+        """``auto`` is a valid response_kind alongside json/text/binary."""
+        tool = Tool.model_validate(
+            {
+                "tool_name": "export_anything",
+                "endpoint": "GET /export",
+                "description": "Runtime-determined shape.",
+                "response_kind": "auto",
+                "parameters": [],
+            }
+        )
+        assert tool.response_kind == "auto"
+
 
 class TestResponseKindSpecCompatibility:
     """Validator cross-checks scope's response_kind against the spec's 2xx.
@@ -739,6 +752,73 @@ class TestResponseKindSpecCompatibility:
         )
         result = validate_scope(_scope_with_tool(tool), small_spec)
         assert not any("get_mixed" in e for e in result.errors), result.errors
+
+    def test_auto_scope_skips_spec_cross_check(self, tmp_path):
+        """response_kind=auto opts out of the spec-shape check entirely.
+
+        The author has signed up for runtime Content-Type dispatch, so
+        the spec's declared 2xx media types are irrelevant. Specs that
+        would error under any fixed kind — mixed JSON + binary on a
+        single 2xx, or no content block declared — must pass cleanly
+        under auto.
+        """
+        # Mixed JSON + PDF on a single 2xx errors under any of json /
+        # text / binary, but auto must accept it.
+        mixed_spec = _mini_spec(
+            tmp_path,
+            {
+                "/export": {
+                    "get": {
+                        "responses": {
+                            "200": {
+                                "description": "ok",
+                                "content": {
+                                    "application/json": {},
+                                    "application/pdf": {},
+                                    "text/plain": {},
+                                },
+                            },
+                        }
+                    }
+                }
+            },
+        )
+        tool = Tool(
+            tool_name="export_anything",
+            endpoint="GET /export",
+            description="Export with runtime-determined shape.",
+            response_kind="auto",
+            parameters=[],
+        )
+        result = validate_scope(_scope_with_tool(tool), mixed_spec)
+        assert not any("export_anything" in e for e in result.errors), result.errors
+
+    def test_auto_scope_does_not_warn_on_missing_2xx(self, tmp_path):
+        """Spec with no 2xx responses warns under fixed kinds ('can't
+        verify the choice'), but under auto the warning would be noise —
+        auto opted out of the check, so there's nothing to verify."""
+        small_spec = _mini_spec(
+            tmp_path,
+            {
+                "/only-errors": {
+                    "get": {
+                        "responses": {
+                            "500": {"description": "server error"},
+                        }
+                    }
+                }
+            },
+        )
+        tool = Tool(
+            tool_name="only_errors",
+            endpoint="GET /only-errors",
+            description="Only errors declared.",
+            response_kind="auto",
+            parameters=[],
+        )
+        result = validate_scope(_scope_with_tool(tool), small_spec)
+        assert not any("only_errors" in e for e in result.errors)
+        assert not any("only_errors" in w for w in result.warnings), result.warnings
 
 
 class TestIsTextMediaType:

@@ -57,9 +57,10 @@ Common reasons to flag (but NOT auto-remove):
 - **Low workflow relevance** — not directly related to any provided workflow
 - **Mixed-media 2xx responses** — different 2xx statuses declare incompatible media types (e.g. `200` returns `application/pdf`, `202` returns `application/json`), or a single status simultaneously declares JSON plus non-JSON media types. Leave `response_kind` pending and flag the endpoint with the realistic options for the Step 5 approval gate (per the generator contract):
   - **exclude** — drop the endpoint from the scope.
-  - **`json`** — non-JSON responses would crash at runtime.
+  - **`json`** — non-JSON responses would crash at runtime; pick this when the operation is conceptually JSON and `Accept: application/json` will coax the right shape from the server (this is the right answer for many enterprise APIs that also list XML).
   - **`text`** — JSON responses would be returned as a raw string rather than a parsed dict.
   - **`binary`** — JSON/text responses would be base64-wrapped and hidden from the model.
+  - **`auto`** — only when the response shape is genuinely a function of request inputs (e.g., a `mimeType` query parameter that selects between text and binary outputs, or `alt=media` polymorphism on a single endpoint). The generated tool's return type widens to `dict | str` so the LLM caller's input schema becomes less precise — prefer a fixed kind whenever the operation has one stable shape.
 
 Present ALL endpoints (both included and flagged) in the output. The user will make the final inclusion/exclusion decision in the approval step.
 
@@ -223,6 +224,12 @@ the generator contract (path provided as `Generator contract path` in
 your CONTEXT). The contract is also the source of truth for what each
 kind commits to at runtime and which validator rules apply.
 
+Bias toward a fixed kind (`json`, `text`, or `binary`) whenever the
+spec or the operation's prose commits to one. `auto` is only correct
+when the response shape genuinely depends on a request input — read
+the description prose, not just the declared content types, since
+Google-style specs in particular underspecify polymorphic operations.
+
 For mixed-media endpoints — where the spec offers JSON on some 2xx
 responses and a non-JSON media type on others, or a single status
 declares incompatible media types — do **not** guess. Flag the
@@ -258,7 +265,7 @@ The following endpoints are flagged for your review. They are included by defaul
 - **Endpoint:** {METHOD} {/path}
 - **Original operationId:** {operationId} {(renamed: reason) | (kept)}
 - **Description:** {LLM-optimized description}
-- **Response kind:** {json | text | binary | <pending user decision — see flagged endpoint>}
+- **Response kind:** {json | text | binary | auto | <pending user decision — see flagged endpoint>}
 - **Parameters:**
   - {name} ({required|optional}, {path|query|body}): {description}
   - {name} ({required|optional}, {path|query|body}): {description}

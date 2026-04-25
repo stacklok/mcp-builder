@@ -63,7 +63,30 @@ class Tools:
             json_body={{ tool.body_expr }},
 {% endif %}
         )
-{% else %}
+{% elif tool.response_kind == "auto" %}
+
+    async def {{ tool.method_name }}(self{{ tool.signature }}) -> dict | str:
+        """{{ tool.description | py_string }}
+
+        Response shape depends on request inputs. The body is decoded
+        based on the response's Content-Type header: JSON content types
+        return a dict, text/* returns a str, and any other content type
+        returns a base64-encoded str.
+        """
+{% for hint in tool.hints %}
+        # Hint: {{ hint | py_string }}
+{% endfor %}
+        return await self._client.request_auto(
+            "{{ tool.http_method }}",
+            {{ tool.path_expr }},
+{% if tool.params_expr %}
+            params={{ tool.params_expr }},
+{% endif %}
+{% if tool.body_expr %}
+            json_body={{ tool.body_expr }},
+{% endif %}
+        )
+{% elif tool.response_kind == "json" %}
 
     async def {{ tool.method_name }}(self{{ tool.signature }}) -> dict:
         """{{ tool.description | py_string }}"""

@@ -28,9 +28,21 @@ _CLIENT_TEMPLATE = textwrap.dedent('''\
     Uses the project's auth middleware to obtain bearer tokens.
     """
 
+    import base64
+    import re
+
     import httpx
 
     from {module_name}.auth import get_bearer_token
+
+
+    # Matches application/json, text/json, and any RFC 6839 structured-suffix
+    # JSON type (application/vnd.api+json, application/ld+json, etc.). Used
+    # by request_auto() to dispatch on Content-Type at runtime. Kept inline
+    # rather than imported because the generated client must stand alone.
+    _JSON_CONTENT_TYPE_RE = re.compile(
+        r"^(?:application|text)/(?:[\\w.+-]+\\+)?json$", re.IGNORECASE
+    )
 
 
     class APIClient:
@@ -142,6 +154,58 @@ _CLIENT_TEMPLATE = textwrap.dedent('''\
                 )
                 response.raise_for_status()
                 return response.content
+
+        async def request_auto(
+            self,
+            method: str,
+            path: str,
+            *,
+            params: dict | None = None,
+            json_body: dict | None = None,
+        ) -> dict | str:
+            """Send an HTTP request and dispatch decoding from the response Content-Type.
+
+            Used for endpoints whose response shape varies at request time
+            — e.g., Google Drive ``files.export`` returns text or binary
+            depending on the requested ``mimeType``. Dispatch rules,
+            applied to the bare media type (parameters stripped):
+
+            - JSON content type → ``dict`` (parsed JSON; empty body → ``{{}}``)
+            - ``text/*`` content type → ``str`` (decoded body)
+            - any other content type → ``str`` (base64-encoded raw bytes)
+            """
+            params = _strip_none(params)
+            headers = _auth_headers()
+            # Accept: */* mirrors request_bytes — auto opts out of
+            # content negotiation and relies on the server's default
+            # representation, then decodes by the response's actual type.
+            headers["Accept"] = "*/*"
+            async with httpx.AsyncClient(base_url=self._base_url) as client:
+                response = await client.request(
+                    method,
+                    path,
+                    params=params,
+                    json=json_body,
+                    headers=headers,
+                )
+                response.raise_for_status()
+                content_type = (
+                    response.headers.get("content-type", "")
+                    .split(";", 1)[0]
+                    .strip()
+                    .lower()
+                )
+                is_json = bool(_JSON_CONTENT_TYPE_RE.match(content_type))
+                if not response.content:
+                    # Type-consistent with the non-empty case: a JSON-y
+                    # status returns an empty dict (matching request()),
+                    # everything else returns an empty string.
+                    return {{}} if is_json else ""
+                if is_json:
+                    return response.json()
+                if content_type.startswith("text/"):
+                    return response.text
+                return base64.b64encode(response.content).decode("ascii")
 
 
     def _strip_none(params: dict | None) -> dict | None:
