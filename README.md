@@ -20,7 +20,7 @@ loop. See the [RFC](docs/rfc-custom-mcp-server-builder.md) for the full design.
 Requires Python 3.13+ and [uv](https://docs.astral.sh/uv/).
 
 ```bash
-git clone https://github.com/StacklokLabs/mcp-builder.git
+git clone https://github.com/stacklok/mcp-builder.git
 cd mcp-builder
 uv sync
 ```
@@ -159,7 +159,7 @@ BambooHR, Stripe, Slack, and more) if you want something to try against.
 1. **One-time setup:** clone `mcp-template-py` somewhere on disk.
 
    ```bash
-   git clone https://github.com/StacklokLabs/mcp-template-py.git ../mcp-template-py
+   git clone https://github.com/stacklok/mcp-template-py.git ../mcp-template-py
    ```
 
 2. Generate the server:
@@ -257,7 +257,7 @@ Scope of the current version:
   and header-injected API keys. Query-parameter API keys and HTTP basic are
   flagged but not generated.
 - **Python output only.** The generator targets
-  [`mcp-template-py`](https://github.com/StacklokLabs/mcp-template-py); other
+  [`mcp-template-py`](https://github.com/stacklok/mcp-template-py); other
   language templates are future work.
 - **No spec-diffing.** Detecting upstream API changes and re-running the
   pipeline is a manual step.
@@ -326,5 +326,5 @@ project-specific implementation guidelines.
 ## Related
 
 - [RFC: Custom MCP Server Builder](docs/rfc-custom-mcp-server-builder.md) — full design and alternatives considered
-- [`mcp-template-py`](https://github.com/StacklokLabs/mcp-template-py) — Python MCP server template the generator builds from
+- [`mcp-template-py`](https://github.com/stacklok/mcp-template-py) — Python MCP server template the generator builds from
 - [ToolHive](https://github.com/stacklok/toolhive) — runtime for MCP servers
