@@ -10,8 +10,8 @@
 > **Note (2026-04-24):** The auth schema described below has been superseded.
 > This RFC documents an `oauth_bearer` catch-all type; the implementation now
 > uses a discriminated `oauth2` / `oidc` / `api_key` / `none` union. See
-> [PR #99](https://github.com/StacklokLabs/mcp-builder/pull/99) and
-> [#94](https://github.com/StacklokLabs/mcp-builder/issues/94) for the new
+> [PR #99](https://github.com/stacklok/mcp-builder/pull/99) and
+> [#94](https://github.com/stacklok/mcp-builder/issues/94) for the new
 > shape. The rest of this document reflects the original design.
 
 ## Summary
